@@ -73,6 +73,9 @@ export function registerAuthRoutes(app: App) {
       },
     },
     async (request: FastifyRequest<{ Body: SignUpBody }>, reply: FastifyReply) => {
+      if (process.env.NODE_ENV === "production") {
+        return reply.status(404).send();
+      }
       try {
         app.logger.info({ email: request.body.email }, "Sign up attempt");
 
