@@ -73,7 +73,7 @@ export function registerAuthRoutes(app: App) {
       },
     },
     async (request: FastifyRequest<{ Body: SignUpBody }>, reply: FastifyReply) => {
-      if (process.env.NODE_ENV === "production") {
+      if (process.env.ALLOW_TEST_SIGNUP !== "true") {
         return reply.status(404).send();
       }
       try {
