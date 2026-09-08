@@ -1,4 +1,4 @@
-// deploy trigger 2026-08-25
+// deploy trigger 2026-09-08
 import { createApplication } from "@specific-dev/framework";
 import * as appSchema from './db/schema/schema.js';
 import * as authSchema from './db/schema/auth-schema.js';
