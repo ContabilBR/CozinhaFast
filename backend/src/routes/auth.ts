@@ -73,17 +73,19 @@ export function registerAuthRoutes(app: App) {
       },
     },
     async (request: FastifyRequest<{ Body: SignUpBody }>, reply: FastifyReply) => {
+      // Rota de teste/dev — nenhuma tela do app real a utiliza. Fica fechada (404)
+      // por padrao; so fica acessivel se ALLOW_TEST_SIGNUP="true" for setado
+      // explicitamente no ambiente. NUNCA definir essa variavel em producao:
+      // quem chamar essa rota escolhe o proprio "role" no corpo da requisicao,
+      // incluindo "administrador" (ver enum no schema acima), sem nenhuma
+      // autenticacao. E' assim de proposito, so pra permitir que a suite de
+      // testes crie usuarios com papeis diferentes — nunca deve ser alcancavel
+      // por trafego real.
       if (process.env.ALLOW_TEST_SIGNUP !== "true") {
         return reply.status(404).send();
       }
       try {
         app.logger.info({ email: request.body.email }, "Sign up attempt");
-
-        // Disable registration in production
-        if (process.env.NODE_ENV === "production") {
-          app.logger.warn({ email: request.body.email }, "Sign up attempt blocked in production");
-          return reply.status(404).send({ error: "Not found" });
-        }
 
         const { name, email, password, role } = request.body;
 
@@ -103,7 +105,9 @@ export function registerAuthRoutes(app: App) {
           return reply.status(409).send({ error: "Email já cadastrado" });
         }
 
-        // Create user with optional role (default to garcom)
+        // "role" vem direto do corpo da requisicao sem validacao de quem esta
+        // pedindo — inclui "administrador". So chega aqui se ALLOW_TEST_SIGNUP
+        // estiver "true" (checagem no topo deste handler).
         const userId = randomUUID();
         const now = new Date();
         const userRole = role || "garcom";
