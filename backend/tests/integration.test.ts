@@ -470,6 +470,18 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 401);
   });
 
+  test("Create prato as non-admin returns 403", async () => {
+    const res = await authenticatedApi("/api/pratos", regularUserToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nome: `Non-Admin Prato ${Date.now()}`,
+        preco: "18.99",
+      }),
+    });
+    await expectStatus(res, 403);
+  });
+
   test("Create prato missing required field returns 400", async () => {
     const res = await authenticatedApi("/api/pratos", authToken, {
       method: "POST",
@@ -543,6 +555,28 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 200);
     const data = await res.json();
     expect(data.prato.nome).toBe("Updated Prato");
+  });
+
+  test("Update prato as non-admin returns 403", async () => {
+    const createRes = await authenticatedApi("/api/pratos", adminToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nome: `Non-Admin Update Prato ${Date.now()}`,
+        preco: "22.50",
+      }),
+    });
+    await expectStatus(createRes, 201);
+    const pratoData = await createRes.json();
+
+    const res = await authenticatedApi(`/api/pratos/${pratoData.prato.id}`, regularUserToken, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nome: "Unauthorized Update",
+      }),
+    });
+    await expectStatus(res, 403);
   });
 
   test("Update non-existent prato returns 404", async () => {
@@ -644,6 +678,33 @@ describe("API Integration Tests", () => {
       }),
     });
     await expectStatus(res, 401);
+  });
+
+  test("Toggle prato availability as non-admin returns 403", async () => {
+    const createRes = await authenticatedApi("/api/pratos", adminToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nome: `Prato Availability Non-Admin Test ${Date.now()}`,
+        preco: "22.50",
+        disponivel: true,
+      }),
+    });
+    await expectStatus(createRes, 201);
+    const pratoData = await createRes.json();
+
+    const res = await authenticatedApi(
+      `/api/pratos/${pratoData.prato.id}/disponibilidade`,
+      regularUserToken,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          disponivel: false,
+        }),
+      }
+    );
+    await expectStatus(res, 403);
   });
 
   test("Toggle prato availability with missing disponivel returns 400", async () => {
@@ -1269,6 +1330,34 @@ describe("API Integration Tests", () => {
       }),
     });
     await expectStatus(res, 401);
+  });
+
+  test("Add pedidos as non-authorized returns 403", async () => {
+    const pratoRes = await authenticatedApi("/api/pratos", adminToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nome: `Non-Auth Prato ${Date.now()}`,
+        preco: "25.99",
+      }),
+    });
+    await expectStatus(pratoRes, 201);
+    const pratoData = await pratoRes.json();
+
+    const res = await authenticatedApi(`/api/comandas/${testCommandaId}/pedidos`, regularUserToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        items: [
+          {
+            prato_id: pratoData.prato.id,
+            quantidade: 1,
+            preco_unitario: 25.99,
+          },
+        ],
+      }),
+    });
+    await expectStatus(res, 403);
   });
 
   test("Add pedidos with missing items returns 400", async () => {

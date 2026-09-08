@@ -57,6 +57,12 @@ export function registerAuthRoutes(app: App) {
               },
             },
           },
+          404: {
+            type: "object",
+            properties: {
+              error: { type: "string" },
+            },
+          },
           409: {
             type: "object",
             properties: {
@@ -69,6 +75,12 @@ export function registerAuthRoutes(app: App) {
     async (request: FastifyRequest<{ Body: SignUpBody }>, reply: FastifyReply) => {
       try {
         app.logger.info({ email: request.body.email }, "Sign up attempt");
+
+        // Disable registration in production
+        if (process.env.NODE_ENV === "production") {
+          app.logger.warn({ email: request.body.email }, "Sign up attempt blocked in production");
+          return reply.status(404).send({ error: "Not found" });
+        }
 
         const { name, email, password, role } = request.body;
 
