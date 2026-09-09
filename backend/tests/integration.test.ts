@@ -2,6 +2,7 @@ import { describe, test, expect, afterAll } from "bun:test";
 import { api, authenticatedApi, signUpTestUser, expectStatus, createTestFile, connectAuthenticatedWebSocket, waitForMessage, cleanupTestData } from "./helpers";
 
 afterAll(cleanupTestData);
+
 describe("API Integration Tests", () => {
   let authToken: string;
   let testUserId: string;
