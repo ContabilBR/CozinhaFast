@@ -137,12 +137,161 @@ export async function expectStatus(res: Response, ...expected: number[]): Promis
   }
 }
 
+// ---------------------------------------------------------------------------
+// Test data cleanup
+// ---------------------------------------------------------------------------
+// These suites hit the real API (TEST_BASE_URL defaults to the local dev
+// backend, which uses the same DATABASE_URL as everything else — there is no
+// separate test database yet). Several tests intentionally leave data behind
+// on purpose (e.g. a permission check that expects DELETE to fail with 403),
+// so per-test cleanup isn't enough. Instead:
+//   - garcom/administrador test users are deleted individually via the
+//     afterAll registered in signUpTestUser above (deleteTestUser now
+//     actually deletes instead of no-op'ing).
+//   - mesas/pratos/categorias are swept up in bulk by cleanupTestData(),
+//     which each test file registers once via `afterAll(cleanupTestData)`.
+//
+// Detection is name/number based rather than ID-tracking, since tests don't
+// consistently expose the IDs they create. Patterns are deliberately narrow
+// so this can never touch real restaurant data:
+//   - mesas: numero >= 100000 (every test mesa uses this range via
+//     `Math.floor(Math.random() * 900000) + 100000`; no real restaurant has
+//     100k+ tables)
+//   - pratos/categorias: an exact match against known static test names, or
+//     a name ending in a 13-digit millisecond timestamp (the `${Date.now()}`
+//     suffix pattern used throughout these files)
+// If a new static (non-timestamped) prato/categoria name is added to a test,
+// add it to KNOWN_TEST_NAMES below or it will leak like the others did.
+
+const KNOWN_TEST_NAMES = new Set([
+  "To Delete",
+  "Test",
+  "Test Prato",
+  "Prato for 403",
+  "Prato for 413",
+  "Prato with Photo",
+  "Unauthorized Prato",
+  "Unauthorized Category",
+  "Updated Prato",
+  "Updated Category",
+]);
+
+const TIMESTAMP_SUFFIX = /\d{13}$/;
+
+function isTestGeneratedName(nome: string | undefined | null): boolean {
+  if (!nome) return false;
+  return KNOWN_TEST_NAMES.has(nome) || TIMESTAMP_SUFFIX.test(nome);
+}
+
+let cleanupAdminToken: string | null = null;
+
 /**
- * Delete a test user via Better Auth delete-user endpoint, or gracefully skip
- * cleanup if the endpoint is unavailable or the token is invalid.
+ * Lazily create (once) and cache an administrador session used only to run
+ * cleanup requests. Reuses the same real sign-up endpoint the tests use, so
+ * it requires ALLOW_TEST_SIGNUP=true just like everything else here.
  */
-export async function deleteTestUser(userId: string, token?: string): Promise<void> {
-  // For now, skip cleanup. Test database is ephemeral anyway.
+async function getCleanupAdminToken(): Promise<string | null> {
+  if (cleanupAdminToken) return cleanupAdminToken;
+  try {
+    const id = crypto.randomUUID();
+    const res = await api("/api/auth/sign-up/email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Test Cleanup Admin",
+        email: `testcleanup+${id}@example.com`,
+        password: "TestPassword123!",
+        role: "administrador",
+      }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as any;
+    cleanupAdminToken = data.token ?? null;
+    return cleanupAdminToken;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Delete a test user (and, via cascading FKs, its account/session/profile
+ * rows) through the real DELETE /api/garcons/:id endpoint. That endpoint
+ * requires an admin/gerente caller, so this uses a dedicated cleanup admin
+ * rather than the test user's own token.
+ */
+export async function deleteTestUser(userId: string, _token?: string): Promise<void> {
+  try {
+    const adminToken = await getCleanupAdminToken();
+    if (!adminToken) return;
+    await authenticatedApi(`/api/garcons/${userId}`, adminToken, { method: "DELETE" });
+  } catch {
+    // Best-effort cleanup — never fail a test run because cleanup failed.
+  }
+}
+
+/**
+ * Sweep and remove mesas/pratos/categorias left behind by a test file.
+ * Each test file should call `afterAll(cleanupTestData)` once at the top
+ * level — not per test.
+ */
+export async function cleanupTestData(): Promise<void> {
+  const adminToken = await getCleanupAdminToken();
+  if (!adminToken) return;
+
+  try {
+    const res = await authenticatedApi("/api/mesas", adminToken);
+    if (res.ok) {
+      const mesas = (await res.json()) as any[];
+      for (const mesa of mesas) {
+        if (typeof mesa.numero === "number" && mesa.numero >= 100000) {
+          try {
+            await authenticatedApi(`/api/mesas/${mesa.id}/force`, adminToken, { method: "DELETE" });
+          } catch {
+            // best-effort
+          }
+        }
+      }
+    }
+  } catch {
+    // best-effort
+  }
+
+  // Pratos before categorias, so a prato never blocks its categoria's delete.
+  try {
+    const res = await authenticatedApi("/api/pratos", adminToken);
+    if (res.ok) {
+      const pratos = (await res.json()) as any[];
+      for (const prato of pratos) {
+        if (isTestGeneratedName(prato.nome)) {
+          try {
+            await authenticatedApi(`/api/pratos/${prato.id}`, adminToken, { method: "DELETE" });
+          } catch {
+            // best-effort
+          }
+        }
+      }
+    }
+  } catch {
+    // best-effort
+  }
+
+  try {
+    const res = await authenticatedApi("/api/categorias", adminToken);
+    if (res.ok) {
+      const categorias = (await res.json()) as any[];
+      for (const categoria of categorias) {
+        if (isTestGeneratedName(categoria.nome)) {
+          try {
+            await authenticatedApi(`/api/categorias/${categoria.id}`, adminToken, { method: "DELETE" });
+          } catch {
+            // best-effort
+          }
+        }
+      }
+    }
+  } catch {
+    // best-effort
+  }
 }
 
 /**
