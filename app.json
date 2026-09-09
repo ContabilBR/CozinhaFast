@@ -15,7 +15,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.contabilbr.cozinhafastpro",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSPhotoLibraryUsageDescription": "This app uses your photo library to let you upload images."
       }
     },
     "android": {
@@ -29,7 +30,8 @@
         "BLUETOOTH_ADMIN",
         "BLUETOOTH_CONNECT",
         "BLUETOOTH_SCAN",
-        "ACCESS_FINE_LOCATION"
+        "ACCESS_FINE_LOCATION",
+        "READ_MEDIA_IMAGES"
       ]
     },
     "web": {
