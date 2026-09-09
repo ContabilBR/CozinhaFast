@@ -1,5 +1,7 @@
-import { describe, test, expect } from "bun:test";
-import { api, authenticatedApi, signUpTestUser, expectStatus } from "./helpers";
+import { describe, test, expect, afterAll } from "bun:test";
+import { api, authenticatedApi, signUpTestUser, expectStatus, cleanupTestData } from "./helpers";
+
+afterAll(cleanupTestData);
 
 describe("Realtime WebSocket Tests", () => {
   let adminToken: string;
