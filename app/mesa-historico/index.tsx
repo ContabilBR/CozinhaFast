@@ -8,8 +8,7 @@ import {
   TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { router } from "expo-router";
-import { getMesaHistoricoId, clearMesaHistoricoId } from "@/utils/mesaHistoricoStore";
+import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { AnimatedPressable } from "@/components/AnimatedPressable";
@@ -484,7 +483,7 @@ function ComandaCard({ comanda }: { comanda: ComandaItem }) {
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function MesaHistoricoScreen() {
-  const id = getMesaHistoricoId() ?? "";
+  const { id } = useLocalSearchParams<{ id: string }>();
   const COLORS = useColors();
 
   const [data, setData] = useState<HistoricoData | null>(null);
@@ -552,9 +551,6 @@ export default function MesaHistoricoScreen() {
       return;
     }
     fetchHistorico();
-    return () => {
-      clearMesaHistoricoId();
-    };
   }, [fetchHistorico, id]);
 
   if (!id) return null;

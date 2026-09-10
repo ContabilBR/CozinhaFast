@@ -17,7 +17,6 @@ import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { CardSkeleton } from "@/components/SkeletonLoader";
 import { apiGet } from "@/utils/api";
 import { isAdmin } from "@/utils/helpers";
-import { setMesaHistoricoId } from "@/utils/mesaHistoricoStore";
 import { Users } from "lucide-react-native";
 
 interface ApiMesa {
@@ -163,8 +162,7 @@ export default function MesaIndexScreen() {
     console.log("[Mesa/Index] Mesa pressionada:", mesa.numero, "status:", mesa.status, "role:", role);
     if (isAdmin(role)) {
       console.log("[Mesa/Index] Admin/gerente — navegando para histórico:", mesa.id);
-      setMesaHistoricoId(mesa.id);
-      router.push('/mesa-historico');
+      router.push({ pathname: '/mesa-historico', params: { id: mesa.id } });
       return;
     }
     if (isDisponivel(mesa.status) && role === "garcom") {
