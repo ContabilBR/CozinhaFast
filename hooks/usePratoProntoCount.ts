@@ -32,7 +32,7 @@ export function usePratoProntoCount(enabled: boolean = true): number {
   const fetchCount = useCallback(async () => {
     if (!active) return;
     try {
-      const data = await apiGet<{ pedidos: Array<{ status: string }> }>("/api/pedidos");
+      const data = await apiGet<{ pedidos: { status: string }[] }>("/api/pedidos");
       if (!mountedRef.current) return;
       const prontos = (data.pedidos || []).filter((p) => p.status === "pronto").length;
       setCount(prontos);

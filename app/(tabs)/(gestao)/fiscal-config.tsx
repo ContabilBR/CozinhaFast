@@ -61,7 +61,7 @@ const REGIMES = [
 ];
 
 // Campos exigidos pela validacao de NFC-e no backend
-const OBRIGATORIOS: Array<keyof FiscalForm> = [
+const OBRIGATORIOS: (keyof FiscalForm)[] = [
   "inscricao_estadual",
   "regime_tributario",
   "cnae_principal",
