@@ -12,107 +12,6 @@ const NOTIFY_ROLES = new Set(["garcom", "gerente", "administrador", "admin"]);
 
 const AUTO_DISMISS_MS = 5000;
 
-// ============================================================================
-// TEMP DEBUG — remove this whole block (and the <DebugPanel /> render below)
-// once the "prato pronto" notification is confirmed working end to end.
-// Collapsed by default: just a small dot in the bottom-right corner, out of
-// the way of the tab bar. Tap it to expand and see the last event/payload.
-// ============================================================================
-const DEBUG_ENABLED = true;
-
-function statusColor(status: string) {
-  if (status === "connected") return "#22C55E";
-  if (status === "connecting") return "#F59E0B";
-  return "#EF4444";
-}
-
-function DebugPanel({
-  status,
-  lastEvent,
-  lastEventAt,
-}: {
-  status: string;
-  lastEvent: RealtimeEvent | null;
-  lastEventAt: Date | null;
-}) {
-  const insets = useSafeAreaInsets();
-  const [expanded, setExpanded] = useState(false);
-
-  if (!expanded) {
-    return (
-      <Pressable
-        onPress={() => setExpanded(true)}
-        style={[debugStyles.collapsedDot, { bottom: insets.bottom + 90, backgroundColor: statusColor(status) }]}
-      />
-    );
-  }
-
-  return (
-    <Pressable
-      onPress={() => setExpanded(false)}
-      style={[debugStyles.container, { bottom: insets.bottom + 90 }]}
-    >
-      <View style={debugStyles.row}>
-        <View style={[debugStyles.dot, { backgroundColor: statusColor(status) }]} />
-        <Text style={debugStyles.text}>WS: {status} (toque pra fechar)</Text>
-      </View>
-      {lastEvent ? (
-        <>
-          <Text style={debugStyles.text} numberOfLines={1}>
-            último evento: {lastEvent.type} ({lastEventAt?.toLocaleTimeString()})
-          </Text>
-          <Text style={debugStyles.text} numberOfLines={3}>
-            payload: {lastEvent.payload ? JSON.stringify(lastEvent.payload) : "AUSENTE — backend ainda no formato antigo"}
-          </Text>
-        </>
-      ) : (
-        <Text style={debugStyles.text}>nenhum evento recebido ainda</Text>
-      )}
-    </Pressable>
-  );
-}
-
-const debugStyles = StyleSheet.create({
-  collapsedDot: {
-    position: "absolute",
-    right: 14,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    zIndex: 998,
-    borderWidth: 2,
-    borderColor: "rgba(255,255,255,0.6)",
-  },
-  container: {
-    position: "absolute",
-    right: 14,
-    maxWidth: 260,
-    backgroundColor: "rgba(0,0,0,0.9)",
-    borderRadius: 10,
-    padding: 10,
-    zIndex: 998,
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 4,
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 6,
-  },
-  text: {
-    color: "#fff",
-    fontSize: 11,
-    fontFamily: "monospace",
-  },
-});
-// ============================================================================
-// END TEMP DEBUG
-// ============================================================================
-
 /**
  * Global "prato pronto" banner. Mounted once at the root layout (not inside
  * any single tab/screen) so it's visible no matter where the garcom is in
@@ -123,8 +22,6 @@ export function PratoProntoNotifier() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const [message, setMessage] = useState<string | null>(null);
-  const [lastEvent, setLastEvent] = useState<RealtimeEvent | null>(null);
-  const [lastEventAt, setLastEventAt] = useState<Date | null>(null);
   const translateY = useRef(new Animated.Value(-120)).current;
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -142,10 +39,6 @@ export function PratoProntoNotifier() {
 
   const handleEvent = useCallback(
     (event: RealtimeEvent) => {
-      // TEMP DEBUG: record every event that arrives, regardless of type/filter.
-      setLastEvent(event);
-      setLastEventAt(new Date());
-
       if (event.type !== "pedido.status_changed") return;
       if (event.payload?.status !== "pronto") return;
 
@@ -185,10 +78,6 @@ export function PratoProntoNotifier() {
 
   return (
     <>
-      {DEBUG_ENABLED && shouldConnect && (
-        <DebugPanel status={wsStatus} lastEvent={lastEvent} lastEventAt={lastEventAt} />
-      )}
-
       {message && (
         <Animated.View
           pointerEvents="box-none"
