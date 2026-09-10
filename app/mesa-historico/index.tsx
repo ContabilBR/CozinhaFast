@@ -16,6 +16,7 @@ import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { CardSkeleton } from "@/components/SkeletonLoader";
 import { Users } from "lucide-react-native";
 import { formatCurrency } from "@/utils/helpers";
+import { apiGet } from "@/utils/api";
 
 const BASE_URL = "https://j74mf38wgua3d4qd5mqbjjvza88n2qcp.app.specular.dev";
 
@@ -500,7 +501,7 @@ export default function MesaHistoricoScreen() {
   const fetchHistorico = useCallback(async () => {
     console.log("[MesaHistorico] GET /api/mesas/" + id + "/historico");
     try {
-      const res = await fetch(`${BASE_URL}/api/mesas/${id}/historico`);
+      const res = await apiGet(`/api/mesas/${id}/historico`);
       if (!res.ok) {
         const text = await res.text();
         console.warn("[MesaHistorico] Fetch error:", res.status, text.slice(0, 200));
