@@ -6,6 +6,7 @@ import {
   RefreshControl,
   Pressable,
   TextInput,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
@@ -483,7 +484,8 @@ function ComandaCard({ comanda }: { comanda: ComandaItem }) {
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function MesaHistoricoScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const params = useLocalSearchParams<{ id: string | string[] }>();
+  const id = Array.isArray(params.id) ? params.id[0] : (params.id ?? "");
   const COLORS = useColors();
 
   const [data, setData] = useState<HistoricoData | null>(null);
@@ -541,14 +543,17 @@ export default function MesaHistoricoScreen() {
   }, [id]);
 
   useEffect(() => {
-    if (!id) {
-      router.back();
-      return;
-    }
+    if (!id) return; // wait for params — do NOT navigate back immediately
     fetchHistorico();
   }, [fetchHistorico, id]);
 
-  if (!id) return null;
+  if (!id) return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#000" }} edges={["top","left","right"]}>
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+        <ActivityIndicator />
+      </View>
+    </SafeAreaView>
+  );
 
   const handleRefresh = () => {
     console.log("[MesaHistorico] Refresh manual");
