@@ -18,6 +18,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { SkeletonLine } from "@/components/SkeletonLoader";
 import { apiGet } from "@/utils/api";
+import { isAdmin } from "@/utils/helpers";
+import { setMesaHistoricoId } from "@/utils/mesaHistoricoStore";
 import { Users, UtensilsCrossed, LayoutGrid } from "lucide-react-native";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -359,6 +361,7 @@ export default function MesasScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const role = user?.role as string | undefined;
 
   const [mesas, setMesas] = useState<ApiMesa[]>([]);
   const [loading, setLoading] = useState(true);
@@ -409,7 +412,13 @@ export default function MesasScreen() {
   };
 
   const handleMesaPress = (mesa: ApiMesa) => {
-    console.log("[Mesas] Mesa pressionada:", mesa.numero, "comanda_id:", mesa.comanda_id);
+    console.log("[Mesas] Mesa pressionada:", mesa.numero, "comanda_id:", mesa.comanda_id, "role:", role);
+    if (isAdmin(role)) {
+      console.log("[Mesas] Admin/gerente — navegando para histórico:", mesa.id);
+      setMesaHistoricoId(mesa.id);
+      router.push('/mesa-historico');
+      return;
+    }
     if (isOcupada(mesa.status) && mesa.comanda_id) {
       router.push({ pathname: `/comanda/${mesa.comanda_id}`, params: { mesa_numero: String(mesa.numero) } });
     } else if (canOpenComanda(mesa.status)) {
