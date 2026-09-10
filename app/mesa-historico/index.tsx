@@ -500,14 +500,7 @@ export default function MesaHistoricoScreen() {
   const fetchHistorico = useCallback(async () => {
     console.log("[MesaHistorico] GET /api/mesas/" + id + "/historico");
     try {
-      const res = await apiGet(`/api/mesas/${id}/historico`);
-      if (!res.ok) {
-        const text = await res.text();
-        console.warn("[MesaHistorico] Fetch error:", res.status, text.slice(0, 200));
-        setError(`Erro ${res.status}: não foi possível carregar o histórico.`);
-        return;
-      }
-      const json = await res.json();
+      const json = await apiGet<HistoricoData>(`/api/mesas/${id}/historico`);
       console.log("[MesaHistorico] Dados carregados — mesa:", json.mesa?.numero, "comandas:", json.comandas?.length);
       // Normalize numbers
       const normalized: HistoricoData = {
@@ -536,9 +529,11 @@ export default function MesaHistoricoScreen() {
       });
       setData(normalized);
       setError("");
-    } catch (e: any) {
-      console.error("[MesaHistorico] Erro:", e);
-      setError("Não foi possível carregar o histórico da mesa.");
+    } catch (err: any) {
+      const msg = err?.message || "Erro desconhecido";
+      const status = err?.status || "";
+      console.error("[MesaHistorico] Erro:", err);
+      setError(`Erro ${status}: ${msg}`);
     } finally {
       setLoading(false);
       setRefreshing(false);
