@@ -137,12 +137,12 @@ export function registerAuthRoutes(app: App) {
           updatedAt: now,
         });
 
-        // Use the seed restaurante for test/development
+        // Ensure a restaurante exists - use seed ID first, or create one
         const seedRestauranteId = '00000000-0000-0000-0000-000000000001';
         let restauranteId: string;
 
         try {
-          // Try to use the seed restaurante if it exists
+          // First, try to use the seed restaurante if it exists
           const seedRestaurante = await app.db
             .select()
             .from(schema.restaurante)
@@ -151,57 +151,90 @@ export function registerAuthRoutes(app: App) {
 
           if (seedRestaurante.length > 0) {
             restauranteId = seedRestauranteId;
+            app.logger.debug({ restauranteId }, "Using existing seed restaurante");
           } else {
-            // Fallback to first restaurante or create new one
-            const existingRestaurante = await app.db.select().from(schema.restaurante).limit(1);
-            if (existingRestaurante.length > 0) {
-              restauranteId = existingRestaurante[0].id;
+            // Try to get the first existing restaurante
+            const existingRestaurantes = await app.db.select().from(schema.restaurante).limit(1);
+            if (existingRestaurantes.length > 0) {
+              restauranteId = existingRestaurantes[0].id;
+              app.logger.debug({ restauranteId }, "Using first existing restaurante");
             } else {
+              // No restaurante exists, create one with the seed ID
+              app.logger.debug({}, "No restaurante found, creating seed restaurante");
               const [newRestaurante] = await app.db
                 .insert(schema.restaurante)
-                .values({ nome: 'Default Restaurant' })
+                .values({
+                  id: seedRestauranteId,
+                  nome: 'Default Restaurant',
+                })
                 .returning();
               restauranteId = newRestaurante.id;
+              app.logger.debug({ restauranteId }, "Created new seed restaurante");
             }
           }
         } catch (err) {
-          app.logger.debug({ err }, "Failed to check seed restaurante, falling back to first");
-          const existingRestaurante = await app.db.select().from(schema.restaurante).limit(1);
-          if (existingRestaurante.length > 0) {
-            restauranteId = existingRestaurante[0].id;
-          } else {
-            const [newRestaurante] = await app.db
-              .insert(schema.restaurante)
-              .values({ nome: 'Default Restaurant' })
-              .returning();
-            restauranteId = newRestaurante.id;
+          app.logger.error({ err }, "Failed to ensure restaurante exists - will try fallback");
+          // Last resort: try to get any restaurante or create one
+          try {
+            const fallbackRestaurantes = await app.db.select().from(schema.restaurante).limit(1);
+            if (fallbackRestaurantes.length > 0) {
+              restauranteId = fallbackRestaurantes[0].id;
+              app.logger.debug({ restauranteId }, "Using fallback restaurante");
+            } else {
+              const [newRestaurante] = await app.db
+                .insert(schema.restaurante)
+                .values({ nome: 'Test Restaurant' })
+                .returning();
+              restauranteId = newRestaurante.id;
+              app.logger.debug({ restauranteId }, "Created fallback restaurante");
+            }
+          } catch (fallbackErr) {
+            app.logger.error({ err: fallbackErr }, "Failed to create fallback restaurante - signup will fail");
+            throw fallbackErr;
           }
         }
 
+        app.logger.info({ userId, restauranteId }, "Associating user with restaurante");
+
         // Create profile with restaurante association and role
-        await app.db.insert(schema.profiles).values({
-          userId: userId,
-          restauranteId: restauranteId,
-          role: userRole,
-          name,
-          createdAt: now,
-        });
+        try {
+          await app.db.insert(schema.profiles).values({
+            userId: userId,
+            restauranteId: restauranteId,
+            role: userRole,
+            name,
+            createdAt: now,
+          });
+          app.logger.info({ userId, profileRestauranteId: restauranteId }, "Profile created successfully");
+        } catch (profileErr) {
+          app.logger.error({ userId, restauranteId, err: profileErr }, "Failed to create profile during sign-up");
+          // Don't throw - let the user complete sign-up even if profile creation fails
+          // The profile will be created on first sign-in
+        }
 
         // Generate session token (UUID)
         const token = randomUUID();
         const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
 
-        // Create session
-        await app.db.insert(sessionTable).values({
-          id: randomUUID(),
-          token,
-          userId: userId,
-          expiresAt,
-          createdAt: now,
-          updatedAt: now,
-        });
+        app.logger.info({ token, userId, expiresAt }, "Creating session");
 
-        app.logger.info({ userId, email }, "Sign up successful");
+        // Create session
+        try {
+          await app.db.insert(sessionTable).values({
+            id: randomUUID(),
+            token,
+            userId: userId,
+            expiresAt,
+            createdAt: now,
+            updatedAt: now,
+          });
+          app.logger.info({ token, userId }, "Session created successfully");
+        } catch (sessionErr) {
+          app.logger.error({ token, userId, err: sessionErr }, "Failed to create session");
+          throw sessionErr;
+        }
+
+        app.logger.info({ userId, email, token }, "Sign up successful");
 
         return reply.status(201).send({
           token,
@@ -315,12 +348,42 @@ export function registerAuthRoutes(app: App) {
           return reply.status(401).send({ error: "Credenciais inválidas" });
         }
 
-        // Get profile
-        const profiles = await app.db
+        // Get profile - ensure it exists
+        let profiles = await app.db
           .select()
           .from(schema.profiles)
           .where(eq(schema.profiles.userId, user.id))
           .limit(1);
+
+        if (!profiles || profiles.length === 0) {
+          // Profile doesn't exist, create one with a default restaurante
+          app.logger.warn({ userId: user.id }, "Profile not found for signed-in user, creating one");
+          try {
+            // Try to get or create a default restaurante
+            const existingRestaurante = await app.db.select().from(schema.restaurante).limit(1);
+            const restauranteId = existingRestaurante.length > 0
+              ? existingRestaurante[0].id
+              : (await app.db.insert(schema.restaurante).values({ nome: 'Default Restaurant' }).returning())[0].id;
+
+            await app.db.insert(schema.profiles).values({
+              userId: user.id,
+              restauranteId: restauranteId,
+              role: user.role || "garcom",
+              name: user.name || "",
+              createdAt: new Date(),
+            });
+
+            // Reload profiles
+            profiles = await app.db
+              .select()
+              .from(schema.profiles)
+              .where(eq(schema.profiles.userId, user.id))
+              .limit(1);
+          } catch (profileErr) {
+            app.logger.error({ userId: user.id, err: profileErr }, "Failed to create missing profile on sign-in");
+            throw profileErr;
+          }
+        }
 
         const profile = profiles && profiles.length > 0
           ? { role: profiles[0].role, name: profiles[0].name }
@@ -395,10 +458,12 @@ export function registerAuthRoutes(app: App) {
         const authHeader = request.headers.authorization;
 
         if (!authHeader || !authHeader.startsWith("Bearer ")) {
+          app.logger.warn("No Bearer token in /api/auth/me");
           return reply.status(401).send({ error: "Não autorizado" });
         }
 
         const token = authHeader.slice(7).trim();
+        app.logger.info({ tokenLength: token.length, tokenStart: token.substring(0, 20) }, "Looking up session in /api/auth/me");
 
         // Look up session by token
         const sessions = await app.db
@@ -407,7 +472,10 @@ export function registerAuthRoutes(app: App) {
           .where(eq(sessionTable.token, token))
           .limit(1);
 
+        app.logger.debug({ sessionsFound: sessions?.length || 0 }, "Session query result in /api/auth/me");
+
         if (!sessions || sessions.length === 0) {
+          app.logger.warn({ token: token.substring(0, 20) }, "No session found for token in /api/auth/me");
           return reply.status(401).send({ error: "Não autorizado" });
         }
 

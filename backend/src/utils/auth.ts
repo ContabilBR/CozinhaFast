@@ -52,8 +52,9 @@ export async function requireAuth(
 
       if (usuarioResults && usuarioResults.length > 0) {
         const usuario = usuarioResults[0];
-        const rid = usuario.restauranteId?.toString();
+        const rid = usuario.restauranteId ? String(usuario.restauranteId) : null;
         if (!rid) {
+          app.logger.warn({ usuarioId: usuario.id }, "Usuario found but has no restauranteId");
           reply.status(403).send({ error: "No tenant" });
           return null;
         }
@@ -85,8 +86,9 @@ export async function requireAuth(
 
         if (profileResults && profileResults.length > 0) {
           userRole = profileResults[0].role;
-          const rid = profileResults[0].restauranteId?.toString();
+          const rid = profileResults[0].restauranteId ? String(profileResults[0].restauranteId) : null;
           if (!rid) {
+            app.logger.warn({ userId: user.id }, "Profile exists but has no restauranteId");
             reply.status(403).send({ error: "No tenant" });
             return null;
           }
@@ -99,6 +101,7 @@ export async function requireAuth(
           };
         }
 
+        app.logger.warn({ userId: user.id }, "No profile found in Path B");
         reply.status(403).send({ error: "No tenant" });
         return null;
       }
@@ -108,13 +111,23 @@ export async function requireAuth(
     }
 
     // Step 2: Fall back to Better Auth session table
-    const sessions = await app.db
-      .select()
-      .from(sessionTable)
-      .where(eq(sessionTable.token, token))
-      .limit(1);
+    let sessions;
+    app.logger.debug({ token: token.substring(0, 20), tokenLength: token.length }, "Querying sessionTable for token");
+    try {
+      sessions = await app.db
+        .select()
+        .from(sessionTable)
+        .where(eq(sessionTable.token, token))
+        .limit(1);
+      app.logger.debug({ found: sessions?.length || 0, token: token.substring(0, 20) }, "Session table query completed");
+    } catch (queryErr) {
+      app.logger.error({ err: queryErr, token: token.substring(0, 20) }, "Session table query failed");
+      reply.status(401).send({ error: "Unauthorized" });
+      return null;
+    }
 
     if (!sessions || sessions.length === 0) {
+      app.logger.warn({ token: token.substring(0, 20), tokenLength: token.length }, "No session found in sessionTable");
       reply.status(401).send({ error: "Unauthorized" });
       return null;
     }
@@ -122,34 +135,53 @@ export async function requireAuth(
     const session = sessions[0];
 
     if (new Date(session.expiresAt) < new Date()) {
+      app.logger.warn({ sessionId: session.id, expiresAt: session.expiresAt }, "Session expired");
       reply.status(401).send({ error: "Unauthorized" });
       return null;
     }
 
     // Path C: Better Auth session → user table + profiles
-    const users = await app.db
-      .select()
-      .from(userTable)
-      .where(eq(userTable.id, session.userId))
-      .limit(1);
+    let users;
+    try {
+      users = await app.db
+        .select()
+        .from(userTable)
+        .where(eq(userTable.id, session.userId))
+        .limit(1);
+    } catch (userQueryErr) {
+      app.logger.error({ err: userQueryErr, userId: session.userId }, "User query failed in Path C");
+      reply.status(401).send({ error: "Unauthorized" });
+      return null;
+    }
 
     if (users && users.length > 0) {
       const user = users[0];
       let userRole = (user as any).role ?? "garcom";
 
-      const profilesList = await app.db
-        .select()
-        .from(schema.profiles)
-        .where(eq(schema.profiles.userId, user.id))
-        .limit(1);
+      let profilesList;
+      try {
+        profilesList = await app.db
+          .select()
+          .from(schema.profiles)
+          .where(eq(schema.profiles.userId, user.id))
+          .limit(1);
+      } catch (profileQueryErr) {
+        app.logger.error({ err: profileQueryErr, userId: user.id }, "Profile query failed in Path C");
+        reply.status(403).send({ error: "No tenant" });
+        return null;
+      }
 
       if (profilesList && profilesList.length > 0) {
         userRole = profilesList[0].role;
-        const rid = profilesList[0].restauranteId?.toString();
+        const rid = profilesList[0].restauranteId
+          ? String(profilesList[0].restauranteId)
+          : null;
         if (!rid) {
+          app.logger.warn({ userId: user.id }, "Profile exists but has no restauranteId");
           reply.status(403).send({ error: "No tenant" });
           return null;
         }
+        app.logger.debug({ userId: user.id, restauranteId: rid }, "User authenticated via Path C (Better Auth session)");
         return {
           id: user.id,
           email: user.email,
@@ -159,8 +191,49 @@ export async function requireAuth(
         };
       }
 
-      reply.status(403).send({ error: "No tenant" });
-      return null;
+      // No profile found - create one with a default restaurante
+      app.logger.warn({ userId: user.id }, "No profile found, creating one with default restaurante");
+      try {
+        // Get or create default restaurante
+        const defaultRestaurante = await app.db
+          .select()
+          .from(schema.restaurante)
+          .limit(1);
+
+        let restauranteId: string;
+        if (defaultRestaurante.length > 0) {
+          restauranteId = defaultRestaurante[0].id;
+        } else {
+          const [newRest] = await app.db
+            .insert(schema.restaurante)
+            .values({ nome: 'Default Restaurant' })
+            .returning();
+          restauranteId = newRest.id;
+        }
+
+        // Create profile
+        await app.db.insert(schema.profiles).values({
+          userId: user.id,
+          restauranteId: restauranteId,
+          role: userRole,
+          name: user.name || "",
+          createdAt: new Date(),
+        });
+
+        app.logger.info({ userId: user.id, restauranteId }, "Created profile for user during authentication");
+
+        return {
+          id: user.id,
+          email: user.email,
+          role: userRole,
+          name: user.name || "",
+          restauranteId: restauranteId,
+        };
+      } catch (profileCreateErr) {
+        app.logger.error({ userId: user.id, err: profileCreateErr }, "Failed to create profile during authentication");
+        reply.status(403).send({ error: "No tenant" });
+        return null;
+      }
     }
 
     // Path D: Better Auth session → usuarios table
@@ -172,8 +245,9 @@ export async function requireAuth(
 
     if (usuariosD && usuariosD.length > 0) {
       const usuario = usuariosD[0];
-      const rid = usuario.restauranteId?.toString();
+      const rid = usuario.restauranteId ? String(usuario.restauranteId) : null;
       if (!rid) {
+        app.logger.warn({ usuarioId: usuario.id }, "Usuario found but has no restauranteId");
         reply.status(403).send({ error: "No tenant" });
         return null;
       }
@@ -186,6 +260,7 @@ export async function requireAuth(
       };
     }
 
+    app.logger.warn({ sessionUserId: session.userId }, "No user found in Path D");
     reply.status(401).send({ error: "User not found" });
     return null;
   } catch (error) {

@@ -1467,6 +1467,7 @@ export function registerOrderRoutes(app: App) {
 
       try {
         const mesaId = request.params.id;
+        const restauranteId = requireTenant(session);
         app.logger.info({ mesaId }, "Fetching historical data for mesa");
 
         // Step 1: Fetch mesa
@@ -1489,10 +1490,11 @@ export function registerOrderRoutes(app: App) {
               ch.id, ch.mesa_id, ch.mesa_numero, ch.garcom_id, ch.status,
               ch.total, ch.subtotal, ch.gorjeta,
               ch.created_at, ch.closed_at, ch.archived_at,
-              COALESCE(u.nome, 'Não informado') as garcom_nome
+              COALESCE(u.name, 'Não informado') as garcom_nome
             FROM comandas_historico ch
-            LEFT JOIN usuarios u ON u.id::text = ch.garcom_id
+            LEFT JOIN "user" u ON u.id = ch.garcom_id
             WHERE ch.mesa_id = ${mesaId}
+              AND ch.restaurante_id = ${restauranteId}
             ORDER BY ch.created_at DESC
           `
         ) as any[];
@@ -1504,10 +1506,11 @@ export function registerOrderRoutes(app: App) {
               c.id, c.mesa_id, c.mesa_numero, c.garcom_id, c.status,
               c.total, c.subtotal, c.gorjeta,
               c.created_at, c.closed_at,
-              COALESCE(u.nome, 'Não informado') as garcom_nome
+              COALESCE(u.name, 'Não informado') as garcom_nome
             FROM comandas c
-            LEFT JOIN usuarios u ON u.id::text = c.garcom_id
+            LEFT JOIN "user" u ON u.id = c.garcom_id
             WHERE c.mesa_id = ${mesaId}
+              AND c.restaurante_id = ${restauranteId}
             ORDER BY c.created_at DESC
           `
         ) as any[];
