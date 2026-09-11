@@ -41,20 +41,31 @@ function RootLayoutNav() {
     const inAuthScreen = segments[0] === "auth-screen";
     const inMesaClienteSetup = segments[0] === "mesa-cliente-setup";
 
-    if (mesaClienteConfigured && !inMesaCliente && !inMesaClienteSetup) {
-      console.log("[Layout] Tablet em modo mesa — redirecionando para (mesa-cliente)");
-      router.replace("/(mesa-cliente)");
+    if (mesaClienteConfigured) {
+      // Tablet fixo em modo mesa: fica preso na tela do cliente, exceto na
+      // configuração (que pede login de gerente por dentro dela mesma).
+      if (!inMesaCliente && !inMesaClienteSetup) {
+        console.log("[Layout] Tablet em modo mesa — redirecionando para (mesa-cliente)");
+        router.replace("/(mesa-cliente)");
+      }
       return;
     }
 
-    if (!mesaClienteConfigured) {
-      if (!user && !inAuthScreen) {
-        console.log("[Layout] No user — redirecionando para /auth-screen");
-        router.replace("/auth-screen");
-      } else if (user && inAuthScreen) {
-        console.log("[Layout] User authenticated — redirecionando para /(tabs)/");
-        router.replace("/(tabs)/");
-      }
+    // Não está em modo mesa: nunca deve sobrar alguém preso em (mesa-cliente)
+    // — se caiu aqui por qualquer motivo (config apagada, navegação restaurada
+    // pelo SO, etc.), sai imediatamente pro lugar certo.
+    if (inMesaCliente) {
+      console.log("[Layout] Em (mesa-cliente) sem configuração — redirecionando para fora");
+      router.replace(user ? "/(tabs)/" : "/auth-screen");
+      return;
+    }
+
+    if (!user && !inAuthScreen) {
+      console.log("[Layout] No user — redirecionando para /auth-screen");
+      router.replace("/auth-screen");
+    } else if (user && inAuthScreen) {
+      console.log("[Layout] User authenticated — redirecionando para /(tabs)/");
+      router.replace("/(tabs)/");
     }
   }, [user, isLoading, mesaClienteConfigured, mesaClienteLoading, segments, router]);
 
