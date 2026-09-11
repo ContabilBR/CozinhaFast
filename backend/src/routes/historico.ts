@@ -129,7 +129,7 @@ export function registerHistoricoRoutes(app: App) {
         );
 
         app.logger.info({ tenantId, count: result.length }, "Historico fetched successfully");
-        return result;
+        return reply.code(200).send(result);
       } catch (error) {
         app.logger.error({ err: error }, "Failed to fetch historico");
         return reply.code(500).send({ error: "Internal server error" });

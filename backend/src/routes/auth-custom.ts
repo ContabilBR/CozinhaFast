@@ -128,7 +128,7 @@ export function registerCustomAuthRoutes(app: App) {
 
       app.logger.info({ userId: user.id, email: user.email, role: user.role }, 'Session created successfully - returning role to client');
 
-      return {
+      return reply.code(200).send({
         token,
         user: {
           id: user.id,
@@ -136,7 +136,7 @@ export function registerCustomAuthRoutes(app: App) {
           email: user.email,
           role: user.role,
         },
-      };
+      });
     } catch (err) {
       app.logger.error({ err, email }, 'Login error');
       throw err;
@@ -210,12 +210,12 @@ export function registerCustomAuthRoutes(app: App) {
         const user = users[0];
         app.logger.info({ userId: user.id, email: user.email }, 'User profile fetched successfully via Better Auth');
 
-        return {
+        return reply.code(200).send({
           id: user.id,
           nome: user.name,
           email: user.email,
           role: (user as any).role || 'garcom',
-        };
+        });
       }
 
       // Fall back to custom auth
@@ -239,12 +239,12 @@ export function registerCustomAuthRoutes(app: App) {
       const user = usuarios[0];
       app.logger.info({ userId: user.id, email: user.email }, 'User profile fetched successfully via custom auth');
 
-      return {
+      return reply.code(200).send({
         id: user.id,
         nome: user.nome,
         email: user.email,
         role: user.role,
-      };
+      });
     } catch (err) {
       app.logger.error({ err }, 'GET /api/me error');
       throw err;

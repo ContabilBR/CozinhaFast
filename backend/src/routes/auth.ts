@@ -200,7 +200,7 @@ export function registerAuthRoutes(app: App) {
         try {
           await app.db.insert(schema.profiles).values({
             userId: userId,
-            restauranteId: restauranteId,
+            restauranteId: restauranteId as any,
             role: userRole,
             name,
             createdAt: now,
@@ -226,7 +226,6 @@ export function registerAuthRoutes(app: App) {
             userId: userId,
             expiresAt,
             createdAt: now,
-            updatedAt: now,
           });
           app.logger.info({ token, userId }, "Session created successfully");
         } catch (sessionErr) {
@@ -400,7 +399,6 @@ export function registerAuthRoutes(app: App) {
           userId: user.id,
           expiresAt,
           createdAt: new Date(),
-          updatedAt: new Date(),
         });
 
         app.logger.info({ userId: user.id, email }, "Sign in successful");
@@ -501,13 +499,13 @@ export function registerAuthRoutes(app: App) {
 
         app.logger.info({ userId: user.id }, "Get current user");
 
-        return {
+        return reply.code(200).send({
           id: user.id,
           email: user.email,
           name: user.name,
           role: user.role,
           active: user.active,
-        };
+        });
       } catch (error) {
         app.logger.error({ err: error }, "Get current user failed");
         return reply.status(401).send({ error: "Não autorizado" });
