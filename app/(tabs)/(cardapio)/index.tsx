@@ -170,8 +170,6 @@ function PratoCard({
     >
       <View
         style={{
-          flexDirection: "row",
-          alignItems: "center",
           marginHorizontal: 16,
           marginBottom: 10,
           backgroundColor: COLORS.surface,
@@ -179,7 +177,6 @@ function PratoCard({
           borderWidth: 1,
           borderColor: COLORS.border,
           padding: 12,
-          gap: 12,
           shadowColor: "#000",
           shadowOffset: { width: 0, height: 1 },
           shadowOpacity: 0.04,
@@ -188,75 +185,81 @@ function PratoCard({
           opacity: cardOpacity,
         }}
       >
-        {/* Image */}
-        {hasImage ? (
-          <Image
-            source={resolveImageSource(prato.imagem_url)}
-            style={{ width: 72, height: 72, borderRadius: 10 }}
-            contentFit="cover"
-          />
-        ) : (
-          <View
-            style={{
-              width: 72,
-              height: 72,
-              borderRadius: 10,
-              backgroundColor: COLORS.surfaceSecondary,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <UtensilsCrossed size={24} color={COLORS.textTertiary} />
-          </View>
-        )}
-
-        {/* Info */}
-        <View style={{ flex: 1, gap: 3 }}>
-          <Text
-            numberOfLines={1}
-            style={{
-              fontFamily: "Outfit_700Bold",
-              fontSize: 15,
-              color: COLORS.text,
-              letterSpacing: -0.1,
-            }}
-          >
-            {prato.nome}
-          </Text>
-          {!!prato.descricao && (
-            <Text
-              numberOfLines={2}
-              ellipsizeMode="tail"
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+          {/* Image */}
+          {hasImage ? (
+            <Image
+              source={resolveImageSource(prato.imagem_url)}
+              style={{ width: 72, height: 72, borderRadius: 10 }}
+              contentFit="cover"
+            />
+          ) : (
+            <View
               style={{
-                fontFamily: "Outfit_400Regular",
-                fontSize: 12,
-                color: COLORS.textSecondary,
-                lineHeight: 17,
+                width: 72,
+                height: 72,
+                borderRadius: 10,
+                backgroundColor: COLORS.surfaceSecondary,
+                alignItems: "center",
+                justifyContent: "center",
               }}
             >
-              {prato.descricao}
-            </Text>
+              <UtensilsCrossed size={24} color={COLORS.textTertiary} />
+            </View>
           )}
-          <Text
-            style={{
-              fontFamily: "Outfit_700Bold",
-              fontSize: 15,
-              color: "#22C55E",
-              marginTop: 2,
-            }}
-          >
-            {precoDisplay}
-          </Text>
+
+          {/* Info */}
+          <View style={{ flex: 1, gap: 3 }}>
+            <Text
+              numberOfLines={1}
+              style={{
+                fontFamily: "Outfit_700Bold",
+                fontSize: 15,
+                color: COLORS.text,
+                letterSpacing: -0.1,
+              }}
+            >
+              {prato.nome}
+            </Text>
+            {!!prato.descricao && (
+              <Text
+                numberOfLines={2}
+                ellipsizeMode="tail"
+                style={{
+                  fontFamily: "Outfit_400Regular",
+                  fontSize: 12,
+                  color: COLORS.textSecondary,
+                  lineHeight: 17,
+                }}
+              >
+                {prato.descricao}
+              </Text>
+            )}
+            <Text
+              style={{
+                fontFamily: "Outfit_700Bold",
+                fontSize: 15,
+                color: "#22C55E",
+                marginTop: 2,
+              }}
+            >
+              {precoDisplay}
+            </Text>
+          </View>
         </View>
 
-        {/* Disponibilidade: badge estático, ou botão de alternar para quem pode */}
+        {/* Disponibilidade: badge estático, ou botão de alternar para quem pode.
+            Fica numa linha própria, abaixo do nome/descrição/preço, para ter
+            espaço de sobra pro texto sem espremer o resto do card. */}
         {podeAlternarDisponibilidade && onToggleDisponibilidade ? (
           <AnimatedPressable
             onPress={() => onToggleDisponibilidade(prato.id, prato.disponivel === false)}
             style={{
               flexDirection: "row",
               alignItems: "center",
+              alignSelf: "flex-start",
               gap: 4,
+              marginTop: 10,
               backgroundColor: prato.disponivel === false ? "#EF444420" : "#22C55E20",
               borderRadius: 8,
               paddingHorizontal: 8,
@@ -283,6 +286,8 @@ function PratoCard({
           prato.disponivel === false && (
             <View
               style={{
+                alignSelf: "flex-start",
+                marginTop: 10,
                 backgroundColor: COLORS.surfaceSecondary,
                 borderRadius: 8,
                 paddingHorizontal: 8,
