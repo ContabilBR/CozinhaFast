@@ -710,12 +710,29 @@ export default function CozinhaScreen() {
     setComandaFilter(filter);
   };
 
-  // Fila: comandas with at least one pendente or em_preparo pedido
-  const filaComandas = comandas.filter((c) =>
-    (Array.isArray(c.pedidos) ? c.pedidos : []).some(
+  // Retorna o horário do pedido ativo (pendente/em_preparo) mais antigo da comanda.
+  // Usado para ordenar a Fila do mais antigo para o mais novo (FIFO).
+  const getOldestActivePedidoTime = (c: Comanda): number => {
+    const active = (Array.isArray(c.pedidos) ? c.pedidos : []).filter(
       (p) => p.status === "pendente" || p.status === "em_preparo"
+    );
+    if (active.length === 0) return new Date(c.created_at).getTime();
+    return active.reduce(
+      (oldest, p) => Math.min(oldest, new Date(p.created_at).getTime()),
+      Infinity
+    );
+  };
+
+  // Fila: comandas com ao menos um pedido pendente ou em_preparo,
+  // ordenadas do pedido mais antigo para o mais novo (o cozinheiro vê
+  // primeiro o que foi enviado primeiro).
+  const filaComandas = comandas
+    .filter((c) =>
+      (Array.isArray(c.pedidos) ? c.pedidos : []).some(
+        (p) => p.status === "pendente" || p.status === "em_preparo"
+      )
     )
-  );
+    .sort((a, b) => getOldestActivePedidoTime(a) - getOldestActivePedidoTime(b));
 
   const filteredComandas = comandas.filter((c) => {
     const targetStatus = COMANDA_FILTER_STATUS[comandaFilter];
