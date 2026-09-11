@@ -59,12 +59,12 @@ export function registerOrderRoutes(app: App) {
                   properties: {
                     id: { type: "string", format: "uuid" },
                     mesa_id: { type: "string", format: "uuid" },
-                    mesa_numero: { type: ["number", "null"] },
+                    mesa_numero: { type: "number", nullable: true },
                     garcom_id: { type: ["string", "null"] },
                     status: { type: "string" },
                     total: { type: "number" },
                     created_at: { type: "string", format: "date-time" },
-                    closed_at: { type: ["string", "null"], format: "date-time" },
+                    closed_at: { type: "string", format: "date-time", nullable: true },
                     item_count: { type: "number" },
                   },
                 },
@@ -355,7 +355,7 @@ export function registerOrderRoutes(app: App) {
             properties: {
               id: { type: "string", format: "uuid" },
               mesa_id: { type: "string", format: "uuid" },
-              mesa_numero: { type: ["number", "null"] },
+              mesa_numero: { type: "number", nullable: true },
               garcom_id: { type: ["string", "null"] },
               status: { type: "string" },
               total: { type: "string" },
@@ -707,8 +707,8 @@ export function registerOrderRoutes(app: App) {
               subtotal: { type: "number" },
               gorjeta: { type: "number" },
               total_final: { type: "number" },
-              num_pessoas: { type: ["number", "null"] },
-              valor_por_pessoa: { type: ["number", "null"] },
+              num_pessoas: { type: "number", nullable: true },
+              valor_por_pessoa: { type: "number", nullable: true },
               created_at: { type: "string", format: "date-time" },
               closed_at: { type: "string", format: "date-time" },
               itens: {
@@ -1245,7 +1245,7 @@ export function registerOrderRoutes(app: App) {
                   garcom_email: { type: "string" },
                   status: { type: "string" },
                   total: { type: "string" },
-                  created_at: { type: ["string", "null"], format: "date-time" },
+                  created_at: { type: "string", format: "date-time", nullable: true },
                   pedidos: {
                     type: "array",
                     items: {
@@ -1260,7 +1260,7 @@ export function registerOrderRoutes(app: App) {
                         preco_unitario: { type: "string" },
                         observacao: { type: ["string", "null"] },
                         status: { type: "string" },
-                        created_at: { type: ["string", "null"], format: "date-time" },
+                        created_at: { type: "string", format: "date-time", nullable: true },
                       },
                     },
                   },
@@ -1434,8 +1434,8 @@ export function registerOrderRoutes(app: App) {
                     gorjeta: { type: "number" },
                     garcom_id: { type: ["string", "null"] },
                     garcom_nome: { type: "string" },
-                    created_at: { type: ["string", "null"], format: "date-time" },
-                    closed_at: { type: ["string", "null"], format: "date-time" },
+                    created_at: { type: "string", format: "date-time", nullable: true },
+                    closed_at: { type: "string", format: "date-time", nullable: true },
                     source: { type: "string", enum: ["historico", "ativa"] },
                     pedidos: {
                       type: "array",
@@ -1711,7 +1711,7 @@ export function registerOrderRoutes(app: App) {
                   properties: {
                     id: { type: "string", format: "uuid" },
                     numero_comanda: { type: "string" },
-                    mesa_numero: { type: ["number", "null"] },
+                    mesa_numero: { type: "number", nullable: true },
                     created_at: { type: "string", format: "date-time" },
                     garcom_id: { type: "string" },
                     garcom_nome: { type: "string" },
@@ -1725,7 +1725,7 @@ export function registerOrderRoutes(app: App) {
                         properties: {
                           id: { type: "string", format: "uuid" },
                           prato_nome: { type: "string" },
-                          tempo_preparo_min: { type: ["number", "null"] },
+                          tempo_preparo_min: { type: "number", nullable: true },
                           quantidade: { type: "number" },
                           status: { type: "string" },
                           observacao: { type: ["string", "null"] },
