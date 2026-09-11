@@ -11,23 +11,42 @@ export type MesaClienteConfig = {
   configuradoEm: string;
 };
 
-export const getMesaClienteConfig = async (): Promise<MesaClienteConfig | null> => {
+const readRaw = async (): Promise<string | null> => {
+  if (Platform.OS === "web") {
+    return localStorage.getItem(MESA_CLIENTE_CONFIG_KEY);
+  }
+  return SecureStore.getItemAsync(MESA_CLIENTE_CONFIG_KEY);
+};
+
+export const getMesaClienteConfig = async (
+  attempt = 0
+): Promise<MesaClienteConfig | null> => {
   try {
-    let raw: string | null = null;
-    if (Platform.OS === "web") {
-      raw = localStorage.getItem(MESA_CLIENTE_CONFIG_KEY);
-    } else {
-      raw = await SecureStore.getItemAsync(MESA_CLIENTE_CONFIG_KEY);
-    }
+    const raw = await readRaw();
     if (!raw) return null;
     return JSON.parse(raw) as MesaClienteConfig;
   } catch (error) {
-    console.error("[MesaCliente] Erro ao ler configuração:", error);
+    console.error(
+      `[MesaCliente] Erro ao ler configuração (tentativa ${attempt + 1}):`,
+      error
+    );
+    // Logo após o app voltar de muito tempo em segundo plano (ou de o SO tê-lo
+    // matado silenciosamente), a primeira leitura do armazenamento seguro pode
+    // falhar de forma passageira antes do módulo nativo estar pronto. Tenta
+    // mais duas vezes com um pequeno intervalo antes de concluir que não há
+    // configuração — evita tratar uma falha momentânea como "nunca configurado".
+    if (attempt < 2) {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      return getMesaClienteConfig(attempt + 1);
+    }
+    console.error("[MesaCliente] Desistindo após 3 tentativas de leitura.");
     return null;
   }
 };
 
-export const saveMesaClienteConfig = async (config: MesaClienteConfig): Promise<void> => {
+export const saveMesaClienteConfig = async (
+  config: MesaClienteConfig
+): Promise<void> => {
   const raw = JSON.stringify(config);
   try {
     if (Platform.OS === "web") {
