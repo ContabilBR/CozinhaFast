@@ -131,6 +131,12 @@ export default function MesaClienteScreen() {
         <Ionicons name="tablet-landscape-outline" size={40} color={COLORS.textTertiary} />
         <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 18, color: COLORS.text, textAlign: "center" }}>Tablet não configurado</Text>
         <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 14, color: COLORS.textSecondary, textAlign: "center" }}>Peça a um gerente para configurar este tablet em Gestão {'>'} Modo mesa.</Text>
+        <Pressable
+          onPress={() => router.push("/mesa-cliente-setup")}
+          style={{ marginTop: 8, backgroundColor: COLORS.primary, borderRadius: 12, paddingHorizontal: 20, paddingVertical: 12 }}
+        >
+          <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 14, color: "white" }}>Sou gerente — configurar agora</Text>
+        </Pressable>
       </View>
     );
   }
