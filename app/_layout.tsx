@@ -1,5 +1,5 @@
 import "react-native-reanimated";
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import { View, ActivityIndicator } from "react-native";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
@@ -11,8 +11,8 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from "@react-navigation/native
 import { StatusBar } from "expo-status-bar";
 import { WidgetProvider } from "@/contexts/WidgetContext";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { MesaClienteProvider, useMesaCliente } from "@/contexts/MesaClienteContext";
 import { PratoProntoNotifier } from "@/components/PratoProntoNotifier";
-import { getMesaClienteConfig } from "@/utils/mesaCliente";
 import {
   useFonts,
   Outfit_400Regular,
@@ -29,24 +29,18 @@ export const unstable_settings = {
 
 function RootLayoutNav() {
   const { user, isLoading } = useAuth();
+  const { config: mesaClienteConfig, loading: mesaClienteLoading } = useMesaCliente();
+  const mesaClienteConfigured = mesaClienteConfig !== null;
   const segments = useSegments();
   const router = useRouter();
-  const [mesaClienteConfigured, setMesaClienteConfigured] = useState<boolean | null>(null);
 
   useEffect(() => {
-    getMesaClienteConfig().then((cfg) => setMesaClienteConfigured(!!cfg));
-  }, []);
-
-  useEffect(() => {
-    if (isLoading || mesaClienteConfigured === null) return;
+    if (isLoading || mesaClienteLoading) return;
 
     const inMesaCliente = segments[0] === "(mesa-cliente)";
     const inAuthScreen = segments[0] === "auth-screen";
     const inMesaClienteSetup = segments[0] === "mesa-cliente-setup";
 
-    // Tablets configurados em "modo mesa" pulam o login e ficam presos na tela do
-    // cliente, exceto quando estão explicitamente na tela de configuração (que
-    // pede login de gerente por dentro dela mesma).
     if (mesaClienteConfigured && !inMesaCliente && !inMesaClienteSetup) {
       console.log("[Layout] Tablet em modo mesa — redirecionando para (mesa-cliente)");
       router.replace("/(mesa-cliente)");
@@ -62,9 +56,9 @@ function RootLayoutNav() {
         router.replace("/(tabs)/");
       }
     }
-  }, [user, isLoading, mesaClienteConfigured, segments, router]);
+  }, [user, isLoading, mesaClienteConfigured, mesaClienteLoading, segments, router]);
 
-  if (isLoading || mesaClienteConfigured === null) {
+  if (isLoading || mesaClienteLoading) {
     return (
       <View style={{ flex: 1, backgroundColor: "#1a1a2e", alignItems: "center", justifyContent: "center" }}>
         <ActivityIndicator size="large" color="#e94560" />
@@ -132,8 +126,10 @@ export default function RootLayout() {
           <WidgetProvider>
             <GestureHandlerRootView style={{ flex: 1 }}>
               <AuthProvider>
-                <RootLayoutNav />
-                <SystemBars style="auto" />
+                <MesaClienteProvider>
+                  <RootLayoutNav />
+                  <SystemBars style="auto" />
+                </MesaClienteProvider>
               </AuthProvider>
             </GestureHandlerRootView>
           </WidgetProvider>
