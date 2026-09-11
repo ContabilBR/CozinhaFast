@@ -85,6 +85,27 @@ try {
   app.logger.warn({ err }, 'Startup SQL migrations failed (may already be applied)');
 }
 
+// Ensure a default restaurante exists for authentication
+app.logger.info('Ensuring default restaurante exists');
+try {
+  const existingRestaurantes = await app.db
+    .select()
+    .from(appSchema.restaurante)
+    .limit(1);
+
+  if (!existingRestaurantes || existingRestaurantes.length === 0) {
+    app.logger.info('Creating default restaurante');
+    await app.db.insert(appSchema.restaurante).values({
+      nome: 'Default Restaurant',
+    });
+    app.logger.info('Default restaurante created');
+  } else {
+    app.logger.debug('Default restaurante already exists');
+  }
+} catch (err) {
+  app.logger.warn({ err }, 'Failed to ensure default restaurante exists');
+}
+
 // Register routes - IMPORTANT: Always use registration functions to avoid circular dependency issues
 // Register custom auth routes FIRST so they take priority
 registerCustomAuthRoutes(app);

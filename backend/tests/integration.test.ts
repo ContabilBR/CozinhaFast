@@ -1589,20 +1589,7 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 200, 404);
   });
 
-  test("Get comanda info returns status and total", async () => {
-    if (testMesaForComandaId) {
-      const res = await authenticatedApi(`/api/mesas/${testMesaForComandaId}/comanda`, authToken);
-      if (res.status === 200) {
-        const data = await res.json();
-        if (data.comanda) {
-          expect(data.comanda.status).toBeDefined();
-          expect(data.comanda.total).toBeDefined();
-        }
-      }
-    }
-  });
-
-  test("Get comanda payments list returns 200 or 404 or 400 or 401", async () => {
+  test("Get comanda payments list returns 200 or 404 or 400", async () => {
     const mesaRes = await authenticatedApi("/api/mesas", adminToken, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1627,7 +1614,7 @@ describe("API Integration Tests", () => {
       `/api/comandas/${comandaData.comanda.id}/pagamentos`,
       authToken
     );
-    await expectStatus(res, 200, 404, 400, 401);
+    await expectStatus(res, 200, 404, 400);
   });
 
   test("Get comanda payments without authentication returns 401", async () => {

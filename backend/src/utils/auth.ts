@@ -82,42 +82,41 @@ export async function requireAuth(
               };
             }
           } else {
-            // Create profile with default restaurante
+            // Profile doesn't exist - get a default restaurante for auth
             try {
               const defaultRestaurante = await app.db
                 .select()
                 .from(schema.restaurante)
                 .limit(1);
 
-              let restauranteId: string;
               if (defaultRestaurante.length > 0) {
-                restauranteId = defaultRestaurante[0].id;
-              } else {
-                const [newRest] = await app.db
-                  .insert(schema.restaurante)
-                  .values({ nome: 'Default Restaurant' })
-                  .returning();
-                restauranteId = newRest.id;
+                const restauranteId = String(defaultRestaurante[0].id);
+
+                // Try to create profile but don't fail auth if it doesn't work
+                try {
+                  await app.db.insert(schema.profiles).values({
+                    userId: user.id,
+                    restauranteId: restauranteId,
+                    role: userRole,
+                    name: user.name || "",
+                    createdAt: new Date(),
+                  });
+                  app.logger.info({ userId: user.id, restauranteId }, "Created profile during auth");
+                } catch (profileCreateErr) {
+                  app.logger.debug({ userId: user.id, err: profileCreateErr }, "Profile creation failed, but continuing with auth");
+                }
+
+                // Always set auth context if we have a restaurante
+                authContextOrNull = {
+                  id: user.id,
+                  email: user.email,
+                  role: userRole,
+                  name: user.name || "",
+                  restauranteId: restauranteId,
+                };
               }
-
-              await app.db.insert(schema.profiles).values({
-                userId: user.id,
-                restauranteId: restauranteId,
-                role: userRole,
-                name: user.name || "",
-                createdAt: new Date(),
-              });
-
-              app.logger.info({ userId: user.id, restauranteId }, "Created profile during auth");
-              authContextOrNull = {
-                id: user.id,
-                email: user.email,
-                role: userRole,
-                name: user.name || "",
-                restauranteId: restauranteId,
-              };
-            } catch (profileErr) {
-              app.logger.debug({ err: profileErr }, "Failed to create profile in Better Auth path");
+            } catch (err) {
+              app.logger.debug({ err }, "Failed to get default restaurante during auth");
             }
           }
         }
@@ -130,7 +129,7 @@ export async function requireAuth(
       return authContextOrNull;
     }
 
-    // If Better Auth lookup failed, try custom auth as fallback
+    // If Better Auth was not found, try custom auth as fallback
     try {
       const usuariosSessions = await app.db
         .select()
