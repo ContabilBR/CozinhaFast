@@ -55,7 +55,7 @@ export default function FecharContaScreen() {
   }, [id]);
 
   const subtotal = pedidos.reduce((s: number, p: any) => s + parseFloat(p.precoUnitario || p.preco_unitario || "0") * (p.quantidade || 1), 0);
-  const gorjetaValue = gorjetaMode === "10" ? subtotal * 0.1 : gorjetaMode === "custom" ? Math.max(0, parseFloat(gorjetaInput.replace(",", ".")) || 0) : 0;
+  const gorjetaValue = gorjetaMode === "10" ? subtotal * 0.1 : gorjetaMode === "custom" ? subtotal * (Math.max(0, parseFloat(gorjetaInput.replace(",", ".")) || 0) / 100) : 0;
   const totalFinal = subtotal + gorjetaValue;
   const restante = totalFinal - totalPago;
   const valorPorPessoa = dividir && numPessoas > 1 ? Math.ceil(restante / numPessoas * 100) / 100 : restante;
@@ -64,7 +64,8 @@ export default function FecharContaScreen() {
   const selectGorjeta = (mode: "none"|"10"|"custom") => {
     setGorjetaMode(mode);
     if (mode === "none") setGorjetaInput("0");
-    if (mode === "10") setGorjetaInput((subtotal * 0.1).toFixed(2).replace(".", ","));
+    if (mode === "10") setGorjetaInput("10");
+    if (mode === "custom") setGorjetaInput("");
   };
 
   const calcularDivisao = async () => {
@@ -101,7 +102,7 @@ export default function FecharContaScreen() {
   const fecharComanda = async () => {
     try {
       await apiPost("/api/comandas/" + id + "/fechar", { gorjeta: gorjetaValue });
-      Alert.alert("Conta fechada!", "Comanda encerrada.", [{ text: "OK", onPress: () => router.back() }]);
+      Alert.alert("Conta fechada!", "Comanda encerrada.", [{ text: "OK", onPress: () => router.dismissAll() }]);
     } catch (err: any) {
       Alert.alert("Registrado!", "Volte para fechar quando pronto.", [{ text: "OK", onPress: () => router.back() }]);
     }
@@ -172,7 +173,22 @@ export default function FecharContaScreen() {
               </Pressable>
             ))}
           </View>
-          {gorjetaMode === "custom" && <TextInput value={gorjetaInput} onChangeText={setGorjetaInput} keyboardType="decimal-pad" placeholder="Valor" placeholderTextColor={COLORS.textTertiary} style={{ backgroundColor: COLORS.surface, borderRadius: 10, borderWidth: 0.5, borderColor: COLORS.surfaceSecondary, padding: 12, fontSize: 20, color: COLORS.text, textAlign: "center", fontWeight: "600", marginBottom: 16 }} />}
+          {gorjetaMode === "custom" && (
+            <View style={{ marginBottom: 16 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: COLORS.surface, borderRadius: 10, borderWidth: 0.5, borderColor: COLORS.surfaceSecondary, paddingHorizontal: 12 }}>
+                <TextInput
+                  value={gorjetaInput}
+                  onChangeText={setGorjetaInput}
+                  keyboardType="decimal-pad"
+                  placeholder="0"
+                  placeholderTextColor={COLORS.textTertiary}
+                  style={{ flex: 1, padding: 12, fontSize: 20, color: COLORS.text, textAlign: "center", fontWeight: "600" }}
+                />
+                <Text style={{ fontSize: 18, fontWeight: "600", color: COLORS.textSecondary }}>%</Text>
+              </View>
+              <Text style={{ fontSize: 13, color: COLORS.textSecondary, textAlign: "center", marginTop: 6 }}>{formatCurrency(gorjetaValue)}</Text>
+            </View>
+          )}
           <View style={{ ...cardStyle, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
             <View><Text style={{ fontSize: 13, color: COLORS.textSecondary }}>Total com gorjeta</Text>{gorjetaValue > 0 && <Text style={{ fontSize: 12, color: COLORS.textSecondary }}>Gorjeta: {formatCurrency(gorjetaValue)}</Text>}</View>
             <Text style={{ fontSize: 22, fontWeight: "700", color: COLORS.primary }}>{formatCurrency(totalFinal)}</Text>
