@@ -5,7 +5,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { apiGet, apiPost } from "@/utils/api";
-import { getMesaClienteConfig, MesaClienteConfig } from "@/utils/mesaCliente";
+import { useMesaCliente } from "@/contexts/MesaClienteContext";
+import { MesaClienteConfig } from "@/utils/mesaCliente";
 
 type Prato = { id: string; nome: string; descricao?: string; preco: number; imagemUrl?: string };
 type Categoria = { categoria: { id: string; nome: string }; pratos: Prato[] };
@@ -25,8 +26,7 @@ export default function MesaClienteScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
-  const [config, setConfig] = useState<MesaClienteConfig | null>(null);
-  const [loadingConfig, setLoadingConfig] = useState(true);
+  const { config, loading: loadingConfig } = useMesaCliente();
   const [cardapio, setCardapio] = useState<Categoria[]>([]);
   const [loadingCardapio, setLoadingCardapio] = useState(true);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -38,14 +38,6 @@ export default function MesaClienteScreen() {
   const [pedidos, setPedidos] = useState<PedidoStatus[]>([]);
   const [loadingPedidos, setLoadingPedidos] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    (async () => {
-      const cfg = await getMesaClienteConfig();
-      setConfig(cfg);
-      setLoadingConfig(false);
-    })();
-  }, []);
 
   const carregarCardapio = useCallback(async (cfg: MesaClienteConfig) => {
     setLoadingCardapio(true);
