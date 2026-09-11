@@ -5,6 +5,7 @@ import {
   ScrollView,
   RefreshControl,
   Animated,
+  Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -16,7 +17,17 @@ import { apiGet } from "@/utils/api";
 import { setMesaHistoricoId } from "@/utils/mesaHistoricoStore";
 import { formatCurrency, isAdmin } from "@/utils/helpers";
 import { TrendingUp, ShoppingBag, Grid3x3, Clock, RefreshCw, ChevronRight, DollarSign, ChefHat } from "lucide-react-native";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import type { RelatorioResumo } from "@/types";
+
+type Periodo = "hoje" | "7dias" | "mes" | "personalizado";
+
+const PERIODO_OPTIONS: { key: Periodo; label: string }[] = [
+  { key: "hoje", label: "Hoje" },
+  { key: "7dias", label: "7 dias" },
+  { key: "mes", label: "Este mês" },
+  { key: "personalizado", label: "Personalizado" },
+];
 
 interface ApiMesa {
   id: string;
@@ -142,12 +153,19 @@ const EMPTY_RESUMO: RelatorioResumo = {
   mesas_ocupadas: 0,
   comandas_abertas: 0,
   pedidos_pendentes: 0,
-  receita_hoje: 0,
-  receita_semana: 0,
+  receita_periodo: 0,
+  periodo_label: "Hoje",
   avg_ticket: 0,
   top_dishes: [],
   orders_by_status: { aberta: 0, fechada: 0, cancelada: 0 },
 };
+
+function formatDateBR(date: Date): string {
+  const dd = String(date.getDate()).padStart(2, "0");
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const yyyy = date.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
 
 export default function DashboardScreen() {
   const COLORS = useColors();
@@ -162,13 +180,31 @@ export default function DashboardScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  const [periodo, setPeriodo] = useState<Periodo>("hoje");
+  const [dataInicio, setDataInicio] = useState<Date | null>(null);
+  const [dataFim, setDataFim] = useState<Date | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState<"inicio" | "fim" | null>(null);
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const fetchData = useCallback(async () => {
-    console.log("[Dashboard] Fetching dashboard data");
+    if (periodo === "personalizado" && (!dataInicio || !dataFim)) {
+      console.log("[Dashboard] Personalizado period selected but dates not set yet, skipping fetch");
+      return;
+    }
+
+    let resumoUrl = "/api/relatorios/resumo";
+    if (periodo === "personalizado" && dataInicio && dataFim) {
+      resumoUrl += `?periodo=personalizado&dataInicio=${dataInicio.toISOString()}&dataFim=${dataFim.toISOString()}`;
+      console.log("[Dashboard] Fetching dashboard data with custom range:", dataInicio.toISOString(), "–", dataFim.toISOString());
+    } else {
+      resumoUrl += `?periodo=${periodo}`;
+      console.log("[Dashboard] Fetching dashboard data with periodo:", periodo);
+    }
+
     try {
       const [resumoRes, tablesRes, comandasRes] = await Promise.all([
-        apiGet<any>("/api/relatorios/resumo").catch((e) => {
+        apiGet<any>(resumoUrl).catch((e) => {
           console.error("[Dashboard] relatorios/resumo error:", e instanceof Error ? e.message : String(e));
           return null;
         }),
@@ -190,8 +226,8 @@ export default function DashboardScreen() {
           mesas_ocupadas: Number(r.mesas_ocupadas ?? 0),
           comandas_abertas: Number(r.comandas_abertas ?? 0),
           pedidos_pendentes: Number(r.pedidos_pendentes ?? 0),
-          receita_hoje: Number(r.receita_hoje ?? 0),
-          receita_semana: Number(r.receita_semana ?? 0),
+          receita_periodo: Number(r.receita_periodo ?? 0),
+          periodo_label: String(r.periodo_label ?? "Hoje"),
           avg_ticket: Number(r.avg_ticket ?? 0),
           top_dishes: Array.isArray(r.top_dishes) ? r.top_dishes : [],
           orders_by_status: r.orders_by_status ?? { aberta: 0, fechada: 0, cancelada: 0 },
@@ -223,7 +259,7 @@ export default function DashboardScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [fadeAnim]);
+  }, [fadeAnim, periodo, dataInicio, dataFim]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -233,15 +269,48 @@ export default function DashboardScreen() {
     fetchData();
   };
 
+  const handlePeriodoChange = (key: Periodo) => {
+    console.log("[Dashboard] Period chip pressed:", key);
+    setPeriodo(key);
+    if (key !== "personalizado") {
+      setDataInicio(null);
+      setDataFim(null);
+    } else {
+      setShowDatePicker("inicio");
+    }
+  };
+
+  const handleDatePickerChange = (_event: any, selectedDate?: Date) => {
+    if (!selectedDate) {
+      console.log("[Dashboard] Date picker dismissed");
+      setShowDatePicker(null);
+      return;
+    }
+    if (showDatePicker === "inicio") {
+      console.log("[Dashboard] Data início selected:", selectedDate.toISOString());
+      setDataInicio(selectedDate);
+      setShowDatePicker("fim");
+    } else if (showDatePicker === "fim") {
+      console.log("[Dashboard] Data fim selected:", selectedDate.toISOString());
+      setDataFim(selectedDate);
+      setShowDatePicker(null);
+    }
+  };
+
   const totalMesasStr = String(resumo.total_mesas || tables.length || 0);
   const mesasOcupadasStr = String(resumo.mesas_ocupadas || tables.filter((t) => t.status !== "livre").length || 0);
   const comandasAbertasStr = String(resumo.comandas_abertas);
   const pedidosPendentesStr = String(resumo.pedidos_pendentes);
-  const receitaHojeStr = formatCurrency(resumo.receita_hoje);
-  const receitaSemanaStr = formatCurrency(resumo.receita_semana);
+  const receitaPeriodoStr = formatCurrency(resumo.receita_periodo);
   const avgTicketStr = formatCurrency(resumo.avg_ticket ?? 0);
   const topDishes = resumo.top_dishes ?? [];
   const ordersByStatus = resumo.orders_by_status ?? { aberta: 0, fechada: 0, cancelada: 0 };
+
+  const dateRangeLabel = dataInicio && dataFim
+    ? `${formatDateBR(dataInicio)} – ${formatDateBR(dataFim)}`
+    : null;
+
+  const periodoCardTitle = resumo.periodo_label || "Receita no Período";
 
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.background }}>
@@ -289,6 +358,50 @@ export default function DashboardScreen() {
         }
       >
         <Animated.View style={{ opacity: fadeAnim, gap: 12 }}>
+          {/* Period chip selector */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 8, paddingVertical: 2 }}
+          >
+            {PERIODO_OPTIONS.map((opt) => {
+              const isActive = periodo === opt.key;
+              return (
+                <AnimatedPressable
+                  key={opt.key}
+                  onPress={() => handlePeriodoChange(opt.key)}
+                  style={{
+                    backgroundColor: isActive ? COLORS.primary : COLORS.surface,
+                    borderRadius: 20,
+                    paddingHorizontal: 14,
+                    paddingVertical: 7,
+                    borderWidth: 1,
+                    borderColor: isActive ? COLORS.primary : COLORS.border,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontFamily: "Outfit_600SemiBold",
+                      fontSize: 13,
+                      color: isActive ? "#fff" : COLORS.textSecondary,
+                    }}
+                  >
+                    {opt.label}
+                  </Text>
+                </AnimatedPressable>
+              );
+            })}
+          </ScrollView>
+
+          {/* Date range label for personalizado */}
+          {periodo === "personalizado" && dateRangeLabel && (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 12, color: COLORS.textSecondary }}>
+                {dateRangeLabel}
+              </Text>
+            </View>
+          )}
+
           {/* Row 1: Mesas */}
           <View style={{ flexDirection: "row", gap: 12 }}>
             <StatCard
@@ -333,32 +446,22 @@ export default function DashboardScreen() {
             />
           </View>
 
-          {/* Row 3: Receita */}
+          {/* Row 3: Receita no Período */}
           <View style={{ flexDirection: "row", gap: 12 }}>
             <StatCard
-              title="Receita Hoje"
-              value={receitaHojeStr}
+              title={periodoCardTitle}
+              value={receitaPeriodoStr}
               color={COLORS.success}
               icon={<DollarSign size={20} color={COLORS.success} />}
               loading={loading}
               onPress={() => {
-                console.log("[Dashboard] Receita Hoje card pressed");
-                router.push("/(tabs)/(relatorios)");
-              }}
-            />
-            <StatCard
-              title="Receita da Semana"
-              value={receitaSemanaStr}
-              color="#8B5CF6"
-              icon={<TrendingUp size={20} color="#8B5CF6" />}
-              loading={loading}
-              onPress={() => {
-                console.log("[Dashboard] Receita da Semana card pressed");
+                console.log("[Dashboard] Receita no Período card pressed");
                 router.push("/(tabs)/(relatorios)");
               }}
             />
           </View>
-          {/* Row 4: Ticket medio */}
+
+          {/* Row 4: Ticket médio */}
           <View style={{ flexDirection: "row", gap: 12 }}>
             <StatCard
               title="Ticket Médio"
@@ -482,7 +585,6 @@ export default function DashboardScreen() {
                 ))
               : tables.map((table) => {
                   const isOccupied = table.status !== "disponivel";
-                  const color = isOccupied ? "#E8521A" : "#22C55E";
                   return (
                     <AnimatedPressable
                       key={table.id}
@@ -594,6 +696,17 @@ export default function DashboardScreen() {
           )}
         </View>
       </ScrollView>
+
+      {/* Date picker for personalizado */}
+      {showDatePicker !== null && (
+        <DateTimePicker
+          value={showDatePicker === "fim" && dataInicio ? dataInicio : new Date()}
+          mode="date"
+          display={Platform.OS === "ios" ? "inline" : "default"}
+          onChange={handleDatePickerChange}
+          maximumDate={showDatePicker === "fim" && dataInicio ? undefined : new Date()}
+        />
+      )}
     </View>
   );
 }

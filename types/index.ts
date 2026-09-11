@@ -103,8 +103,8 @@ export interface RelatorioResumo {
   mesas_ocupadas: number;
   comandas_abertas: number;
   pedidos_pendentes: number;
-  receita_hoje: number;
-  receita_semana: number;
+  receita_periodo: number;
+  periodo_label: string;
   avg_ticket?: number;
   top_dishes?: Array<{ dish_name: string; quantity_sold: number }>;
   orders_by_status?: {
