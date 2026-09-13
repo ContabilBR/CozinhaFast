@@ -53,6 +53,7 @@ app.fastify.setErrorHandler((error: any, request, reply) => {
   app.logger.error(
     {
       err: error,
+      cause: error.cause, // Drizzle wraps the real driver/Postgres error here
       stack: error.stack,
       url: request.url,
       method: request.method,
@@ -60,7 +61,10 @@ app.fastify.setErrorHandler((error: any, request, reply) => {
     'Global error handler'
   );
   console.error('Full error stack:', error.stack);
-  reply.status(500).send({ error: error.message });
+  if (error.cause) console.error('Underlying cause:', error.cause);
+
+  // Never leak raw SQL, bound params, or driver internals to the client
+  reply.status(500).send({ error: 'Erro interno do servidor. Tente novamente em instantes.' });
 });
 
 // Run startup SQL migrations - convert role column to TEXT type first
@@ -187,6 +191,30 @@ try {
   app.logger.error({ err }, 'Failed to ensure Better Auth tables - this may cause authentication to fail');
 }
 
+// Ensure the custom-auth session table exists. The Better Auth tables above
+// self-heal on every boot via CREATE TABLE IF NOT EXISTS; usuarios_session
+// (used by /api/login and /api/me for the custom garcom/cozinheiro auth
+// flow) was only ever created by a Drizzle migration, with no equivalent
+// safety net here — so it can end up missing in an environment where that
+// migration never actually ran. Mirrors the same idempotent-guard pattern.
+app.logger.info('Ensuring usuarios_session table exists');
+try {
+  await (app.db as any).execute(`
+    CREATE TABLE IF NOT EXISTS "usuarios_session" (
+      "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+      "token" text NOT NULL,
+      "user_id" text NOT NULL,
+      "expires_at" timestamp with time zone NOT NULL,
+      "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+      "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT "usuarios_session_token_unique" UNIQUE("token")
+    );
+  `);
+  app.logger.info('usuarios_session table ensured');
+} catch (err) {
+  app.logger.error({ err }, 'Failed to ensure usuarios_session table');
+}
+
 // Ensure a default restaurante exists for authentication
 app.logger.info('Ensuring default restaurante exists');
 try {
@@ -241,4 +269,3 @@ if (process.env.NODE_ENV !== 'production' && process.env.SEED_ENABLED === 'true'
 
 await app.run();
 app.logger.info('Application running');
-
