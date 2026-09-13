@@ -27,166 +27,152 @@ export async function requireAuth(
     }
 
     const token = authHeader.slice(7).trim();
+    app.logger.debug({ tokenStart: token.substring(0, 20), tokenLength: token.length }, "Looking up session for token");
 
-    // Step 1: Try custom usuarios_session table first
-    const usuariosSessions = await app.db
-      .select()
-      .from(schema.usuariosSession)
-      .where(eq(schema.usuariosSession.token, token))
-      .limit(1);
+    // Try Better Auth session table
+    let authContextOrNull: AuthContext | null = null;
 
-    if (usuariosSessions && usuariosSessions.length > 0) {
-      const usuarioSession = usuariosSessions[0];
-
-      if (new Date(usuarioSession.expiresAt) < new Date()) {
-        reply.status(401).send({ error: "Unauthorized" });
-        return null;
-      }
-
-      // Path A: usuarios_session → usuarios table
-      const usuarioResults = await app.db
+    try {
+      const sessions = await app.db
         .select()
-        .from(schema.usuarios)
-        .where(sql`${schema.usuarios.id}::text = ${usuarioSession.userId}`)
+        .from(sessionTable)
+        .where(eq(sessionTable.token, token))
         .limit(1);
 
-      if (usuarioResults && usuarioResults.length > 0) {
-        const usuario = usuarioResults[0];
-        const rid = usuario.restauranteId?.toString();
-        if (!rid) {
-          reply.status(403).send({ error: "No tenant" });
+      app.logger.debug({ found: sessions?.length || 0 }, "Better Auth session table query result");
+
+      if (sessions && sessions.length > 0) {
+        const session = sessions[0];
+
+        if (new Date(session.expiresAt) < new Date()) {
+          app.logger.warn({ sessionId: session.id, expiresAt: session.expiresAt }, "Session expired");
+          reply.status(401).send({ error: "Unauthorized" });
           return null;
         }
-        return {
-          id: usuario.id.toString(),
-          email: usuario.email,
-          role: usuario.role,
-          name: usuario.nome,
-          restauranteId: rid,
-        };
-      }
 
-      // Path B: usuarios_session → user table + profiles
-      const userResults = await app.db
-        .select()
-        .from(userTable)
-        .where(eq(userTable.id, usuarioSession.userId))
-        .limit(1);
-
-      if (userResults && userResults.length > 0) {
-        const user = userResults[0];
-        let userRole = (user as any).role ?? "garcom";
-
-        const profileResults = await app.db
+        // Get user from user table
+        const users = await app.db
           .select()
-          .from(schema.profiles)
-          .where(eq(schema.profiles.userId, user.id))
+          .from(userTable)
+          .where(eq(userTable.id, session.userId))
           .limit(1);
 
-        if (profileResults && profileResults.length > 0) {
-          userRole = profileResults[0].role;
-          const rid = profileResults[0].restauranteId?.toString();
-          if (!rid) {
-            reply.status(403).send({ error: "No tenant" });
-            return null;
+        if (users && users.length > 0) {
+          const user = users[0];
+          let userRole = (user as any).role ?? "garcom";
+
+          // Get or create profile
+          let profilesList = await app.db
+            .select()
+            .from(schema.profiles)
+            .where(eq(schema.profiles.userId, user.id))
+            .limit(1);
+
+          if (profilesList && profilesList.length > 0) {
+            userRole = profilesList[0].role;
+            const rid = profilesList[0].restauranteId ? String(profilesList[0].restauranteId) : null;
+            if (rid) {
+              app.logger.debug({ userId: user.id, restauranteId: rid }, "User authenticated via Better Auth");
+              authContextOrNull = {
+                id: user.id,
+                email: user.email,
+                role: userRole,
+                name: user.name || "",
+                restauranteId: rid,
+              };
+            }
+          } else {
+            // Profile doesn't exist - get a default restaurante for auth
+            try {
+              const defaultRestaurante = await app.db
+                .select()
+                .from(schema.restaurante)
+                .limit(1);
+
+              if (defaultRestaurante.length > 0) {
+                const restauranteId = String(defaultRestaurante[0].id);
+
+                // Try to create profile but don't fail auth if it doesn't work
+                try {
+                  await app.db.insert(schema.profiles).values({
+                    userId: user.id,
+                    restauranteId: restauranteId,
+                    role: userRole,
+                    name: user.name || "",
+                    createdAt: new Date(),
+                  });
+                  app.logger.info({ userId: user.id, restauranteId }, "Created profile during auth");
+                } catch (profileCreateErr) {
+                  app.logger.debug({ userId: user.id, err: profileCreateErr }, "Profile creation failed, but continuing with auth");
+                }
+
+                // Always set auth context if we have a restaurante
+                authContextOrNull = {
+                  id: user.id,
+                  email: user.email,
+                  role: userRole,
+                  name: user.name || "",
+                  restauranteId: restauranteId,
+                };
+              }
+            } catch (err) {
+              app.logger.debug({ err }, "Failed to get default restaurante during auth");
+            }
           }
-          return {
-            id: user.id,
-            email: user.email,
-            role: userRole,
-            name: user.name || "",
-            restauranteId: rid,
-          };
         }
-
-        reply.status(403).send({ error: "No tenant" });
-        return null;
       }
-
-      reply.status(401).send({ error: "User not found" });
-      return null;
+    } catch (betterAuthErr) {
+      app.logger.debug({ err: betterAuthErr, token: token.substring(0, 20) }, "Better Auth session query error");
     }
 
-    // Step 2: Fall back to Better Auth session table
-    const sessions = await app.db
-      .select()
-      .from(sessionTable)
-      .where(eq(sessionTable.token, token))
-      .limit(1);
-
-    if (!sessions || sessions.length === 0) {
-      reply.status(401).send({ error: "Unauthorized" });
-      return null;
+    if (authContextOrNull) {
+      return authContextOrNull;
     }
 
-    const session = sessions[0];
-
-    if (new Date(session.expiresAt) < new Date()) {
-      reply.status(401).send({ error: "Unauthorized" });
-      return null;
-    }
-
-    // Path C: Better Auth session → user table + profiles
-    const users = await app.db
-      .select()
-      .from(userTable)
-      .where(eq(userTable.id, session.userId))
-      .limit(1);
-
-    if (users && users.length > 0) {
-      const user = users[0];
-      let userRole = (user as any).role ?? "garcom";
-
-      const profilesList = await app.db
+    // If Better Auth was not found, try custom auth as fallback
+    try {
+      const usuariosSessions = await app.db
         .select()
-        .from(schema.profiles)
-        .where(eq(schema.profiles.userId, user.id))
+        .from(schema.usuariosSession)
+        .where(eq(schema.usuariosSession.token, token))
         .limit(1);
 
-      if (profilesList && profilesList.length > 0) {
-        userRole = profilesList[0].role;
-        const rid = profilesList[0].restauranteId?.toString();
-        if (!rid) {
-          reply.status(403).send({ error: "No tenant" });
+      if (usuariosSessions && usuariosSessions.length > 0) {
+        const usuarioSession = usuariosSessions[0];
+
+        if (new Date(usuarioSession.expiresAt) < new Date()) {
+          app.logger.warn({ sessionId: usuarioSession.id }, "Custom session expired");
+          reply.status(401).send({ error: "Unauthorized" });
           return null;
         }
-        return {
-          id: user.id,
-          email: user.email,
-          role: userRole,
-          name: user.name || "",
-          restauranteId: rid,
-        };
-      }
 
-      reply.status(403).send({ error: "No tenant" });
-      return null;
+        const usuarioResults = await app.db
+          .select()
+          .from(schema.usuarios)
+          .where(eq(schema.usuarios.id, usuarioSession.userId as any))
+          .limit(1);
+
+        if (usuarioResults && usuarioResults.length > 0) {
+          const usuario = usuarioResults[0];
+          const rid = usuario.restauranteId ? String(usuario.restauranteId) : null;
+          if (rid) {
+            app.logger.debug({ usuarioId: usuario.id }, "User authenticated via custom auth");
+            return {
+              id: usuario.id.toString(),
+              email: usuario.email,
+              role: usuario.role,
+              name: usuario.nome,
+              restauranteId: rid,
+            };
+          }
+        }
+      }
+    } catch (customAuthErr) {
+      app.logger.debug({ err: customAuthErr }, "Custom auth session query failed");
     }
 
-    // Path D: Better Auth session → usuarios table
-    const usuariosD = await app.db
-      .select()
-      .from(schema.usuarios)
-      .where(sql`${schema.usuarios.id}::text = ${session.userId}`)
-      .limit(1);
-
-    if (usuariosD && usuariosD.length > 0) {
-      const usuario = usuariosD[0];
-      const rid = usuario.restauranteId?.toString();
-      if (!rid) {
-        reply.status(403).send({ error: "No tenant" });
-        return null;
-      }
-      return {
-        id: usuario.id.toString(),
-        email: usuario.email,
-        role: usuario.role,
-        name: usuario.nome,
-        restauranteId: rid,
-      };
-    }
-
-    reply.status(401).send({ error: "User not found" });
+    app.logger.warn({ token: token.substring(0, 20) }, "No session found in either table");
+    reply.status(401).send({ error: "Unauthorized" });
     return null;
   } catch (error) {
     app.logger.error({ err: error }, "Auth validation failed");

@@ -147,9 +147,9 @@ export function registerAssinaturaRoutes(app: App) {
               plano: { type: "string" },
               plano_detalhes: { type: "object" },
               assinatura_status: { type: "string" },
-              trial_expira_em: { type: ["string", "null"] },
+              trial_expira_em: { type: "string", nullable: true },
               trial_expirado: { type: "boolean" },
-              assinatura_asaas_id: { type: ["string", "null"] },
+              assinatura_asaas_id: { type: "string", nullable: true },
             },
           },
           401: { type: "object", properties: { error: { type: "string" } } },
@@ -170,14 +170,14 @@ export function registerAssinaturaRoutes(app: App) {
         const trialExpirado = restaurante.plano === "trial" && restaurante.trialExpiraEm ? new Date(restaurante.trialExpiraEm) < new Date() : false;
 
         app.logger.info({ restauranteId, plano: restaurante.plano }, "Getting subscription status");
-        return {
+        return reply.code(200).send({
           plano: restaurante.plano,
           plano_detalhes: PLANOS[restaurante.plano as keyof typeof PLANOS],
           assinatura_status: restaurante.assinaturaStatus,
           trial_expira_em: restaurante.trialExpiraEm ? restaurante.trialExpiraEm.toISOString() : null,
           trial_expirado: trialExpirado,
           assinatura_asaas_id: restaurante.assinaturaAsaasId,
-        };
+        });
       } catch (err) {
         app.logger.error({ err }, "Erro ao obter assinatura");
         return reply.code(500).send({ error: "Erro interno do servidor" });

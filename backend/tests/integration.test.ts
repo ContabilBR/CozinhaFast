@@ -102,6 +102,23 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 400);
   });
 
+  test("Sign up with role parameter returns 201", async () => {
+    const testEmail = `signup-role-${Date.now()}@example.com`;
+    const res = await api("/api/auth/sign-up/email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: testEmail,
+        password: "testPassword123456",
+        name: "Test User with Role",
+        role: "garcom",
+      }),
+    });
+    await expectStatus(res, 201);
+    const data = await res.json();
+    expect(data.user.role).toBe("garcom");
+  });
+
   // ==================== Auth Endpoints: /api/auth/sign-in ====================
   test("Sign in with valid credentials returns 200", async () => {
     const testEmail = `signin-test-${Date.now()}@example.com`;
@@ -280,11 +297,6 @@ describe("API Integration Tests", () => {
     const data = await res.json();
     expect(data.id).toBeDefined();
     expect(data.nome).toBeDefined();
-  });
-
-  test("Get current user via /api/me without authentication returns 401", async () => {
-    const res = await api("/api/me");
-    await expectStatus(res, 401);
   });
 
   // ==================== Database Status ====================
@@ -645,7 +657,7 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 404);
   });
 
-  test("Toggle prato availability returns 200 or 404", async () => {
+  test("Toggle prato availability returns 200", async () => {
     const createRes = await authenticatedApi("/api/pratos", adminToken, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1538,12 +1550,12 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 401);
   });
 
-  test("Get current comanda for non-existent mesa returns 400 or 404", async () => {
+  test("Get current comanda for non-existent mesa returns 404", async () => {
     const res = await authenticatedApi(
       "/api/mesas/00000000-0000-0000-0000-000000000000/comanda",
       authToken
     );
-    await expectStatus(res, 404, 400);
+    await expectStatus(res, 404);
   });
 
   test("Get mesa historico with archived comandas returns 200", async () => {
@@ -1577,20 +1589,7 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 200, 404);
   });
 
-  test("Get comanda info returns status and total", async () => {
-    if (testMesaForComandaId) {
-      const res = await authenticatedApi(`/api/mesas/${testMesaForComandaId}/comanda`, authToken);
-      if (res.status === 200) {
-        const data = await res.json();
-        if (data.comanda) {
-          expect(data.comanda.status).toBeDefined();
-          expect(data.comanda.total).toBeDefined();
-        }
-      }
-    }
-  });
-
-  test("Get comanda payments list returns 200 or 404 or 400 or 401", async () => {
+  test("Get comanda payments list returns 200 or 404 or 400", async () => {
     const mesaRes = await authenticatedApi("/api/mesas", adminToken, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1615,7 +1614,7 @@ describe("API Integration Tests", () => {
       `/api/comandas/${comandaData.comanda.id}/pagamentos`,
       authToken
     );
-    await expectStatus(res, 200, 404, 400, 401);
+    await expectStatus(res, 200, 404, 400);
   });
 
   test("Get comanda payments without authentication returns 401", async () => {

@@ -4,6 +4,51 @@ import * as schema from "../db/schema/schema.js";
 import type { App } from "../index.js";
 import { requireAuth as customRequireAuth, requireTenant, requireRole } from "../utils/auth.js";
 
+type Periodo = "hoje" | "7dias" | "mes" | "personalizado";
+
+function formatDateBR(date: Date): string {
+  const dd = String(date.getUTCDate()).padStart(2, "0");
+  const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const yyyy = date.getUTCFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
+
+// Resolve o período pedido num intervalo [inicio, fim) em UTC.
+// "hoje"/"mes" usam o mesmo critério de dia que o DATE_TRUNC('day', NOW()) usava
+// antes (sem conversão de fuso — mantém o comportamento existente, sem regressão).
+function resolvePeriodo(
+  periodo: string | undefined,
+  dataInicio: string | undefined,
+  dataFim: string | undefined
+): { inicio: Date; fim: Date; label: string } {
+  const now = new Date();
+
+  if (periodo === "personalizado" && dataInicio && dataFim) {
+    const inicio = new Date(dataInicio);
+    const fimBase = new Date(dataFim);
+    // fim é exclusivo — avança 1 dia (UTC) pra cobrir o dia inteiro selecionado
+    const fim = new Date(Date.UTC(fimBase.getUTCFullYear(), fimBase.getUTCMonth(), fimBase.getUTCDate() + 1));
+    return { inicio, fim, label: `${formatDateBR(inicio)} – ${formatDateBR(fimBase)}` };
+  }
+
+  if (periodo === "7dias") {
+    const inicio = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const fim = new Date(now.getTime() + 24 * 60 * 60 * 1000); // cobre até o fim de hoje
+    return { inicio, fim, label: "Últimos 7 dias" };
+  }
+
+  if (periodo === "mes") {
+    const inicio = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const fim = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+    return { inicio, fim, label: "Este mês" };
+  }
+
+  // default: "hoje"
+  const inicio = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const fim = new Date(inicio.getTime() + 24 * 60 * 60 * 1000);
+  return { inicio, fim, label: "Hoje" };
+}
+
 export function registerRelatoriosRoutes(app: App) {
   // GET /api/relatorios/resumo - Summary/Dashboard
   app.fastify.get(
@@ -12,6 +57,14 @@ export function registerRelatoriosRoutes(app: App) {
       schema: {
         description: "Get summary/dashboard data (requires authentication)",
         tags: ["relatorios"],
+        querystring: {
+          type: "object",
+          properties: {
+            periodo: { type: "string", enum: ["hoje", "7dias", "mes", "personalizado"] },
+            dataInicio: { type: "string" },
+            dataFim: { type: "string" },
+          },
+        },
         response: {
           200: {
             type: "object",
@@ -20,8 +73,8 @@ export function registerRelatoriosRoutes(app: App) {
               mesas_ocupadas: { type: "number" },
               comandas_abertas: { type: "number" },
               pedidos_pendentes: { type: "number" },
-              receita_hoje: { type: "number" },
-              receita_semana: { type: "number" },
+              receita_periodo: { type: "number" },
+              periodo_label: { type: "string" },
               total_revenue: { type: "number" },
               comandas_historico: { type: "number" },
               total_orders: { type: "number" },
@@ -61,16 +114,18 @@ export function registerRelatoriosRoutes(app: App) {
 
       try {
         const tenantId = requireTenant(authUser);
-        app.logger.info({ tenantId }, "Getting resumo");
+        const query = request.query as { periodo?: string; dataInicio?: string; dataFim?: string };
+        const { inicio, fim, label: periodoLabel } = resolvePeriodo(query.periodo, query.dataInicio, query.dataFim);
+        app.logger.info({ tenantId, periodo: query.periodo, inicio, fim }, "Getting resumo");
 
-        // Total mesas
+        // Total mesas — estado atual, sem filtro de período
         const totalMesasResult = await app.db
           .select({ count: count() })
           .from(schema.mesas)
           .where(eq(schema.mesas.restauranteId, tenantId as any));
         const totalMesas = totalMesasResult[0]?.count || 0;
 
-        // Mesas ocupadas (status != 'disponivel')
+        // Mesas ocupadas (status != 'disponivel') — estado atual, sem filtro
         const mesasOcupadasResult = await app.db
           .select({ count: count() })
           .from(schema.mesas)
@@ -80,7 +135,7 @@ export function registerRelatoriosRoutes(app: App) {
           ));
         const mesasOcupadas = mesasOcupadasResult[0]?.count || 0;
 
-        // Comandas abertas
+        // Comandas abertas — estado atual, sem filtro
         const comandasAbertasResult = await app.db
           .select({ count: count() })
           .from(schema.comandas)
@@ -90,7 +145,7 @@ export function registerRelatoriosRoutes(app: App) {
           ));
         const comandasAbertas = comandasAbertasResult[0]?.count || 0;
 
-        // Pedidos pendentes (only in open comandas)
+        // Pedidos pendentes (only in open comandas) — estado atual, sem filtro
         const pedidosPendentesResult = await app.db
           .select({ count: count() })
           .from(schema.pedidos)
@@ -104,68 +159,36 @@ export function registerRelatoriosRoutes(app: App) {
           );
         const pedidosPendentes = pedidosPendentesResult[0]?.count || 0;
 
-        // Receita hoje - sum from both comandas and comandas_historico
-        const todayStart = sql`DATE_TRUNC('day', NOW())`;
-        const tomorrowStart = sql`DATE_TRUNC('day', NOW()) + INTERVAL '1 day'`;
-
-        const receitaHojeComandasResult = await app.db
+        // Receita no período selecionado - sum from both comandas and comandas_historico
+        const receitaPeriodoComandasResult = await app.db
           .select({ total: sum(schema.comandas.subtotal) })
           .from(schema.comandas)
           .where(
             and(
               eq(schema.comandas.restauranteId, tenantId as any),
               eq(schema.comandas.status, "fechada"),
-              gte(schema.comandas.closedAt, todayStart),
-              lt(schema.comandas.closedAt, tomorrowStart)
+              gte(schema.comandas.closedAt, inicio),
+              lt(schema.comandas.closedAt, fim)
             )
           );
 
-        const receitaHojeHistoricoResult = await app.db
+        const receitaPeriodoHistoricoResult = await app.db
           .select({ total: sum(schema.comandasHistorico.subtotal) })
           .from(schema.comandasHistorico)
           .where(
             and(
               eq(schema.comandasHistorico.restauranteId, tenantId as any),
               eq(schema.comandasHistorico.status, "fechada"),
-              gte(schema.comandasHistorico.closedAt, todayStart),
-              lt(schema.comandasHistorico.closedAt, tomorrowStart)
+              gte(schema.comandasHistorico.closedAt, inicio),
+              lt(schema.comandasHistorico.closedAt, fim)
             )
           );
 
-        const receitaHojeCom = parseFloat(receitaHojeComandasResult[0]?.total || "0");
-        const receitaHojeHist = parseFloat(receitaHojeHistoricoResult[0]?.total || "0");
-        const receitaHoje = receitaHojeCom + receitaHojeHist;
+        const receitaPeriodoCom = parseFloat(receitaPeriodoComandasResult[0]?.total || "0");
+        const receitaPeriodoHist = parseFloat(receitaPeriodoHistoricoResult[0]?.total || "0");
+        const receitaPeriodo = receitaPeriodoCom + receitaPeriodoHist;
 
-        // Receita semana - sum from both comandas and comandas_historico
-        const sevenDaysAgo = sql`NOW() - INTERVAL '7 days'`;
-
-        const receitaSemanaComandasResult = await app.db
-          .select({ total: sum(schema.comandas.subtotal) })
-          .from(schema.comandas)
-          .where(
-            and(
-              eq(schema.comandas.restauranteId, tenantId as any),
-              eq(schema.comandas.status, "fechada"),
-              gte(schema.comandas.closedAt, sevenDaysAgo)
-            )
-          );
-
-        const receitaSemanaHistoricoResult = await app.db
-          .select({ total: sum(schema.comandasHistorico.subtotal) })
-          .from(schema.comandasHistorico)
-          .where(
-            and(
-              eq(schema.comandasHistorico.restauranteId, tenantId as any),
-              eq(schema.comandasHistorico.status, "fechada"),
-              gte(schema.comandasHistorico.closedAt, sevenDaysAgo)
-            )
-          );
-
-        const receitaSemanaCom = parseFloat(receitaSemanaComandasResult[0]?.total || "0");
-        const receitaSemanaHist = parseFloat(receitaSemanaHistoricoResult[0]?.total || "0");
-        const receitaSemana = receitaSemanaCom + receitaSemanaHist;
-
-        // Total revenue - sum of all closed comandas from both tables
+        // Total revenue - sum of all closed comandas from both tables (all-time, sem filtro)
         const totalRevenueComandasResult = await app.db
           .select({ total: sum(schema.comandas.subtotal) })
           .from(schema.comandas)
@@ -186,14 +209,14 @@ export function registerRelatoriosRoutes(app: App) {
         const totalRevenueHist = parseFloat(totalRevenueHistoricoResult[0]?.total || "0");
         const totalRevenue = totalRevenueCom + totalRevenueHist;
 
-        // Comandas historico count
+        // Comandas historico count — all-time, sem filtro
         const comandasHistoricoCountResult = await app.db
           .select({ count: count() })
           .from(schema.comandasHistorico)
           .where(eq(schema.comandasHistorico.restauranteId, tenantId as any));
         const comandasHistoricoCount = comandasHistoricoCountResult[0]?.count || 0;
 
-        // Total orders - count from both pedidos and pedidos_historico
+        // Total orders - count from both pedidos and pedidos_historico (all-time, sem filtro)
         const totalPedidosResult = await app.db
           .select({ count: count() })
           .from(schema.pedidos)
@@ -207,28 +230,32 @@ export function registerRelatoriosRoutes(app: App) {
         // Open orders (same as comandasAbertas)
         const openOrders = comandasAbertas;
 
-        // Average ticket - calculate from total revenue and count
-        const totalClosedComandasCom = await app.db
+        // Ticket médio no período - baseado nas comandas fechadas dentro do intervalo selecionado
+        const totalClosedComandasPeriodoCom = await app.db
           .select({ count: count() })
           .from(schema.comandas)
           .where(and(
             eq(schema.comandas.restauranteId, tenantId as any),
-            eq(schema.comandas.status, "fechada")
+            eq(schema.comandas.status, "fechada"),
+            gte(schema.comandas.closedAt, inicio),
+            lt(schema.comandas.closedAt, fim)
           ));
-        const totalClosedComandasHist = await app.db
+        const totalClosedComandasPeriodoHist = await app.db
           .select({ count: count() })
           .from(schema.comandasHistorico)
           .where(and(
             eq(schema.comandasHistorico.restauranteId, tenantId as any),
-            eq(schema.comandasHistorico.status, "fechada")
+            eq(schema.comandasHistorico.status, "fechada"),
+            gte(schema.comandasHistorico.closedAt, inicio),
+            lt(schema.comandasHistorico.closedAt, fim)
           ));
 
-        const countClosedCom = totalClosedComandasCom[0]?.count || 0;
-        const countClosedHist = totalClosedComandasHist[0]?.count || 0;
-        const totalClosedCount = countClosedCom + countClosedHist;
-        const avgTicket = totalClosedCount > 0 ? totalRevenue / totalClosedCount : 0;
+        const countClosedPeriodoCom = totalClosedComandasPeriodoCom[0]?.count || 0;
+        const countClosedPeriodoHist = totalClosedComandasPeriodoHist[0]?.count || 0;
+        const totalClosedPeriodoCount = countClosedPeriodoCom + countClosedPeriodoHist;
+        const avgTicket = totalClosedPeriodoCount > 0 ? receitaPeriodo / totalClosedPeriodoCount : 0;
 
-        // Top 5 dishes - aggregate from both pedidos and pedidos_historico
+        // Top 5 dishes no período - aggregate from both pedidos and pedidos_historico
         let topDishes: Array<{ dish_name: string; quantity_sold: number }> = [];
         try {
           const topDishesFromPedidosResult = await (app.db as any).execute(
@@ -239,6 +266,8 @@ export function registerRelatoriosRoutes(app: App) {
               FROM pedidos p
               INNER JOIN pratos pr ON p.prato_id = pr.id
               WHERE p.restaurante_id = ${tenantId}::uuid
+                AND p.created_at >= ${inicio.toISOString()}::timestamptz
+                AND p.created_at < ${fim.toISOString()}::timestamptz
               GROUP BY pr.nome
               ORDER BY quantity_sold DESC
             `
@@ -251,12 +280,13 @@ export function registerRelatoriosRoutes(app: App) {
                 SUM(quantidade)::integer as quantity_sold
               FROM pedidos_historico
               WHERE restaurante_id = ${tenantId}::uuid AND prato_nome IS NOT NULL
+                AND created_at >= ${inicio.toISOString()}::timestamptz
+                AND created_at < ${fim.toISOString()}::timestamptz
               GROUP BY prato_nome
               ORDER BY quantity_sold DESC
             `
           ) as any[];
 
-          // Combine and aggregate results in JavaScript
           const dishMap = new Map<string, number>();
 
           if (Array.isArray(topDishesFromPedidosResult)) {
@@ -284,17 +314,25 @@ export function registerRelatoriosRoutes(app: App) {
           topDishes = [];
         }
 
-        // Orders by status - from both tables combined
+        // Orders by status no período - from both tables combined
         const comandasStatusResult = await app.db
           .select({ status: schema.comandas.status, count: count() })
           .from(schema.comandas)
-          .where(eq(schema.comandas.restauranteId, tenantId as any))
+          .where(and(
+            eq(schema.comandas.restauranteId, tenantId as any),
+            gte(schema.comandas.createdAt, inicio),
+            lt(schema.comandas.createdAt, fim)
+          ))
           .groupBy(schema.comandas.status);
 
         const comandasHistoricoStatusResult = await app.db
           .select({ status: schema.comandasHistorico.status, count: count() })
           .from(schema.comandasHistorico)
-          .where(eq(schema.comandasHistorico.restauranteId, tenantId as any))
+          .where(and(
+            eq(schema.comandasHistorico.restauranteId, tenantId as any),
+            gte(schema.comandasHistorico.createdAt, inicio),
+            lt(schema.comandasHistorico.createdAt, fim)
+          ))
           .groupBy(schema.comandasHistorico.status);
 
         const statusMap = new Map<string, number>();
@@ -317,7 +355,7 @@ export function registerRelatoriosRoutes(app: App) {
 
         app.logger.info(
           {
-            tenantId, totalMesas, mesasOcupadas, comandasAbertas, pedidosPendentes, receitaHoje, receitaSemana,
+            tenantId, totalMesas, mesasOcupadas, comandasAbertas, pedidosPendentes, receitaPeriodo, periodoLabel,
             totalRevenue, comandasHistoricoCount, totalOrders, openOrders, avgTicket, topDishesCount: topDishes.length
           },
           "Resumo retrieved successfully"
@@ -328,8 +366,8 @@ export function registerRelatoriosRoutes(app: App) {
           mesas_ocupadas: mesasOcupadas,
           comandas_abertas: comandasAbertas,
           pedidos_pendentes: pedidosPendentes,
-          receita_hoje: receitaHoje,
-          receita_semana: receitaSemana,
+          receita_periodo: receitaPeriodo,
+          periodo_label: periodoLabel,
           total_revenue: totalRevenue,
           comandas_historico: comandasHistoricoCount,
           total_orders: totalOrders,

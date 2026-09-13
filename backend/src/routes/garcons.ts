@@ -96,7 +96,7 @@ export function registerGarconRoutes(app: App) {
             type: "object",
             properties: {
               exists: { type: "boolean" },
-              nome: { type: ["string", "null"] },
+              nome: { type: "string", nullable: true },
             },
           },
           400: {
@@ -461,7 +461,7 @@ export function registerGarconRoutes(app: App) {
                       id: { type: "string", format: "uuid" },
                       prato_nome: { type: "string" },
                       quantidade: { type: "number" },
-                      observacao: { type: ["string", "null"] },
+                      observacao: { type: "string", nullable: true },
                       status: { type: "string" },
                       created_at: { type: "string", format: "date-time" },
                     },

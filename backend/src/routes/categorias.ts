@@ -1,5 +1,5 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import * as schema from "../db/schema/schema.js";
 import type { App } from "../index.js";
 import { requireAuth as customRequireAuth, requireRole, requireTenant } from "../utils/auth.js";
@@ -30,7 +30,7 @@ export function registerCategoriasRoutes(app: App) {
               properties: {
                 id: { type: "string", format: "uuid" },
                 nome: { type: "string" },
-                descricao: { type: ["string", "null"] },
+                descricao: { type: "string", nullable: true },
                 created_at: { type: "string", format: "date-time" },
               },
             },
@@ -44,11 +44,13 @@ export function registerCategoriasRoutes(app: App) {
       if (!authUser) return;
 
       try {
-        app.logger.info({}, "Listing categorias");
+        const tenantId = requireTenant(authUser);
+        app.logger.info({ tenantId }, "Listing categorias");
 
         const result = await app.db
           .select()
           .from(schema.categorias)
+          .where(eq(schema.categorias.restauranteId, tenantId as any))
           .orderBy(schema.categorias.nome);
 
         return reply.code(200).send(
@@ -78,7 +80,7 @@ export function registerCategoriasRoutes(app: App) {
           required: ["nome"],
           properties: {
             nome: { type: "string" },
-            descricao: { type: ["string", "null"] },
+            descricao: { type: "string", nullable: true },
           },
         },
         response: {
@@ -91,7 +93,7 @@ export function registerCategoriasRoutes(app: App) {
                 properties: {
                   id: { type: "string", format: "uuid" },
                   nome: { type: "string" },
-                  descricao: { type: ["string", "null"] },
+                  descricao: { type: "string", nullable: true },
                   createdAt: { type: "string", format: "date-time" },
                 },
               },
@@ -162,7 +164,7 @@ export function registerCategoriasRoutes(app: App) {
           type: "object",
           properties: {
             nome: { type: "string" },
-            descricao: { type: ["string", "null"] },
+            descricao: { type: "string", nullable: true },
           },
         },
         response: {
@@ -175,7 +177,7 @@ export function registerCategoriasRoutes(app: App) {
                 properties: {
                   id: { type: "string", format: "uuid" },
                   nome: { type: "string" },
-                  descricao: { type: ["string", "null"] },
+                  descricao: { type: "string", nullable: true },
                   createdAt: { type: "string", format: "date-time" },
                 },
               },
