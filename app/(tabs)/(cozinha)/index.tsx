@@ -31,6 +31,7 @@ import {
   Check,
 } from "lucide-react-native";
 import { useRealtime, type RealtimeStatus } from "@/hooks/useRealtime";
+import { useKeepAwake } from "expo-keep-awake";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -614,6 +615,10 @@ function ComandaCard({ item, index }: { item: Comanda; index: number }) {
 }
 
 export default function CozinhaScreen() {
+  // Mantém a tela sempre acesa enquanto o painel da cozinha estiver aberto.
+  // Desliga automaticamente quando o usuário sai desta tela.
+  useKeepAwake();
+
   const COLORS = useColors();
   const insets = useSafeAreaInsets();
 
