@@ -6,6 +6,8 @@ import {
   RefreshControl,
   Animated,
   Platform,
+  Alert,
+  ActivityIndicator,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -17,8 +19,10 @@ import { apiGet } from "@/utils/api";
 import { setMesaHistoricoId } from "@/utils/mesaHistoricoStore";
 import { formatCurrency, isAdmin } from "@/utils/helpers";
 import { TrendingUp, ShoppingBag, Grid3x3, Clock, RefreshCw, ChevronRight, DollarSign, ChefHat } from "lucide-react-native";
+import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import type { RelatorioResumo } from "@/types";
+import { exportRelatorioPDF } from "@/utils/reportPdf";
 
 type Periodo = "hoje" | "7dias" | "mes" | "personalizado";
 
@@ -179,6 +183,7 @@ export default function DashboardScreen() {
   const [recentComandas, setRecentComandas] = useState<ApiComanda[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const [periodo, setPeriodo] = useState<Periodo>("hoje");
   const [dataInicio, setDataInicio] = useState<Date | null>(null);
@@ -269,6 +274,24 @@ export default function DashboardScreen() {
     fetchData();
   };
 
+  const handleExport = async () => {
+    console.log('[Dashboard] Export PDF button pressed');
+    setExporting(true);
+    try {
+      await exportRelatorioPDF({
+        periodoLabel: resumo.periodo_label || 'Dashboard',
+        receitaPeriodo: resumo.receita_periodo,
+        avgTicket: resumo.avg_ticket ?? 0,
+        topDishes: resumo.top_dishes ?? [],
+        ordersByStatus: resumo.orders_by_status ?? {},
+      });
+    } catch (e: any) {
+      Alert.alert('Erro', e?.message || 'Não foi possível gerar o PDF.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const handlePeriodoChange = (key: Periodo) => {
     console.log("[Dashboard] Period chip pressed:", key);
     setPeriodo(key);
@@ -335,19 +358,38 @@ export default function DashboardScreen() {
             Visão geral do restaurante
           </Text>
         </View>
-        <AnimatedPressable
-          onPress={handleRefresh}
-          style={{
-            width: 40,
-            height: 40,
-            borderRadius: 12,
-            backgroundColor: COLORS.surfaceSecondary,
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <RefreshCw size={18} color={COLORS.textSecondary} />
-        </AnimatedPressable>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <AnimatedPressable
+            onPress={handleExport}
+            disabled={exporting}
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 12,
+              backgroundColor: COLORS.surfaceSecondary,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            {exporting
+              ? <ActivityIndicator size="small" color={COLORS.textSecondary} />
+              : <Ionicons name="share-outline" size={18} color={COLORS.textSecondary} />
+            }
+          </AnimatedPressable>
+          <AnimatedPressable
+            onPress={handleRefresh}
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 12,
+              backgroundColor: COLORS.surfaceSecondary,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <RefreshCw size={18} color={COLORS.textSecondary} />
+          </AnimatedPressable>
+        </View>
       </View>
 
       <ScrollView

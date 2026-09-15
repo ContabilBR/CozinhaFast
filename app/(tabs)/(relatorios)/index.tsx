@@ -5,6 +5,8 @@ import {
   ScrollView,
   RefreshControl,
   TouchableOpacity,
+  Alert,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -14,6 +16,7 @@ import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { SkeletonLine } from "@/components/SkeletonLoader";
 import { apiGet } from "@/utils/api";
 import { formatCurrency } from "@/utils/helpers";
+import { exportRelatorioPDF } from "@/utils/reportPdf";
 
 interface ReportSummary {
   total_revenue?: number;
@@ -32,6 +35,7 @@ export default function RelatoriosScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [exporting, setExporting] = useState(false);
 
   const fetchData = useCallback(async () => {
     console.log("[Relatorios] Fetching reports summary from /api/relatorios/resumo");
@@ -58,6 +62,26 @@ export default function RelatoriosScreen() {
     console.log("[Relatorios] Manual refresh");
     setRefreshing(true);
     fetchData();
+  };
+
+  const handleExport = async () => {
+    console.log('[Relatorios] Export PDF button pressed');
+    setExporting(true);
+    try {
+      await exportRelatorioPDF({
+        periodoLabel: 'Relatório Geral',
+        receitaPeriodo: summary.total_revenue ?? 0,
+        avgTicket: summary.avg_ticket ?? 0,
+        totalPedidos: summary.total_orders,
+        pedidosAbertos: summary.open_orders,
+        topDishes: summary.top_dishes ?? [],
+        ordersByStatus: summary.orders_by_status ?? {},
+      });
+    } catch (e: any) {
+      Alert.alert('Erro', e?.message || 'Não foi possível gerar o PDF.');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const totalRevenue = formatCurrency(summary.total_revenue ?? 0);
@@ -94,7 +118,17 @@ export default function RelatoriosScreen() {
           <View style={{ flex: 1, alignItems: 'center' }}>
             <Text style={{ fontFamily: 'Outfit_700Bold', fontSize: 17, color: COLORS.text }}>Relatórios</Text>
           </View>
-          <View style={{ width: 80 }} />
+          <TouchableOpacity
+            onPress={handleExport}
+            disabled={exporting}
+            style={{ width: 80, alignItems: 'flex-end' }}
+            activeOpacity={0.7}
+          >
+            {exporting
+              ? <ActivityIndicator size="small" color="#007AFF" />
+              : <Ionicons name="share-outline" size={22} color="#007AFF" />
+            }
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
 
