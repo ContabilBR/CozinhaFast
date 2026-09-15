@@ -10,6 +10,8 @@ export interface ReportData {
   pedidosAbertos?: number;
   topDishes: { dish_name: string; quantity_sold: number }[];
   ordersByStatus: { aberta?: number; fechada?: number; cancelada?: number };
+  totalRevenueHistorico?: number;
+  totalPedidosHistorico?: number;
   generatedAt?: string;
 }
 
@@ -27,11 +29,23 @@ function formatDateTimeBR(isoString: string): string {
   return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
 }
 
+function formatPct(n: number, total: number): string {
+  if (total <= 0) return "0,0%";
+  return `${((n / total) * 100).toFixed(1).replace(".", ",")}%`;
+}
+
 function buildHTML(data: ReportData): string {
   const generatedAt = data.generatedAt || new Date().toISOString();
   const generatedAtStr = formatDateTimeBR(generatedAt);
   const receitaStr = formatBRL(data.receitaPeriodo);
   const avgTicketStr = formatBRL(data.avgTicket);
+
+  const aberta = data.ordersByStatus.aberta ?? 0;
+  const fechada = data.ordersByStatus.fechada ?? 0;
+  const cancelada = data.ordersByStatus.cancelada ?? 0;
+  const totalStatus = data.totalPedidos ?? (aberta + fechada + cancelada);
+
+  const totalItensVendidos = data.topDishes.reduce((soma, p) => soma + (p.quantity_sold || 0), 0);
 
   const topDishesRows = data.topDishes.length === 0
     ? '<p style="color:#94A3B8;font-size:14px;margin:0;">Sem dados disponíveis</p>'
@@ -41,13 +55,12 @@ function buildHTML(data: ReportData): string {
           <div style="width:28px;height:28px;border-radius:8px;background:#e9456018;display:flex;align-items:center;justify-content:center;font-family:sans-serif;font-weight:700;font-size:13px;color:#e94560;">${i + 1}</div>
           <span style="font-size:14px;color:#e2e8f0;">${dish.dish_name}</span>
         </div>
-        <span style="font-size:14px;font-weight:700;color:#e94560;">${dish.quantity_sold}x</span>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-size:12px;color:#64748b;">${formatPct(dish.quantity_sold, totalItensVendidos)}</span>
+          <span style="font-size:14px;font-weight:700;color:#e94560;">${dish.quantity_sold}x</span>
+        </div>
       </div>
     `).join('');
-
-  const aberta = data.ordersByStatus.aberta ?? 0;
-  const fechada = data.ordersByStatus.fechada ?? 0;
-  const cancelada = data.ordersByStatus.cancelada ?? 0;
 
   const totalPedidosRow = data.totalPedidos !== undefined
     ? `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #2a2a4a;">
@@ -61,6 +74,27 @@ function buildHTML(data: ReportData): string {
         <span style="font-size:14px;color:#94A3B8;">Pedidos Abertos</span>
         <span style="font-size:16px;font-weight:700;color:#F59E0B;">${data.pedidosAbertos}</span>
       </div>`
+    : '';
+
+  const historicoSection = (data.totalRevenueHistorico !== undefined || data.totalPedidosHistorico !== undefined)
+    ? `
+    <div>
+      <div style="font-size:18px;font-weight:700;color:#ffffff;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #e94560;">
+        Histórico Geral (desde o início)
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;">
+        ${data.totalRevenueHistorico !== undefined ? `
+        <div style="flex:1;min-width:140px;background:#16213e;border-radius:12px;padding:16px;border:1px solid #2a2a4a;">
+          <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Faturamento Total</div>
+          <div style="font-size:20px;font-weight:900;color:#e2e8f0;">${formatBRL(data.totalRevenueHistorico)}</div>
+        </div>` : ''}
+        ${data.totalPedidosHistorico !== undefined ? `
+        <div style="flex:1;min-width:140px;background:#16213e;border-radius:12px;padding:16px;border:1px solid #2a2a4a;">
+          <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Total de Pedidos</div>
+          <div style="font-size:20px;font-weight:900;color:#e2e8f0;">${data.totalPedidosHistorico}</div>
+        </div>` : ''}
+      </div>
+    </div>`
     : '';
 
   return `<!DOCTYPE html>
@@ -82,7 +116,7 @@ function buildHTML(data: ReportData): string {
 
     <div>
       <div style="font-size:18px;font-weight:700;color:#ffffff;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #e94560;">
-        Resumo Financeiro
+        Resumo Financeiro do Período
       </div>
       <div style="display:flex;gap:14px;flex-wrap:wrap;">
         <div style="flex:1;min-width:140px;background:#16213e;border-radius:12px;padding:16px;border:1px solid #2a2a4a;">
@@ -103,7 +137,7 @@ function buildHTML(data: ReportData): string {
 
     <div>
       <div style="font-size:18px;font-weight:700;color:#ffffff;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #e94560;">
-        Pedidos por Status
+        Pedidos por Status no Período
       </div>
       <div style="background:#16213e;border-radius:12px;padding:4px 16px;border:1px solid #2a2a4a;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid #2a2a4a;">
@@ -111,21 +145,30 @@ function buildHTML(data: ReportData): string {
             <div style="width:10px;height:10px;border-radius:50%;background:#22C55E;"></div>
             <span style="font-size:14px;color:#e2e8f0;">Abertas</span>
           </div>
-          <span style="font-size:18px;font-weight:700;color:#22C55E;">${aberta}</span>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:12px;color:#64748b;">${formatPct(aberta, totalStatus)}</span>
+            <span style="font-size:18px;font-weight:700;color:#22C55E;">${aberta}</span>
+          </div>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid #2a2a4a;">
           <div style="display:flex;align-items:center;gap:8px;">
             <div style="width:10px;height:10px;border-radius:50%;background:#94A3B8;"></div>
             <span style="font-size:14px;color:#e2e8f0;">Fechadas</span>
           </div>
-          <span style="font-size:18px;font-weight:700;color:#94A3B8;">${fechada}</span>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:12px;color:#64748b;">${formatPct(fechada, totalStatus)}</span>
+            <span style="font-size:18px;font-weight:700;color:#94A3B8;">${fechada}</span>
+          </div>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;">
           <div style="display:flex;align-items:center;gap:8px;">
             <div style="width:10px;height:10px;border-radius:50%;background:#EF4444;"></div>
             <span style="font-size:14px;color:#e2e8f0;">Canceladas</span>
           </div>
-          <span style="font-size:18px;font-weight:700;color:#EF4444;">${cancelada}</span>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:12px;color:#64748b;">${formatPct(cancelada, totalStatus)}</span>
+            <span style="font-size:18px;font-weight:700;color:#EF4444;">${cancelada}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -138,6 +181,8 @@ function buildHTML(data: ReportData): string {
         ${topDishesRows}
       </div>
     </div>
+
+    ${historicoSection}
 
   </div>
 
