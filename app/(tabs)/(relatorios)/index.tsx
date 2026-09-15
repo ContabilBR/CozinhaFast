@@ -21,6 +21,7 @@ import { exportRelatorioPDF } from "@/utils/reportPdf";
 
 interface ReportSummary {
   total_revenue?: number;
+  receita_periodo?: number;
   total_orders?: number;
   open_orders?: number;
   avg_ticket?: number;
@@ -85,11 +86,15 @@ export default function RelatoriosScreen() {
       await exportarRelatorioExcel(summary, summary.periodo_label || "Hoje");
     } catch (e: any) {
       console.error("[Relatorios] Erro ao exportar Excel:", e instanceof Error ? e.message : String(e));
-      Alert.alert("Erro ao exportar", "Não foi possível gerar o arquivo Excel. Tente novamente.");
+      Alert.alert("Erro ao exportar", e?.message || "Não foi possível gerar o arquivo Excel. Tente novamente.");
     } finally {
       setExportandoExcel(false);
     }
   };
+
+  const ordersByStatus = summary.orders_by_status || {};
+  const pedidosNoPeriodo =
+    (ordersByStatus.aberta ?? 0) + (ordersByStatus.fechada ?? 0) + (ordersByStatus.cancelada ?? 0);
 
   const handleExportarPDF = async () => {
     if (loading || exportandoExcel || exportandoPDF) return;
@@ -98,26 +103,25 @@ export default function RelatoriosScreen() {
     try {
       await exportRelatorioPDF({
         periodoLabel: summary.periodo_label || "Hoje",
-        receitaPeriodo: summary.total_revenue ?? 0,
+        receitaPeriodo: summary.receita_periodo ?? 0,
         avgTicket: summary.avg_ticket ?? 0,
-        totalPedidos: summary.total_orders,
+        totalPedidos: pedidosNoPeriodo,
         pedidosAbertos: summary.open_orders,
         topDishes: summary.top_dishes || [],
-        ordersByStatus: summary.orders_by_status || {},
+        ordersByStatus,
       });
     } catch (e: any) {
       console.error("[Relatorios] Erro ao exportar PDF:", e instanceof Error ? e.message : String(e));
-      Alert.alert("Erro ao exportar", "Não foi possível gerar o PDF. Tente novamente.");
+      Alert.alert("Erro ao exportar", e?.message || "Não foi possível gerar o PDF. Tente novamente.");
     } finally {
       setExportandoPDF(false);
     }
   };
 
-  const totalRevenue = formatCurrency(summary.total_revenue ?? 0);
+  const totalRevenue = formatCurrency(summary.receita_periodo ?? 0);
   const avgTicket = formatCurrency(summary.avg_ticket ?? 0);
   const topDishes = summary.top_dishes || [];
   const maxDish = Math.max(...topDishes.map((d) => d.quantity_sold), 1);
-  const ordersByStatus = summary.orders_by_status || {};
 
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.background }}>
@@ -267,8 +271,8 @@ export default function RelatoriosScreen() {
             {/* Summary stats */}
             <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
               {[
-                { label: "Faturamento Total", value: totalRevenue, color: COLORS.success },
-                { label: "Total de Pedidos", value: String(summary.total_orders ?? 0), color: COLORS.primary },
+                { label: "Faturamento no Período", value: totalRevenue, color: COLORS.success },
+                { label: "Pedidos no Período", value: String(pedidosNoPeriodo), color: COLORS.primary },
                 { label: "Pedidos Abertos", value: String(summary.open_orders ?? 0), color: COLORS.warning },
                 { label: "Ticket Médio", value: avgTicket, color: "#3B82F6" },
               ].map((stat) => (
