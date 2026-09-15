@@ -11,6 +11,26 @@ export interface RelatorioResumo {
   orders_by_status?: { aberta?: number; fechada?: number; cancelada?: number };
 }
 
+// Codificação base64 manual, byte a byte — evita depender de XLSX.write({type:"base64"})
+// ou de btoa/Buffer, que têm comportamento inconsistente no Hermes.
+const BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+function bytesParaBase64(bytes: Uint8Array | number[]): string {
+  let resultado = "";
+  const len = bytes.length;
+  for (let i = 0; i < len; i += 3) {
+    const b1 = bytes[i];
+    const b2 = i + 1 < len ? bytes[i + 1] : 0;
+    const b3 = i + 2 < len ? bytes[i + 2] : 0;
+    const triplet = (b1 << 16) | (b2 << 8) | b3;
+    resultado += BASE64_CHARS[(triplet >> 18) & 0x3f];
+    resultado += BASE64_CHARS[(triplet >> 12) & 0x3f];
+    resultado += i + 1 < len ? BASE64_CHARS[(triplet >> 6) & 0x3f] : "=";
+    resultado += i + 2 < len ? BASE64_CHARS[triplet & 0x3f] : "=";
+  }
+  return resultado;
+}
+
 export async function exportarRelatorioExcel(resumo: RelatorioResumo, periodoLabel: string): Promise<void> {
   const status = resumo.orders_by_status || {};
 
@@ -44,7 +64,9 @@ export async function exportarRelatorioExcel(resumo: RelatorioResumo, periodoLab
   wsPratos["!cols"] = [{ wch: 32 }, { wch: 18 }];
   XLSX.utils.book_append_sheet(wb, wsPratos, "Pratos Mais Pedidos");
 
-  const base64 = XLSX.write(wb, { type: "base64", bookType: "xlsx" });
+  const bytes: number[] = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+  const base64 = bytesParaBase64(bytes);
+
   const nomeArquivo = `relatorio_${Date.now()}.xlsx`;
   const uri = FileSystem.cacheDirectory + nomeArquivo;
 
