@@ -13,6 +13,13 @@ export interface RelatorioResumo {
   orders_by_status?: { aberta?: number; fechada?: number; cancelada?: number };
 }
 
+export interface MesaResumoExport {
+  mesa_numero: number;
+  ticket_medio: number;
+  comandas_fechadas: number;
+  top_dishes: { dish_name: string; quantity_sold: number }[];
+}
+
 const BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 function bytesParaBase64(bytes: Uint8Array): string {
@@ -36,7 +43,11 @@ function formatPct(n: number, total: number): string {
   return `${((n / total) * 100).toFixed(1).replace(".", ",")}%`;
 }
 
-export async function exportarRelatorioExcel(resumo: RelatorioResumo, periodoLabel: string): Promise<void> {
+export async function exportarRelatorioExcel(
+  resumo: RelatorioResumo,
+  periodoLabel: string,
+  mesas: MesaResumoExport[] = []
+): Promise<void> {
   const status = resumo.orders_by_status || {};
   const pedidosNoPeriodo = (status.aberta ?? 0) + (status.fechada ?? 0) + (status.cancelada ?? 0);
   const pratos = resumo.top_dishes || [];
@@ -82,6 +93,22 @@ export async function exportarRelatorioExcel(resumo: RelatorioResumo, periodoLab
   const wsPratos = XLSX.utils.aoa_to_sheet(linhasPratos);
   wsPratos["!cols"] = [{ wch: 34 }, { wch: 18 }, { wch: 16 }];
   XLSX.utils.book_append_sheet(wb, wsPratos, "Pratos Mais Pedidos");
+
+  const linhasMesas = [
+    ["Mesa", "Ticket Médio", "Comandas Fechadas", "Pratos Mais Pedidos"],
+    ...mesas.map((m) => [
+      `Mesa ${m.mesa_numero}`,
+      formatCurrency(m.ticket_medio),
+      m.comandas_fechadas,
+      m.top_dishes.map((d, i) => `${i + 1}. ${d.dish_name} (${d.quantity_sold}x)`).join("  |  "),
+    ]),
+  ];
+  if (mesas.length === 0) {
+    linhasMesas.push(["Nenhuma mesa com comandas fechadas neste período", "", "", ""]);
+  }
+  const wsMesas = XLSX.utils.aoa_to_sheet(linhasMesas);
+  wsMesas["!cols"] = [{ wch: 12 }, { wch: 16 }, { wch: 18 }, { wch: 60 }];
+  XLSX.utils.book_append_sheet(wb, wsMesas, "Por Mesa");
 
   // XLSX.write com type "array" devolve um ArrayBuffer — não é indexável direto,
   // precisa ser envolvido num Uint8Array antes de percorrer byte a byte.
