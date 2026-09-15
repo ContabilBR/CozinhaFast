@@ -16,10 +16,12 @@ import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { SkeletonLine } from "@/components/SkeletonLoader";
 import { apiGet } from "@/utils/api";
 import { formatCurrency } from "@/utils/helpers";
-import { exportarRelatorioExcel, exportarRelatorioPDF } from "@/utils/relatorioExport";
+import { exportarRelatorioExcel } from "@/utils/relatorioExport";
+import { exportRelatorioPDF } from "@/utils/reportPdf";
 
 interface ReportSummary {
   total_revenue?: number;
+  receita_periodo?: number;
   total_orders?: number;
   open_orders?: number;
   avg_ticket?: number;
@@ -28,28 +30,50 @@ interface ReportSummary {
   periodo_label?: string;
 }
 
+interface MesaResumo {
+  mesa_numero: number;
+  ticket_medio: number;
+  comandas_fechadas: number;
+  top_dishes: { dish_name: string; quantity_sold: number }[];
+}
+
+type PeriodoKey = "hoje" | "7dias" | "mes";
+
+const PERIODOS: { key: PeriodoKey; label: string }[] = [
+  { key: "hoje", label: "Hoje" },
+  { key: "7dias", label: "7 dias" },
+  { key: "mes", label: "Este mês" },
+];
+
 export default function RelatoriosScreen() {
   const COLORS = useColors();
   const router = useRouter();
 
+  const [periodo, setPeriodo] = useState<PeriodoKey>("hoje");
   const [summary, setSummary] = useState<ReportSummary>({});
+  const [mesas, setMesas] = useState<MesaResumo[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [exportandoExcel, setExportandoExcel] = useState(false);
   const [exportandoPDF, setExportandoPDF] = useState(false);
 
-  const fetchData = useCallback(async () => {
-    console.log("[Relatorios] Fetching reports summary from /api/relatorios/resumo");
+  const fetchData = useCallback(async (periodoAtual: PeriodoKey) => {
+    console.log("[Relatorios] Fetching reports summary, periodo:", periodoAtual);
     try {
-      const res = await apiGet<any>("/api/relatorios/resumo");
-      const data: ReportSummary = res || {};
+      const [resSummary, resMesas] = await Promise.all([
+        apiGet<any>(`/api/relatorios/resumo?periodo=${periodoAtual}`),
+        apiGet<any>(`/api/relatorios/mesas?periodo=${periodoAtual}`),
+      ]);
+      const data: ReportSummary = resSummary || {};
       console.log("[Relatorios] Loaded summary:", JSON.stringify(data).slice(0, 200));
       setSummary(data);
+      setMesas((resMesas?.mesas as MesaResumo[]) || []);
       setError("");
     } catch (e: any) {
       console.error("[Relatorios] Error:", e instanceof Error ? e.message : String(e));
-      setError("Não foi possível carregar os relatórios.");
+      const status = e?.status ? ` (HTTP ${e.status})` : "";
+      setError((e?.message || "Não foi possível carregar os relatórios.") + status);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -57,13 +81,14 @@ export default function RelatoriosScreen() {
   }, []);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    setLoading(true);
+    fetchData(periodo);
+  }, [periodo, fetchData]);
 
   const handleRefresh = () => {
     console.log("[Relatorios] Manual refresh");
     setRefreshing(true);
-    fetchData();
+    fetchData(periodo);
   };
 
   const handleExportarExcel = async () => {
@@ -74,31 +99,42 @@ export default function RelatoriosScreen() {
       await exportarRelatorioExcel(summary, summary.periodo_label || "Hoje");
     } catch (e: any) {
       console.error("[Relatorios] Erro ao exportar Excel:", e instanceof Error ? e.message : String(e));
-      Alert.alert("Erro ao exportar", "Não foi possível gerar o arquivo Excel. Tente novamente.");
+      Alert.alert("Erro ao exportar", e?.message || "Não foi possível gerar o arquivo Excel. Tente novamente.");
     } finally {
       setExportandoExcel(false);
     }
   };
+
+  const ordersByStatus = summary.orders_by_status || {};
+  const pedidosNoPeriodo =
+    (ordersByStatus.aberta ?? 0) + (ordersByStatus.fechada ?? 0) + (ordersByStatus.cancelada ?? 0);
 
   const handleExportarPDF = async () => {
     if (loading || exportandoExcel || exportandoPDF) return;
     console.log("[Relatorios] Exportando PDF");
     setExportandoPDF(true);
     try {
-      await exportarRelatorioPDF(summary, summary.periodo_label || "Hoje");
+      await exportRelatorioPDF({
+        periodoLabel: summary.periodo_label || "Hoje",
+        receitaPeriodo: summary.receita_periodo ?? 0,
+        avgTicket: summary.avg_ticket ?? 0,
+        totalPedidos: pedidosNoPeriodo,
+        pedidosAbertos: summary.open_orders,
+        topDishes: summary.top_dishes || [],
+        ordersByStatus,
+      });
     } catch (e: any) {
       console.error("[Relatorios] Erro ao exportar PDF:", e instanceof Error ? e.message : String(e));
-      Alert.alert("Erro ao exportar", "Não foi possível gerar o PDF. Tente novamente.");
+      Alert.alert("Erro ao exportar", e?.message || "Não foi possível gerar o PDF. Tente novamente.");
     } finally {
       setExportandoPDF(false);
     }
   };
 
-  const totalRevenue = formatCurrency(summary.total_revenue ?? 0);
+  const totalRevenue = formatCurrency(summary.receita_periodo ?? 0);
   const avgTicket = formatCurrency(summary.avg_ticket ?? 0);
   const topDishes = summary.top_dishes || [];
   const maxDish = Math.max(...topDishes.map((d) => d.quantity_sold), 1);
-  const ordersByStatus = summary.orders_by_status || {};
 
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.background }}>
@@ -139,6 +175,38 @@ export default function RelatoriosScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={COLORS.primary} />
         }
       >
+        {/* Filtro de período */}
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          {PERIODOS.map((p) => {
+            const ativo = p.key === periodo;
+            return (
+              <AnimatedPressable
+                key={p.key}
+                onPress={() => setPeriodo(p.key)}
+                disabled={loading}
+                style={{
+                  paddingHorizontal: 14,
+                  paddingVertical: 8,
+                  borderRadius: 20,
+                  backgroundColor: ativo ? COLORS.primary : COLORS.surface,
+                  borderWidth: 1,
+                  borderColor: ativo ? COLORS.primary : COLORS.border,
+                }}
+              >
+                <Text
+                  style={{
+                    fontFamily: "Outfit_600SemiBold",
+                    fontSize: 13,
+                    color: ativo ? "#fff" : COLORS.text,
+                  }}
+                >
+                  {p.label}
+                </Text>
+              </AnimatedPressable>
+            );
+          })}
+        </View>
+
         {error ? (
           <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 12 }}>
             <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 17, color: COLORS.text }}>
@@ -148,7 +216,7 @@ export default function RelatoriosScreen() {
               {error}
             </Text>
             <AnimatedPressable
-              onPress={fetchData}
+              onPress={() => fetchData(periodo)}
               style={{ backgroundColor: COLORS.primary, borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12 }}
             >
               <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 15, color: "#fff" }}>
@@ -216,8 +284,8 @@ export default function RelatoriosScreen() {
             {/* Summary stats */}
             <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
               {[
-                { label: "Faturamento Total", value: totalRevenue, color: COLORS.success },
-                { label: "Total de Pedidos", value: String(summary.total_orders ?? 0), color: COLORS.primary },
+                { label: "Faturamento no Período", value: totalRevenue, color: COLORS.success },
+                { label: "Pedidos no Período", value: String(pedidosNoPeriodo), color: COLORS.primary },
                 { label: "Pedidos Abertos", value: String(summary.open_orders ?? 0), color: COLORS.warning },
                 { label: "Ticket Médio", value: avgTicket, color: "#3B82F6" },
               ].map((stat) => (
@@ -349,6 +417,96 @@ export default function RelatoriosScreen() {
                   })
                 )}
               </View>
+            </View>
+
+            {/* Por mesa */}
+            <View>
+              <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 18, color: COLORS.text, marginBottom: 12 }}>
+                Por Mesa
+              </Text>
+              {loading ? (
+                <View
+                  style={{
+                    backgroundColor: COLORS.surface,
+                    borderRadius: 16,
+                    padding: 16,
+                    borderWidth: 1,
+                    borderColor: COLORS.border,
+                    gap: 12,
+                  }}
+                >
+                  {[0, 1].map((i) => (
+                    <SkeletonLine key={i} width="100%" height={20} />
+                  ))}
+                </View>
+              ) : mesas.length === 0 ? (
+                <View
+                  style={{
+                    backgroundColor: COLORS.surface,
+                    borderRadius: 16,
+                    padding: 16,
+                    borderWidth: 1,
+                    borderColor: COLORS.border,
+                  }}
+                >
+                  <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 14, color: COLORS.textSecondary, textAlign: "center" }}>
+                    Nenhuma mesa com comandas fechadas neste período
+                  </Text>
+                </View>
+              ) : (
+                <View style={{ gap: 10 }}>
+                  {mesas.map((mesa) => (
+                    <View
+                      key={mesa.mesa_numero}
+                      style={{
+                        backgroundColor: COLORS.surface,
+                        borderRadius: 16,
+                        padding: 16,
+                        borderWidth: 1,
+                        borderColor: COLORS.border,
+                        gap: 10,
+                      }}
+                    >
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                        <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 15, color: COLORS.text }}>
+                          Mesa {mesa.mesa_numero}
+                        </Text>
+                        <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 12, color: COLORS.textSecondary }}>
+                          {mesa.comandas_fechadas} comanda{mesa.comandas_fechadas === 1 ? "" : "s"} fechada{mesa.comandas_fechadas === 1 ? "" : "s"}
+                        </Text>
+                      </View>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                        <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 13, color: COLORS.textSecondary }}>
+                          Ticket médio
+                        </Text>
+                        <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 16, color: "#3B82F6" }}>
+                          {formatCurrency(mesa.ticket_medio)}
+                        </Text>
+                      </View>
+                      {mesa.top_dishes.length > 0 && (
+                        <View style={{ gap: 4, paddingTop: 4, borderTopWidth: 1, borderTopColor: COLORS.border }}>
+                          <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 12, color: COLORS.textSecondary, marginTop: 6 }}>
+                            Mais pedidos nessa mesa
+                          </Text>
+                          {mesa.top_dishes.map((dish, i) => (
+                            <View key={dish.dish_name + i} style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                              <Text
+                                numberOfLines={1}
+                                style={{ fontFamily: "Outfit_600SemiBold", fontSize: 13, color: COLORS.text, flex: 1 }}
+                              >
+                                {i + 1}. {dish.dish_name}
+                              </Text>
+                              <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 13, color: COLORS.primary, marginLeft: 8 }}>
+                                {dish.quantity_sold}x
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  ))}
+                </View>
+              )}
             </View>
           </>
         )}

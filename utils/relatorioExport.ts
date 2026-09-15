@@ -5,6 +5,7 @@ import { formatCurrency } from "@/utils/helpers";
 
 export interface RelatorioResumo {
   total_revenue?: number;
+  receita_periodo?: number;
   total_orders?: number;
   open_orders?: number;
   avg_ticket?: number;
@@ -12,26 +13,34 @@ export interface RelatorioResumo {
   orders_by_status?: { aberta?: number; fechada?: number; cancelada?: number };
 }
 
-function escapeHtml(value: string): string {
-  return String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
+const BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-async function compartilhar(uri: string, mimeType: string, dialogTitle: string, uti: string) {
-  const disponivel = await Sharing.isAvailableAsync();
-  if (!disponivel) {
-    throw new Error("Compartilhamento não está disponível neste dispositivo.");
+function bytesParaBase64(bytes: Uint8Array): string {
+  let resultado = "";
+  const len = bytes.length;
+  for (let i = 0; i < len; i += 3) {
+    const b1 = bytes[i];
+    const b2 = i + 1 < len ? bytes[i + 1] : 0;
+    const b3 = i + 2 < len ? bytes[i + 2] : 0;
+    const triplet = (b1 << 16) | (b2 << 8) | b3;
+    resultado += BASE64_CHARS[(triplet >> 18) & 0x3f];
+    resultado += BASE64_CHARS[(triplet >> 12) & 0x3f];
+    resultado += i + 1 < len ? BASE64_CHARS[(triplet >> 6) & 0x3f] : "=";
+    resultado += i + 2 < len ? BASE64_CHARS[triplet & 0x3f] : "=";
   }
-  await Sharing.shareAsync(uri, { mimeType, dialogTitle, UTI: uti });
+  return resultado;
 }
 
-// ---------- Excel ----------
+function formatPct(n: number, total: number): string {
+  if (total <= 0) return "0,0%";
+  return `${((n / total) * 100).toFixed(1).replace(".", ",")}%`;
+}
 
 export async function exportarRelatorioExcel(resumo: RelatorioResumo, periodoLabel: string): Promise<void> {
   const status = resumo.orders_by_status || {};
+  const pedidosNoPeriodo = (status.aberta ?? 0) + (status.fechada ?? 0) + (status.cancelada ?? 0);
+  const pratos = resumo.top_dishes || [];
+  const totalItensVendidos = pratos.reduce((soma, p) => soma + (p.quantity_sold || 0), 0);
 
   const wb = XLSX.utils.book_new();
 
@@ -40,30 +49,46 @@ export async function exportarRelatorioExcel(resumo: RelatorioResumo, periodoLab
     ["Período", periodoLabel],
     ["Emitido em", new Date().toLocaleString("pt-BR")],
     [],
-    ["Indicador", "Valor"],
-    ["Faturamento Total", resumo.total_revenue ?? 0],
-    ["Total de Pedidos", resumo.total_orders ?? 0],
-    ["Pedidos Abertos", resumo.open_orders ?? 0],
-    ["Ticket Médio", resumo.avg_ticket ?? 0],
+    ["RESUMO DO PERÍODO SELECIONADO", ""],
+    ["Faturamento no Período", formatCurrency(resumo.receita_periodo ?? 0)],
+    ["Pedidos no Período", pedidosNoPeriodo],
+    ["Ticket Médio", formatCurrency(resumo.avg_ticket ?? 0)],
+    ["Pedidos Abertos Atualmente", resumo.open_orders ?? 0],
     [],
-    ["Pedidos por Status", ""],
-    ["Abertas", status.aberta ?? 0],
-    ["Fechadas", status.fechada ?? 0],
-    ["Canceladas", status.cancelada ?? 0],
+    ["PEDIDOS POR STATUS NO PERÍODO", "", "% do período"],
+    ["Abertas", status.aberta ?? 0, formatPct(status.aberta ?? 0, pedidosNoPeriodo)],
+    ["Fechadas", status.fechada ?? 0, formatPct(status.fechada ?? 0, pedidosNoPeriodo)],
+    ["Canceladas", status.cancelada ?? 0, formatPct(status.cancelada ?? 0, pedidosNoPeriodo)],
+    [],
+    ["HISTÓRICO GERAL (desde o início)", ""],
+    ["Faturamento Total Histórico", formatCurrency(resumo.total_revenue ?? 0)],
+    ["Total de Pedidos Histórico", resumo.total_orders ?? 0],
   ];
   const wsResumo = XLSX.utils.aoa_to_sheet(linhasResumo);
-  wsResumo["!cols"] = [{ wch: 26 }, { wch: 20 }];
+  wsResumo["!cols"] = [{ wch: 30 }, { wch: 20 }, { wch: 14 }];
   XLSX.utils.book_append_sheet(wb, wsResumo, "Resumo");
 
-  const pratos = resumo.top_dishes || [];
-  const wsPratos = XLSX.utils.aoa_to_sheet([
-    ["Prato", "Quantidade Vendida"],
-    ...pratos.map((p) => [p.dish_name, p.quantity_sold]),
-  ]);
-  wsPratos["!cols"] = [{ wch: 32 }, { wch: 18 }];
+  const linhasPratos = [
+    ["Prato", "Quantidade Vendida", "% do total de itens"],
+    ...pratos.map((p) => [
+      p.dish_name,
+      p.quantity_sold,
+      formatPct(p.quantity_sold, totalItensVendidos),
+    ]),
+  ];
+  if (pratos.length === 0) {
+    linhasPratos.push(["Sem dados disponíveis para este período", "", ""]);
+  }
+  const wsPratos = XLSX.utils.aoa_to_sheet(linhasPratos);
+  wsPratos["!cols"] = [{ wch: 34 }, { wch: 18 }, { wch: 16 }];
   XLSX.utils.book_append_sheet(wb, wsPratos, "Pratos Mais Pedidos");
 
-  const base64 = XLSX.write(wb, { type: "base64", bookType: "xlsx" });
+  // XLSX.write com type "array" devolve um ArrayBuffer — não é indexável direto,
+  // precisa ser envolvido num Uint8Array antes de percorrer byte a byte.
+  const buffer = XLSX.write(wb, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+  const bytes = new Uint8Array(buffer);
+  const base64 = bytesParaBase64(bytes);
+
   const nomeArquivo = `relatorio_${Date.now()}.xlsx`;
   const uri = FileSystem.cacheDirectory + nomeArquivo;
 
