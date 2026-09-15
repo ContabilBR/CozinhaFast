@@ -72,7 +72,8 @@ export default function RelatoriosScreen() {
       setError("");
     } catch (e: any) {
       console.error("[Relatorios] Error:", e instanceof Error ? e.message : String(e));
-      setError("Não foi possível carregar os relatórios.");
+      const status = e?.status ? ` (HTTP ${e.status})` : "";
+      setError((e?.message || "Não foi possível carregar os relatórios.") + status);
     } finally {
       setLoading(false);
       setRefreshing(false);
