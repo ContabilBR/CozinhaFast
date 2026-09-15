@@ -1,7 +1,6 @@
-// @ts-expect-error no type declarations for react-native-html-to-pdf
-import RNHTMLtoPDF from 'react-native-html-to-pdf';
-import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from 'expo-sharing';
+import * as Print from "expo-print";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
 
 export interface ReportData {
   periodoLabel: string;
@@ -73,17 +72,14 @@ function buildHTML(data: ReportData): string {
 </head>
 <body style="margin:0;padding:0;background-color:#1a1a2e;font-family:sans-serif;color:#e2e8f0;">
 
-  <!-- Header -->
   <div style="background:linear-gradient(135deg,#16213e 0%,#0f3460 100%);padding:32px 28px 24px;border-bottom:3px solid #e94560;">
     <div style="font-size:28px;font-weight:900;color:#ffffff;letter-spacing:-0.5px;">CozinhaFast Pro</div>
     <div style="font-size:16px;color:#e94560;font-weight:600;margin-top:6px;">${data.periodoLabel}</div>
     <div style="font-size:12px;color:#64748b;margin-top:8px;">Gerado em: ${generatedAtStr}</div>
   </div>
 
-  <!-- Content -->
   <div style="padding:24px 28px;display:flex;flex-direction:column;gap:24px;">
 
-    <!-- Resumo Financeiro -->
     <div>
       <div style="font-size:18px;font-weight:700;color:#ffffff;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #e94560;">
         Resumo Financeiro
@@ -105,7 +101,6 @@ function buildHTML(data: ReportData): string {
       </div>` : ''}
     </div>
 
-    <!-- Pedidos por Status -->
     <div>
       <div style="font-size:18px;font-weight:700;color:#ffffff;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #e94560;">
         Pedidos por Status
@@ -135,7 +130,6 @@ function buildHTML(data: ReportData): string {
       </div>
     </div>
 
-    <!-- Pratos Mais Vendidos -->
     <div>
       <div style="font-size:18px;font-weight:700;color:#ffffff;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #e94560;">
         Pratos Mais Vendidos
@@ -147,7 +141,6 @@ function buildHTML(data: ReportData): string {
 
   </div>
 
-  <!-- Footer -->
   <div style="padding:20px 28px;border-top:1px solid #2a2a4a;text-align:center;">
     <div style="font-size:12px;color:#64748b;">Relatório gerado pelo CozinhaFast Pro</div>
   </div>
@@ -160,28 +153,19 @@ export async function exportRelatorioPDF(data: ReportData): Promise<void> {
   console.log('[reportPdf] exportRelatorioPDF called with periodoLabel:', data.periodoLabel);
   try {
     const html = buildHTML(data);
-    console.log('[reportPdf] HTML built, calling RNHTMLtoPDF.convert (base64)');
-    const result = await RNHTMLtoPDF.convert({
-      html,
-      fileName: 'relatorio_cozinhafast',
-      base64: true,
-    });
-    if (!result?.base64) {
-      throw new Error('Arquivo PDF não foi criado (base64 vazio).');
-    }
+    console.log('[reportPdf] HTML built, calling Print.printToFileAsync');
+    const { uri: tempUri } = await Print.printToFileAsync({ html, base64: false });
+    console.log('[reportPdf] PDF gerado em:', tempUri);
 
-    const uri = FileSystem.cacheDirectory + `relatorio_cozinhafast_${Date.now()}.pdf`;
-    await FileSystem.writeAsStringAsync(uri, result.base64, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
-    console.log('[reportPdf] PDF gravado em:', uri);
+    const destino = FileSystem.cacheDirectory + `relatorio_cozinhafast_${Date.now()}.pdf`;
+    await FileSystem.copyAsync({ from: tempUri, to: destino });
 
     const canShare = await Sharing.isAvailableAsync();
     console.log('[reportPdf] Sharing available:', canShare);
     if (!canShare) {
       throw new Error('Compartilhamento não está disponível neste dispositivo.');
     }
-    await Sharing.shareAsync(uri, {
+    await Sharing.shareAsync(destino, {
       mimeType: 'application/pdf',
       dialogTitle: 'Compartilhar Relatório',
     });
