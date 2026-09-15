@@ -382,4 +382,150 @@ export function registerRelatoriosRoutes(app: App) {
       }
     }
   );
+
+  // GET /api/relatorios/mesas - Ticket médio e top 3 pratos por mesa, no período
+  app.fastify.get(
+    "/api/relatorios/mesas",
+    {
+      schema: {
+        description: "Get per-table average ticket and top 3 dishes for a period (requires authentication)",
+        tags: ["relatorios"],
+        querystring: {
+          type: "object",
+          properties: {
+            periodo: { type: "string", enum: ["hoje", "7dias", "mes", "personalizado"] },
+            dataInicio: { type: "string" },
+            dataFim: { type: "string" },
+          },
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              periodo_label: { type: "string" },
+              mesas: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    mesa_numero: { type: "number" },
+                    ticket_medio: { type: "number" },
+                    comandas_fechadas: { type: "number" },
+                    top_dishes: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          dish_name: { type: "string" },
+                          quantity_sold: { type: "number" },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          401: { type: "object", properties: { error: { type: "string" } } },
+          500: { type: "object", properties: { error: { type: "string" } } },
+        },
+      },
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const authUser = await customRequireAuth(app, request, reply);
+      if (!authUser) return;
+      if (!requireRole(authUser, ["administrador", "gerente"], reply)) return;
+
+      try {
+        const tenantId = requireTenant(authUser);
+        const query = request.query as { periodo?: string; dataInicio?: string; dataFim?: string };
+        const { inicio, fim, label: periodoLabel } = resolvePeriodo(query.periodo, query.dataInicio, query.dataFim);
+        app.logger.info({ tenantId, periodo: query.periodo, inicio, fim }, "Getting relatorio por mesa");
+
+        // Ticket médio e nº de comandas fechadas por mesa, no período (ativas + histórico)
+        const ticketPorMesaResult = await (app.db as any).execute(
+          sql`
+            SELECT mesa_numero, AVG(subtotal)::float AS ticket_medio, COUNT(*)::integer AS comandas_fechadas
+            FROM (
+              SELECT mesa_numero, subtotal FROM comandas
+              WHERE restaurante_id = ${tenantId}::uuid AND status = 'fechada' AND mesa_numero IS NOT NULL
+                AND closed_at >= ${inicio.toISOString()}::timestamptz AND closed_at < ${fim.toISOString()}::timestamptz
+              UNION ALL
+              SELECT mesa_numero, subtotal FROM comandas_historico
+              WHERE restaurante_id = ${tenantId}::uuid AND status = 'fechada' AND mesa_numero IS NOT NULL
+                AND closed_at >= ${inicio.toISOString()}::timestamptz AND closed_at < ${fim.toISOString()}::timestamptz
+            ) t
+            GROUP BY mesa_numero
+            ORDER BY mesa_numero
+          `
+        ) as any[];
+
+        // Top 3 pratos por mesa, no período (ativos + histórico)
+        const topPratosPorMesaResult = await (app.db as any).execute(
+          sql`
+            WITH itens AS (
+              SELECT c.mesa_numero AS mesa_numero, pr.nome AS dish_name, p.quantidade AS quantidade
+              FROM pedidos p
+              INNER JOIN comandas c ON p.comanda_id = c.id
+              INNER JOIN pratos pr ON p.prato_id = pr.id
+              WHERE p.restaurante_id = ${tenantId}::uuid AND c.mesa_numero IS NOT NULL
+                AND p.created_at >= ${inicio.toISOString()}::timestamptz AND p.created_at < ${fim.toISOString()}::timestamptz
+              UNION ALL
+              SELECT ch.mesa_numero AS mesa_numero, ph.prato_nome AS dish_name, ph.quantidade AS quantidade
+              FROM pedidos_historico ph
+              INNER JOIN comandas_historico ch ON ph.comanda_id = ch.id
+              WHERE ph.restaurante_id = ${tenantId}::uuid AND ch.mesa_numero IS NOT NULL AND ph.prato_nome IS NOT NULL
+                AND ph.created_at >= ${inicio.toISOString()}::timestamptz AND ph.created_at < ${fim.toISOString()}::timestamptz
+            ),
+            agregado AS (
+              SELECT mesa_numero, dish_name, SUM(quantidade)::integer AS quantidade_total
+              FROM itens
+              GROUP BY mesa_numero, dish_name
+            ),
+            ranqueado AS (
+              SELECT mesa_numero, dish_name, quantidade_total,
+                ROW_NUMBER() OVER (PARTITION BY mesa_numero ORDER BY quantidade_total DESC) AS rn
+              FROM agregado
+            )
+            SELECT mesa_numero, dish_name, quantidade_total
+            FROM ranqueado
+            WHERE rn <= 3
+            ORDER BY mesa_numero, quantidade_total DESC
+          `
+        ) as any[];
+
+        const pratosPorMesa = new Map<number, { dish_name: string; quantity_sold: number }[]>();
+        if (Array.isArray(topPratosPorMesaResult)) {
+          for (const row of topPratosPorMesaResult) {
+            const mesaNumero = Number(row.mesa_numero);
+            const lista = pratosPorMesa.get(mesaNumero) || [];
+            lista.push({ dish_name: row.dish_name, quantity_sold: parseInt(String(row.quantidade_total || 0)) });
+            pratosPorMesa.set(mesaNumero, lista);
+          }
+        }
+
+        const mesas = Array.isArray(ticketPorMesaResult)
+          ? ticketPorMesaResult.map((row: any) => {
+              const mesaNumero = Number(row.mesa_numero);
+              return {
+                mesa_numero: mesaNumero,
+                ticket_medio: parseFloat(String(row.ticket_medio || 0)),
+                comandas_fechadas: parseInt(String(row.comandas_fechadas || 0)),
+                top_dishes: pratosPorMesa.get(mesaNumero) || [],
+              };
+            })
+          : [];
+
+        app.logger.info({ tenantId, mesasCount: mesas.length }, "Relatorio por mesa retrieved successfully");
+
+        return reply.code(200).send({
+          periodo_label: periodoLabel,
+          mesas,
+        });
+      } catch (error) {
+        app.logger.error({ err: error }, "Failed to get relatorio por mesa");
+        return reply.code(500).send({ error: "Internal server error" });
+      }
+    }
+  );
 }
