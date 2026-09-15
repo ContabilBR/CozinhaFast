@@ -30,6 +30,13 @@ interface ReportSummary {
   periodo_label?: string;
 }
 
+interface MesaResumo {
+  mesa_numero: number;
+  ticket_medio: number;
+  comandas_fechadas: number;
+  top_dishes: { dish_name: string; quantity_sold: number }[];
+}
+
 type PeriodoKey = "hoje" | "7dias" | "mes";
 
 const PERIODOS: { key: PeriodoKey; label: string }[] = [
@@ -44,6 +51,7 @@ export default function RelatoriosScreen() {
 
   const [periodo, setPeriodo] = useState<PeriodoKey>("hoje");
   const [summary, setSummary] = useState<ReportSummary>({});
+  const [mesas, setMesas] = useState<MesaResumo[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -53,10 +61,14 @@ export default function RelatoriosScreen() {
   const fetchData = useCallback(async (periodoAtual: PeriodoKey) => {
     console.log("[Relatorios] Fetching reports summary, periodo:", periodoAtual);
     try {
-      const res = await apiGet<any>(`/api/relatorios/resumo?periodo=${periodoAtual}`);
-      const data: ReportSummary = res || {};
+      const [resSummary, resMesas] = await Promise.all([
+        apiGet<any>(`/api/relatorios/resumo?periodo=${periodoAtual}`),
+        apiGet<any>(`/api/relatorios/mesas?periodo=${periodoAtual}`),
+      ]);
+      const data: ReportSummary = resSummary || {};
       console.log("[Relatorios] Loaded summary:", JSON.stringify(data).slice(0, 200));
       setSummary(data);
+      setMesas((resMesas?.mesas as MesaResumo[]) || []);
       setError("");
     } catch (e: any) {
       console.error("[Relatorios] Error:", e instanceof Error ? e.message : String(e));
@@ -404,6 +416,96 @@ export default function RelatoriosScreen() {
                   })
                 )}
               </View>
+            </View>
+
+            {/* Por mesa */}
+            <View>
+              <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 18, color: COLORS.text, marginBottom: 12 }}>
+                Por Mesa
+              </Text>
+              {loading ? (
+                <View
+                  style={{
+                    backgroundColor: COLORS.surface,
+                    borderRadius: 16,
+                    padding: 16,
+                    borderWidth: 1,
+                    borderColor: COLORS.border,
+                    gap: 12,
+                  }}
+                >
+                  {[0, 1].map((i) => (
+                    <SkeletonLine key={i} width="100%" height={20} />
+                  ))}
+                </View>
+              ) : mesas.length === 0 ? (
+                <View
+                  style={{
+                    backgroundColor: COLORS.surface,
+                    borderRadius: 16,
+                    padding: 16,
+                    borderWidth: 1,
+                    borderColor: COLORS.border,
+                  }}
+                >
+                  <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 14, color: COLORS.textSecondary, textAlign: "center" }}>
+                    Nenhuma mesa com comandas fechadas neste período
+                  </Text>
+                </View>
+              ) : (
+                <View style={{ gap: 10 }}>
+                  {mesas.map((mesa) => (
+                    <View
+                      key={mesa.mesa_numero}
+                      style={{
+                        backgroundColor: COLORS.surface,
+                        borderRadius: 16,
+                        padding: 16,
+                        borderWidth: 1,
+                        borderColor: COLORS.border,
+                        gap: 10,
+                      }}
+                    >
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                        <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 15, color: COLORS.text }}>
+                          Mesa {mesa.mesa_numero}
+                        </Text>
+                        <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 12, color: COLORS.textSecondary }}>
+                          {mesa.comandas_fechadas} comanda{mesa.comandas_fechadas === 1 ? "" : "s"} fechada{mesa.comandas_fechadas === 1 ? "" : "s"}
+                        </Text>
+                      </View>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                        <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 13, color: COLORS.textSecondary }}>
+                          Ticket médio
+                        </Text>
+                        <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 16, color: "#3B82F6" }}>
+                          {formatCurrency(mesa.ticket_medio)}
+                        </Text>
+                      </View>
+                      {mesa.top_dishes.length > 0 && (
+                        <View style={{ gap: 4, paddingTop: 4, borderTopWidth: 1, borderTopColor: COLORS.border }}>
+                          <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 12, color: COLORS.textSecondary, marginTop: 6 }}>
+                            Mais pedidos nessa mesa
+                          </Text>
+                          {mesa.top_dishes.map((dish, i) => (
+                            <View key={dish.dish_name + i} style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                              <Text
+                                numberOfLines={1}
+                                style={{ fontFamily: "Outfit_600SemiBold", fontSize: 13, color: COLORS.text, flex: 1 }}
+                              >
+                                {i + 1}. {dish.dish_name}
+                              </Text>
+                              <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 13, color: COLORS.primary, marginLeft: 8 }}>
+                                {dish.quantity_sold}x
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  ))}
+                </View>
+              )}
             </View>
           </>
         )}
