@@ -140,10 +140,10 @@ function montarHtmlRelatorio(resumo: RelatorioResumo, periodoLabel: string): str
 }
 
 export async function exportarRelatorioPDF(resumo: RelatorioResumo, periodoLabel: string): Promise<void> {
-  // Import dinâmico: expo-print só é usado aqui, mantém o bundle mais enxuto.
-  const Print = await import("expo-print");
+  const RNHTMLtoPDF = (await import("react-native-html-to-pdf")).default;
   const html = montarHtmlRelatorio(resumo, periodoLabel);
-  const { uri } = await Print.printToFileAsync({ html });
+  const result = await RNHTMLtoPDF.convert({ html, fileName: "relatorio", base64: false });
+  const uri = result.filePath ?? "";
 
   await compartilhar(uri, "application/pdf", "Compartilhar relatório (PDF)", "com.adobe.pdf");
 }
