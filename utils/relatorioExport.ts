@@ -11,11 +11,9 @@ export interface RelatorioResumo {
   orders_by_status?: { aberta?: number; fechada?: number; cancelada?: number };
 }
 
-// Codificação base64 manual, byte a byte — evita depender de XLSX.write({type:"base64"})
-// ou de btoa/Buffer, que têm comportamento inconsistente no Hermes.
 const BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-function bytesParaBase64(bytes: Uint8Array | number[]): string {
+function bytesParaBase64(bytes: Uint8Array): string {
   let resultado = "";
   const len = bytes.length;
   for (let i = 0; i < len; i += 3) {
@@ -64,7 +62,10 @@ export async function exportarRelatorioExcel(resumo: RelatorioResumo, periodoLab
   wsPratos["!cols"] = [{ wch: 32 }, { wch: 18 }];
   XLSX.utils.book_append_sheet(wb, wsPratos, "Pratos Mais Pedidos");
 
-  const bytes: number[] = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+  // XLSX.write com type "array" devolve um ArrayBuffer — não é indexável direto,
+  // precisa ser envolvido num Uint8Array antes de percorrer byte a byte.
+  const buffer = XLSX.write(wb, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+  const bytes = new Uint8Array(buffer);
   const base64 = bytesParaBase64(bytes);
 
   const nomeArquivo = `relatorio_${Date.now()}.xlsx`;
