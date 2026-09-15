@@ -1,5 +1,6 @@
 // @ts-expect-error no type declarations for react-native-html-to-pdf
 import RNHTMLtoPDF from 'react-native-html-to-pdf';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 
 export interface ReportData {
@@ -159,19 +160,28 @@ export async function exportRelatorioPDF(data: ReportData): Promise<void> {
   console.log('[reportPdf] exportRelatorioPDF called with periodoLabel:', data.periodoLabel);
   try {
     const html = buildHTML(data);
-    console.log('[reportPdf] HTML built, calling RNHTMLtoPDF.convert');
+    console.log('[reportPdf] HTML built, calling RNHTMLtoPDF.convert (base64)');
     const result = await RNHTMLtoPDF.convert({
       html,
       fileName: 'relatorio_cozinhafast',
-      directory: 'Documents',
+      base64: true,
     });
-    console.log('[reportPdf] PDF generated at:', result?.filePath);
-    if (!result?.filePath) {
-      throw new Error('Arquivo PDF não foi criado.');
+    if (!result?.base64) {
+      throw new Error('Arquivo PDF não foi criado (base64 vazio).');
     }
+
+    const uri = FileSystem.cacheDirectory + `relatorio_cozinhafast_${Date.now()}.pdf`;
+    await FileSystem.writeAsStringAsync(uri, result.base64, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    console.log('[reportPdf] PDF gravado em:', uri);
+
     const canShare = await Sharing.isAvailableAsync();
     console.log('[reportPdf] Sharing available:', canShare);
-    await Sharing.shareAsync(result.filePath, {
+    if (!canShare) {
+      throw new Error('Compartilhamento não está disponível neste dispositivo.');
+    }
+    await Sharing.shareAsync(uri, {
       mimeType: 'application/pdf',
       dialogTitle: 'Compartilhar Relatório',
     });
