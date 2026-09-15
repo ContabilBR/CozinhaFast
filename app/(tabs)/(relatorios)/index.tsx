@@ -29,10 +29,19 @@ interface ReportSummary {
   periodo_label?: string;
 }
 
+type PeriodoKey = "hoje" | "7dias" | "mes";
+
+const PERIODOS: { key: PeriodoKey; label: string }[] = [
+  { key: "hoje", label: "Hoje" },
+  { key: "7dias", label: "7 dias" },
+  { key: "mes", label: "Este mês" },
+];
+
 export default function RelatoriosScreen() {
   const COLORS = useColors();
   const router = useRouter();
 
+  const [periodo, setPeriodo] = useState<PeriodoKey>("hoje");
   const [summary, setSummary] = useState<ReportSummary>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -40,10 +49,10 @@ export default function RelatoriosScreen() {
   const [exportandoExcel, setExportandoExcel] = useState(false);
   const [exportandoPDF, setExportandoPDF] = useState(false);
 
-  const fetchData = useCallback(async () => {
-    console.log("[Relatorios] Fetching reports summary from /api/relatorios/resumo");
+  const fetchData = useCallback(async (periodoAtual: PeriodoKey) => {
+    console.log("[Relatorios] Fetching reports summary, periodo:", periodoAtual);
     try {
-      const res = await apiGet<any>("/api/relatorios/resumo");
+      const res = await apiGet<any>(`/api/relatorios/resumo?periodo=${periodoAtual}`);
       const data: ReportSummary = res || {};
       console.log("[Relatorios] Loaded summary:", JSON.stringify(data).slice(0, 200));
       setSummary(data);
@@ -58,13 +67,14 @@ export default function RelatoriosScreen() {
   }, []);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    setLoading(true);
+    fetchData(periodo);
+  }, [periodo, fetchData]);
 
   const handleRefresh = () => {
     console.log("[Relatorios] Manual refresh");
     setRefreshing(true);
-    fetchData();
+    fetchData(periodo);
   };
 
   const handleExportarExcel = async () => {
@@ -148,6 +158,38 @@ export default function RelatoriosScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={COLORS.primary} />
         }
       >
+        {/* Filtro de período */}
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          {PERIODOS.map((p) => {
+            const ativo = p.key === periodo;
+            return (
+              <AnimatedPressable
+                key={p.key}
+                onPress={() => setPeriodo(p.key)}
+                disabled={loading}
+                style={{
+                  paddingHorizontal: 14,
+                  paddingVertical: 8,
+                  borderRadius: 20,
+                  backgroundColor: ativo ? COLORS.primary : COLORS.surface,
+                  borderWidth: 1,
+                  borderColor: ativo ? COLORS.primary : COLORS.border,
+                }}
+              >
+                <Text
+                  style={{
+                    fontFamily: "Outfit_600SemiBold",
+                    fontSize: 13,
+                    color: ativo ? "#fff" : COLORS.text,
+                  }}
+                >
+                  {p.label}
+                </Text>
+              </AnimatedPressable>
+            );
+          })}
+        </View>
+
         {error ? (
           <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 12 }}>
             <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 17, color: COLORS.text }}>
@@ -157,7 +199,7 @@ export default function RelatoriosScreen() {
               {error}
             </Text>
             <AnimatedPressable
-              onPress={fetchData}
+              onPress={() => fetchData(periodo)}
               style={{ backgroundColor: COLORS.primary, borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12 }}
             >
               <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 15, color: "#fff" }}>
