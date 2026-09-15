@@ -2,6 +2,13 @@ import * as Print from "expo-print";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 
+export interface MesaResumoPDF {
+  mesa_numero: number;
+  ticket_medio: number;
+  comandas_fechadas: number;
+  top_dishes: { dish_name: string; quantity_sold: number }[];
+}
+
 export interface ReportData {
   periodoLabel: string;
   receitaPeriodo: number;
@@ -12,6 +19,7 @@ export interface ReportData {
   ordersByStatus: { aberta?: number; fechada?: number; cancelada?: number };
   totalRevenueHistorico?: number;
   totalPedidosHistorico?: number;
+  mesas?: MesaResumoPDF[];
   generatedAt?: string;
 }
 
@@ -94,6 +102,36 @@ function buildHTML(data: ReportData): string {
           <div style="font-size:20px;font-weight:900;color:#e2e8f0;">${data.totalPedidosHistorico}</div>
         </div>` : ''}
       </div>
+    </div>`
+    : '';
+
+  const mesasSection = (data.mesas && data.mesas.length > 0)
+    ? `
+    <div>
+      <div style="font-size:18px;font-weight:700;color:#ffffff;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #e94560;">
+        Por Mesa
+      </div>
+      ${data.mesas.map((mesa) => `
+        <div style="background:#16213e;border-radius:12px;padding:14px 16px;border:1px solid #2a2a4a;margin-bottom:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <span style="font-size:15px;font-weight:700;color:#ffffff;">Mesa ${mesa.mesa_numero}</span>
+            <span style="font-size:12px;color:#64748b;">${mesa.comandas_fechadas} comanda${mesa.comandas_fechadas === 1 ? '' : 's'} fechada${mesa.comandas_fechadas === 1 ? '' : 's'}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:${mesa.top_dishes.length > 0 ? '8px' : '0'};${mesa.top_dishes.length > 0 ? 'border-bottom:1px solid #2a2a4a;' : ''}">
+            <span style="font-size:13px;color:#94A3B8;">Ticket médio</span>
+            <span style="font-size:15px;font-weight:700;color:#3B82F6;">${formatBRL(mesa.ticket_medio)}</span>
+          </div>
+          ${mesa.top_dishes.length > 0 ? `
+          <div style="padding-top:8px;">
+            ${mesa.top_dishes.map((d, i) => `
+              <div style="display:flex;justify-content:space-between;font-size:13px;padding:2px 0;">
+                <span style="color:#e2e8f0;">${i + 1}. ${d.dish_name}</span>
+                <span style="color:#e94560;font-weight:700;">${d.quantity_sold}x</span>
+              </div>
+            `).join('')}
+          </div>` : ''}
+        </div>
+      `).join('')}
     </div>`
     : '';
 
@@ -181,6 +219,8 @@ function buildHTML(data: ReportData): string {
         ${topDishesRows}
       </div>
     </div>
+
+    ${mesasSection}
 
     ${historicoSection}
 
