@@ -96,7 +96,7 @@ export default function RelatoriosScreen() {
     console.log("[Relatorios] Exportando Excel");
     setExportandoExcel(true);
     try {
-      await exportarRelatorioExcel(summary, summary.periodo_label || "Hoje");
+      await exportarRelatorioExcel(summary, summary.periodo_label || "Hoje", mesas);
     } catch (e: any) {
       console.error("[Relatorios] Erro ao exportar Excel:", e instanceof Error ? e.message : String(e));
       Alert.alert("Erro ao exportar", e?.message || "Não foi possível gerar o arquivo Excel. Tente novamente.");
@@ -122,6 +122,7 @@ export default function RelatoriosScreen() {
         pedidosAbertos: summary.open_orders,
         topDishes: summary.top_dishes || [],
         ordersByStatus,
+        mesas,
       });
     } catch (e: any) {
       console.error("[Relatorios] Erro ao exportar PDF:", e instanceof Error ? e.message : String(e));
