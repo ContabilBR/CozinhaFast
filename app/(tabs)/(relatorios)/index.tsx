@@ -16,7 +16,8 @@ import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { SkeletonLine } from "@/components/SkeletonLoader";
 import { apiGet } from "@/utils/api";
 import { formatCurrency } from "@/utils/helpers";
-import { exportarRelatorioExcel, exportarRelatorioPDF } from "@/utils/relatorioExport";
+import { exportarRelatorioExcel } from "@/utils/relatorioExport";
+import { exportRelatorioPDF } from "@/utils/reportPdf";
 
 interface ReportSummary {
   total_revenue?: number;
@@ -85,7 +86,15 @@ export default function RelatoriosScreen() {
     console.log("[Relatorios] Exportando PDF");
     setExportandoPDF(true);
     try {
-      await exportarRelatorioPDF(summary, summary.periodo_label || "Hoje");
+      await exportRelatorioPDF({
+        periodoLabel: summary.periodo_label || "Hoje",
+        receitaPeriodo: summary.total_revenue ?? 0,
+        avgTicket: summary.avg_ticket ?? 0,
+        totalPedidos: summary.total_orders,
+        pedidosAbertos: summary.open_orders,
+        topDishes: summary.top_dishes || [],
+        ordersByStatus: summary.orders_by_status || {},
+      });
     } catch (e: any) {
       console.error("[Relatorios] Erro ao exportar PDF:", e instanceof Error ? e.message : String(e));
       Alert.alert("Erro ao exportar", "Não foi possível gerar o PDF. Tente novamente.");
