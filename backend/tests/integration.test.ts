@@ -2161,10 +2161,57 @@ describe("API Integration Tests", () => {
   test("Get dashboard summary returns 200 or 500", async () => {
     const res = await authenticatedApi("/api/relatorios/resumo", adminToken);
     await expectStatus(res, 200, 500);
+    if (res.status === 200) {
+      const data = await res.json();
+      expect(data.total_mesas).toBeDefined();
+      expect(data.mesas_ocupadas).toBeDefined();
+      expect(data.comandas_abertas).toBeDefined();
+    }
+  });
+
+  test("Get dashboard summary with period filter returns 200 or 500", async () => {
+    const res = await authenticatedApi("/api/relatorios/resumo?periodo=hoje", adminToken);
+    await expectStatus(res, 200, 500);
+  });
+
+  test("Get dashboard summary with custom date range returns 200 or 500", async () => {
+    const res = await authenticatedApi(
+      `/api/relatorios/resumo?periodo=personalizado&dataInicio=2026-01-01&dataFim=2026-12-31`,
+      adminToken
+    );
+    await expectStatus(res, 200, 500);
   });
 
   test("Get dashboard summary without authentication returns 401", async () => {
     const res = await api("/api/relatorios/resumo");
+    await expectStatus(res, 401);
+  });
+
+  test("Get per-table report returns 200 or 500", async () => {
+    const res = await authenticatedApi("/api/relatorios/mesas", adminToken);
+    await expectStatus(res, 200, 500);
+    if (res.status === 200) {
+      const data = await res.json();
+      expect(data.periodo_label).toBeDefined();
+      expect(Array.isArray(data.mesas)).toBe(true);
+    }
+  });
+
+  test("Get per-table report with period filter returns 200 or 500", async () => {
+    const res = await authenticatedApi("/api/relatorios/mesas?periodo=7dias", adminToken);
+    await expectStatus(res, 200, 500);
+  });
+
+  test("Get per-table report with custom date range returns 200 or 500", async () => {
+    const res = await authenticatedApi(
+      `/api/relatorios/mesas?periodo=personalizado&dataInicio=2026-01-01&dataFim=2026-12-31`,
+      adminToken
+    );
+    await expectStatus(res, 200, 500);
+  });
+
+  test("Get per-table report without authentication returns 401", async () => {
+    const res = await api("/api/relatorios/mesas");
     await expectStatus(res, 401);
   });
 
