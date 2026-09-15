@@ -16,7 +16,7 @@ import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { SkeletonLine } from "@/components/SkeletonLoader";
 import { apiGet } from "@/utils/api";
 import { formatCurrency } from "@/utils/helpers";
-import { exportRelatorioPDF } from "@/utils/reportPdf";
+import { exportarRelatorioExcel, exportarRelatorioPDF } from "@/utils/relatorioExport";
 
 interface ReportSummary {
   total_revenue?: number;
@@ -25,6 +25,7 @@ interface ReportSummary {
   avg_ticket?: number;
   top_dishes?: { dish_name: string; quantity_sold: number }[];
   orders_by_status?: { aberta?: number; fechada?: number; cancelada?: number };
+  periodo_label?: string;
 }
 
 export default function RelatoriosScreen() {
@@ -35,7 +36,8 @@ export default function RelatoriosScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
-  const [exporting, setExporting] = useState(false);
+  const [exportandoExcel, setExportandoExcel] = useState(false);
+  const [exportandoPDF, setExportandoPDF] = useState(false);
 
   const fetchData = useCallback(async () => {
     console.log("[Relatorios] Fetching reports summary from /api/relatorios/resumo");
@@ -64,23 +66,31 @@ export default function RelatoriosScreen() {
     fetchData();
   };
 
-  const handleExport = async () => {
-    console.log('[Relatorios] Export PDF button pressed');
-    setExporting(true);
+  const handleExportarExcel = async () => {
+    if (loading || exportandoExcel || exportandoPDF) return;
+    console.log("[Relatorios] Exportando Excel");
+    setExportandoExcel(true);
     try {
-      await exportRelatorioPDF({
-        periodoLabel: 'Relatório Geral',
-        receitaPeriodo: summary.total_revenue ?? 0,
-        avgTicket: summary.avg_ticket ?? 0,
-        totalPedidos: summary.total_orders,
-        pedidosAbertos: summary.open_orders,
-        topDishes: summary.top_dishes ?? [],
-        ordersByStatus: summary.orders_by_status ?? {},
-      });
+      await exportarRelatorioExcel(summary, summary.periodo_label || "Hoje");
     } catch (e: any) {
-      Alert.alert('Erro', e?.message || 'Não foi possível gerar o PDF.');
+      console.error("[Relatorios] Erro ao exportar Excel:", e instanceof Error ? e.message : String(e));
+      Alert.alert("Erro ao exportar", "Não foi possível gerar o arquivo Excel. Tente novamente.");
     } finally {
-      setExporting(false);
+      setExportandoExcel(false);
+    }
+  };
+
+  const handleExportarPDF = async () => {
+    if (loading || exportandoExcel || exportandoPDF) return;
+    console.log("[Relatorios] Exportando PDF");
+    setExportandoPDF(true);
+    try {
+      await exportarRelatorioPDF(summary, summary.periodo_label || "Hoje");
+    } catch (e: any) {
+      console.error("[Relatorios] Erro ao exportar PDF:", e instanceof Error ? e.message : String(e));
+      Alert.alert("Erro ao exportar", "Não foi possível gerar o PDF. Tente novamente.");
+    } finally {
+      setExportandoPDF(false);
     }
   };
 
@@ -118,17 +128,7 @@ export default function RelatoriosScreen() {
           <View style={{ flex: 1, alignItems: 'center' }}>
             <Text style={{ fontFamily: 'Outfit_700Bold', fontSize: 17, color: COLORS.text }}>Relatórios</Text>
           </View>
-          <TouchableOpacity
-            onPress={handleExport}
-            disabled={exporting}
-            style={{ width: 80, alignItems: 'flex-end' }}
-            activeOpacity={0.7}
-          >
-            {exporting
-              ? <ActivityIndicator size="small" color="#007AFF" />
-              : <Ionicons name="share-outline" size={22} color="#007AFF" />
-            }
-          </TouchableOpacity>
+          <View style={{ width: 80 }} />
         </View>
       </SafeAreaView>
 
@@ -158,6 +158,61 @@ export default function RelatoriosScreen() {
           </View>
         ) : (
           <>
+            {/* Exportar relatório */}
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <AnimatedPressable
+                onPress={handleExportarExcel}
+                disabled={loading || exportandoExcel || exportandoPDF}
+                style={{
+                  flex: 1,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
+                  backgroundColor: COLORS.surface,
+                  borderRadius: 12,
+                  paddingVertical: 12,
+                  borderWidth: 1,
+                  borderColor: COLORS.border,
+                }}
+              >
+                {exportandoExcel ? (
+                  <ActivityIndicator size="small" color={COLORS.text} />
+                ) : (
+                  <Ionicons name="grid-outline" size={18} color={COLORS.text} />
+                )}
+                <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 14, color: COLORS.text }}>
+                  Excel
+                </Text>
+              </AnimatedPressable>
+
+              <AnimatedPressable
+                onPress={handleExportarPDF}
+                disabled={loading || exportandoExcel || exportandoPDF}
+                style={{
+                  flex: 1,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
+                  backgroundColor: COLORS.surface,
+                  borderRadius: 12,
+                  paddingVertical: 12,
+                  borderWidth: 1,
+                  borderColor: COLORS.border,
+                }}
+              >
+                {exportandoPDF ? (
+                  <ActivityIndicator size="small" color={COLORS.text} />
+                ) : (
+                  <Ionicons name="document-text-outline" size={18} color={COLORS.text} />
+                )}
+                <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 14, color: COLORS.text }}>
+                  PDF
+                </Text>
+              </AnimatedPressable>
+            </View>
+
             {/* Summary stats */}
             <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
               {[
