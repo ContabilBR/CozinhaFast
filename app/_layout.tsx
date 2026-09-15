@@ -56,7 +56,7 @@ function RootLayoutNav() {
     // pelo SO, etc.), sai imediatamente pro lugar certo.
     if (inMesaCliente) {
       console.log("[Layout] Em (mesa-cliente) sem configuração — redirecionando para fora");
-      router.replace(user ? "/(tabs)/" : "/auth-screen");
+      router.replace(user ? "/(tabs)/(home)" : "/auth-screen");
       return;
     }
 
@@ -64,8 +64,8 @@ function RootLayoutNav() {
       console.log("[Layout] No user — redirecionando para /auth-screen");
       router.replace("/auth-screen");
     } else if (user && inAuthScreen) {
-      console.log("[Layout] User authenticated — redirecionando para /(tabs)/");
-      router.replace("/(tabs)/");
+      console.log("[Layout] User authenticated — redirecionando para /(tabs)/(home)");
+      router.replace("/(tabs)/(home)");
     }
   }, [user, isLoading, mesaClienteConfigured, mesaClienteLoading, segments, router]);
 
