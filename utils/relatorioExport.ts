@@ -1,9 +1,11 @@
 import * as XLSX from "xlsx";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
+import { formatCurrency } from "@/utils/helpers";
 
 export interface RelatorioResumo {
   total_revenue?: number;
+  receita_periodo?: number;
   total_orders?: number;
   open_orders?: number;
   avg_ticket?: number;
@@ -29,8 +31,16 @@ function bytesParaBase64(bytes: Uint8Array): string {
   return resultado;
 }
 
+function formatPct(n: number, total: number): string {
+  if (total <= 0) return "0,0%";
+  return `${((n / total) * 100).toFixed(1).replace(".", ",")}%`;
+}
+
 export async function exportarRelatorioExcel(resumo: RelatorioResumo, periodoLabel: string): Promise<void> {
   const status = resumo.orders_by_status || {};
+  const pedidosNoPeriodo = (status.aberta ?? 0) + (status.fechada ?? 0) + (status.cancelada ?? 0);
+  const pratos = resumo.top_dishes || [];
+  const totalItensVendidos = pratos.reduce((soma, p) => soma + (p.quantity_sold || 0), 0);
 
   const wb = XLSX.utils.book_new();
 
@@ -39,27 +49,38 @@ export async function exportarRelatorioExcel(resumo: RelatorioResumo, periodoLab
     ["Período", periodoLabel],
     ["Emitido em", new Date().toLocaleString("pt-BR")],
     [],
-    ["Indicador", "Valor"],
-    ["Faturamento Total", resumo.total_revenue ?? 0],
-    ["Total de Pedidos", resumo.total_orders ?? 0],
-    ["Pedidos Abertos", resumo.open_orders ?? 0],
-    ["Ticket Médio", resumo.avg_ticket ?? 0],
+    ["RESUMO DO PERÍODO SELECIONADO", ""],
+    ["Faturamento no Período", formatCurrency(resumo.receita_periodo ?? 0)],
+    ["Pedidos no Período", pedidosNoPeriodo],
+    ["Ticket Médio", formatCurrency(resumo.avg_ticket ?? 0)],
+    ["Pedidos Abertos Atualmente", resumo.open_orders ?? 0],
     [],
-    ["Pedidos por Status", ""],
-    ["Abertas", status.aberta ?? 0],
-    ["Fechadas", status.fechada ?? 0],
-    ["Canceladas", status.cancelada ?? 0],
+    ["PEDIDOS POR STATUS NO PERÍODO", "", "% do período"],
+    ["Abertas", status.aberta ?? 0, formatPct(status.aberta ?? 0, pedidosNoPeriodo)],
+    ["Fechadas", status.fechada ?? 0, formatPct(status.fechada ?? 0, pedidosNoPeriodo)],
+    ["Canceladas", status.cancelada ?? 0, formatPct(status.cancelada ?? 0, pedidosNoPeriodo)],
+    [],
+    ["HISTÓRICO GERAL (desde o início)", ""],
+    ["Faturamento Total Histórico", formatCurrency(resumo.total_revenue ?? 0)],
+    ["Total de Pedidos Histórico", resumo.total_orders ?? 0],
   ];
   const wsResumo = XLSX.utils.aoa_to_sheet(linhasResumo);
-  wsResumo["!cols"] = [{ wch: 26 }, { wch: 20 }];
+  wsResumo["!cols"] = [{ wch: 30 }, { wch: 20 }, { wch: 14 }];
   XLSX.utils.book_append_sheet(wb, wsResumo, "Resumo");
 
-  const pratos = resumo.top_dishes || [];
-  const wsPratos = XLSX.utils.aoa_to_sheet([
-    ["Prato", "Quantidade Vendida"],
-    ...pratos.map((p) => [p.dish_name, p.quantity_sold]),
-  ]);
-  wsPratos["!cols"] = [{ wch: 32 }, { wch: 18 }];
+  const linhasPratos = [
+    ["Prato", "Quantidade Vendida", "% do total de itens"],
+    ...pratos.map((p) => [
+      p.dish_name,
+      p.quantity_sold,
+      formatPct(p.quantity_sold, totalItensVendidos),
+    ]),
+  ];
+  if (pratos.length === 0) {
+    linhasPratos.push(["Sem dados disponíveis para este período", "", ""]);
+  }
+  const wsPratos = XLSX.utils.aoa_to_sheet(linhasPratos);
+  wsPratos["!cols"] = [{ wch: 34 }, { wch: 18 }, { wch: 16 }];
   XLSX.utils.book_append_sheet(wb, wsPratos, "Pratos Mais Pedidos");
 
   // XLSX.write com type "array" devolve um ArrayBuffer — não é indexável direto,
