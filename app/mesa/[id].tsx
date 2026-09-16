@@ -12,7 +12,6 @@ import { apiGet } from "@/utils/api";
 import { getMesaStatusLabel, getMesaStatusColor, isAdmin } from "@/utils/helpers";
 import { Users } from "lucide-react-native";
 
-const BASE_URL = "https://j74mf38wgua3d4qd5mqbjjvza88n2qcp.app.specular.dev";
 
 interface Pedido {
   id: string | number;
@@ -80,14 +79,7 @@ export default function MesaDetailScreen() {
     console.log("[Mesa] GET /api/mesas/" + mesaId + "/comanda");
     setComandaLoading(true);
     try {
-      const res = await fetch(`${BASE_URL}/api/mesas/${mesaId}/comanda`);
-      if (!res.ok) {
-        const text = await res.text();
-        console.warn("[Mesa] Comanda fetch error:", res.status, text.slice(0, 200));
-        setComanda(null);
-        return;
-      }
-      const data = await res.json();
+      const data = await apiGet<any>(`/api/mesas/${mesaId}/comanda`);
       const c: ComandaInfo | null = data.comanda ?? data ?? null;
       if (c) {
         c.total = parseFloat(String(c.total)) || 0;
