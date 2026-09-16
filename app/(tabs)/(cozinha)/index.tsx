@@ -739,11 +739,17 @@ export default function CozinhaScreen() {
     )
     .sort((a, b) => getOldestActivePedidoTime(a) - getOldestActivePedidoTime(b));
 
-  const filteredComandas = comandas.filter((c) => {
-    const targetStatus = COMANDA_FILTER_STATUS[comandaFilter];
-    if (targetStatus === null) return true;
-    return c.status === targetStatus;
-  });
+  // Comandas: mesmo filtro de status de antes, mas agora também ordenadas
+  // da mais antiga para a mais nova (mesa/pedido feito primeiro no topo),
+  // igual à Fila — o backend retorna em ORDER BY created_at DESC, então
+  // sem isso a lista aparecia com a mesa mais recente no topo.
+  const filteredComandas = comandas
+    .filter((c) => {
+      const targetStatus = COMANDA_FILTER_STATUS[comandaFilter];
+      if (targetStatus === null) return true;
+      return c.status === targetStatus;
+    })
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
   // Header subtitle counts across all active comandas
   const allActivePedidos = comandas.flatMap((c) =>
@@ -1006,31 +1012,3 @@ export default function CozinhaScreen() {
                 <ComandaCard item={item} index={index} />
               )}
               ListEmptyComponent={
-                <View style={{ alignItems: "center", justifyContent: "center", padding: 48, gap: 12 }}>
-                  <View
-                    style={{
-                      width: 72,
-                      height: 72,
-                      borderRadius: 20,
-                      backgroundColor: COLORS.primaryMuted,
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <UtensilsCrossed size={32} color={COLORS.primary} />
-                  </View>
-                  <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 17, color: COLORS.text }}>
-                    Nenhuma comanda
-                  </Text>
-                  <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 14, color: COLORS.textSecondary, textAlign: "center" }}>
-                    Não há comandas no momento
-                  </Text>
-                </View>
-              }
-            />
-          )}
-        </>
-      )}
-    </View>
-  );
-}
