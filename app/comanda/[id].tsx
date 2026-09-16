@@ -100,7 +100,7 @@ export default function ComandaDetailScreen() {
       const [comandaRes, pratosRes, pedidosRes] = await Promise.all([
         apiGet<any>(`/api/comandas/${id}`),
         apiGet<any>('/api/pratos'),
-        apiGet<any>('/api/pedidos'),
+        apiGet<any>('/api/pedidos?comanda_id=' + id),
       ]);
 
       // Support both direct object and wrapped { comanda: ... }
@@ -244,7 +244,7 @@ export default function ComandaDetailScreen() {
       );
       setStagedItems([]);
       console.log('[ComandaDetail] GET /api/pedidos (refresh after send)');
-      const pedidosRes = await apiGet<any>('/api/pedidos');
+      const pedidosRes = await apiGet<any>('/api/pedidos?comanda_id=' + id);
       const allPedidos: Pedido[] = Array.isArray(pedidosRes)
         ? pedidosRes
         : pedidosRes?.pedidos ?? [];
