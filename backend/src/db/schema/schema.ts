@@ -179,6 +179,9 @@ export const comandasHistorico = pgTable("comandas_historico", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   closedAt: timestamp("closed_at", { withTimezone: true }),
   archivedAt: timestamp("archived_at", { withTimezone: true }).defaultNow().notNull(),
+  fechadoPorId: text("fechado_por_id"),
+  fechadoPorNome: text("fechado_por_nome"),
+  fechadoPorRole: text("fechado_por_role"),
   restauranteId: uuid("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
 });
 

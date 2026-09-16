@@ -92,6 +92,7 @@ export function registerAuthRoutes(app: App) {
         const { name, email, password, role } = request.body;
 
         if (!name || !email || !password) {
+          app.logger.warn({ email, hasMissing: !name || !email || !password }, "Sign up failed: missing required fields");
           return reply.status(400).send({ error: "Name, email e senha são obrigatórios" });
         }
 
@@ -114,6 +115,7 @@ export function registerAuthRoutes(app: App) {
         const now = new Date();
         const userRole = role || "garcom";
 
+        app.logger.debug({ userId, email, userRole }, "Inserting user");
         await app.db.insert(userTable).values({
           id: userId,
           name,
@@ -124,9 +126,11 @@ export function registerAuthRoutes(app: App) {
           createdAt: now,
           updatedAt: now,
         });
+        app.logger.debug({ userId }, "User inserted");
 
         // Hash password and create account
         const hashedPassword = await bcrypt.hash(password, 10);
+        app.logger.debug({ userId }, "Creating account");
         await app.db.insert(accountTable).values({
           id: randomUUID(),
           accountId: userId,
@@ -136,104 +140,90 @@ export function registerAuthRoutes(app: App) {
           createdAt: now,
           updatedAt: now,
         });
+        app.logger.debug({ userId }, "Account created");
 
-        // Ensure a restaurante exists - use seed ID first, or create one
-        const seedRestauranteId = '00000000-0000-0000-0000-000000000001';
-        let restauranteId: string;
-
+        // Ensure a restaurante exists - get first or create default
+        app.logger.debug({}, "Looking for existing restaurante");
+        let restaurantes: any = [];
         try {
-          // First, try to use the seed restaurante if it exists
-          const seedRestaurante = await app.db
-            .select()
-            .from(schema.restaurante)
-            .where(eq(schema.restaurante.id, seedRestauranteId))
-            .limit(1);
-
-          if (seedRestaurante.length > 0) {
-            restauranteId = seedRestauranteId;
-            app.logger.debug({ restauranteId }, "Using existing seed restaurante");
-          } else {
-            // Try to get the first existing restaurante
-            const existingRestaurantes = await app.db.select().from(schema.restaurante).limit(1);
-            if (existingRestaurantes.length > 0) {
-              restauranteId = existingRestaurantes[0].id;
-              app.logger.debug({ restauranteId }, "Using first existing restaurante");
-            } else {
-              // No restaurante exists, create one with the seed ID
-              app.logger.debug({}, "No restaurante found, creating seed restaurante");
-              const [newRestaurante] = await app.db
-                .insert(schema.restaurante)
-                .values({
-                  id: seedRestauranteId,
-                  nome: 'Default Restaurant',
-                })
-                .returning();
-              restauranteId = newRestaurante.id;
-              app.logger.debug({ restauranteId }, "Created new seed restaurante");
-            }
-          }
+          restaurantes = await app.db.select().from(schema.restaurante).limit(1);
         } catch (err) {
-          app.logger.error({ err }, "Failed to ensure restaurante exists - will try fallback");
-          // Last resort: try to get any restaurante or create one
+          app.logger.error({ err }, "Failed to query restaurante table");
+          restaurantes = [];
+        }
+
+        let restauranteId: string = "";
+
+        if (restaurantes && restaurantes.length > 0) {
+          restauranteId = restaurantes[0].id;
+          app.logger.debug({ restauranteId }, "Using existing restaurante");
+        }
+
+        if (!restauranteId) {
+          // No restaurante exists, create one
+          app.logger.debug({}, "Creating default restaurante");
           try {
-            const fallbackRestaurantes = await app.db.select().from(schema.restaurante).limit(1);
-            if (fallbackRestaurantes.length > 0) {
-              restauranteId = fallbackRestaurantes[0].id;
-              app.logger.debug({ restauranteId }, "Using fallback restaurante");
-            } else {
-              const [newRestaurante] = await app.db
-                .insert(schema.restaurante)
-                .values({ nome: 'Test Restaurant' })
-                .returning();
-              restauranteId = newRestaurante.id;
-              app.logger.debug({ restauranteId }, "Created fallback restaurante");
-            }
-          } catch (fallbackErr) {
-            app.logger.error({ err: fallbackErr }, "Failed to create fallback restaurante - signup will fail");
-            throw fallbackErr;
+            // Don't rely on .returning() - just insert and use the generated ID
+            const generatedId = randomUUID();
+            await app.db.insert(schema.restaurante).values({
+              id: generatedId,
+              nome: 'Default Restaurant',
+            });
+            restauranteId = generatedId;
+            app.logger.debug({ restauranteId }, "Created default restaurante");
+          } catch (err) {
+            app.logger.error({ err }, "Failed to create default restaurante");
+            throw err;
           }
         }
 
-        app.logger.info({ userId, restauranteId }, "Associating user with restaurante");
+        if (!restauranteId) {
+          throw new Error('No restaurante ID available for profile creation');
+        }
+
+        app.logger.info({ userId, restauranteId }, "Creating profile");
 
         // Create profile with restaurante association and role
+        const profileId = randomUUID();
         try {
           await app.db.insert(schema.profiles).values({
+            id: profileId,
             userId: userId,
-            restauranteId: restauranteId as any,
+            restauranteId: restauranteId,
             role: userRole,
             name,
             createdAt: now,
           });
-          app.logger.info({ userId, profileRestauranteId: restauranteId }, "Profile created successfully");
-        } catch (profileErr) {
-          app.logger.error({ userId, restauranteId, err: profileErr }, "Failed to create profile during sign-up");
-          // Don't throw - let the user complete sign-up even if profile creation fails
-          // The profile will be created on first sign-in
+        } catch (err) {
+          app.logger.error({ err, profileId, userId, restauranteId }, "Failed to insert profile");
+          throw err;
         }
+
+        app.logger.info({ userId, profileId, restauranteId }, "Profile created successfully");
 
         // Generate session token (UUID)
         const token = randomUUID();
+        const sessionId = randomUUID();
         const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
 
-        app.logger.info({ token, userId, expiresAt }, "Creating session");
+        app.logger.info({ tokenStart: token.substring(0, 20), userId, sessionId }, "Creating session");
 
         // Create session
         try {
           await app.db.insert(sessionTable).values({
-            id: randomUUID(),
+            id: sessionId,
             token,
             userId: userId,
             expiresAt,
             createdAt: now,
           });
-          app.logger.info({ token, userId }, "Session created successfully");
-        } catch (sessionErr) {
-          app.logger.error({ token, userId, err: sessionErr }, "Failed to create session");
-          throw sessionErr;
+        } catch (err) {
+          app.logger.error({ err, sessionId, userId, tokenStart: token.substring(0, 20) }, "Failed to insert session");
+          throw err;
         }
 
-        app.logger.info({ userId, email, token }, "Sign up successful");
+        app.logger.info({ tokenStart: token.substring(0, 20), userId, sessionId }, "Session created successfully");
+        app.logger.info({ userId, email, tokenStart: token.substring(0, 20) }, "Sign up successful");
 
         return reply.status(201).send({
           token,
@@ -250,7 +240,7 @@ export function registerAuthRoutes(app: App) {
           },
         });
       } catch (error) {
-        app.logger.error({ err: error }, "Sign up failed with error");
+        app.logger.error({ err: error, email: request.body.email }, "Sign up failed with error");
         return reply.status(500).send({ error: "Internal server error" });
       }
     }
@@ -357,31 +347,51 @@ export function registerAuthRoutes(app: App) {
         if (!profiles || profiles.length === 0) {
           // Profile doesn't exist, create one with a default restaurante
           app.logger.warn({ userId: user.id }, "Profile not found for signed-in user, creating one");
+
+          // Get or create a default restaurante
+          let restaurantes: any = [];
           try {
-            // Try to get or create a default restaurante
-            const existingRestaurante = await app.db.select().from(schema.restaurante).limit(1);
-            const restauranteId = existingRestaurante.length > 0
-              ? existingRestaurante[0].id
-              : (await app.db.insert(schema.restaurante).values({ nome: 'Default Restaurant' }).returning())[0].id;
-
-            await app.db.insert(schema.profiles).values({
-              userId: user.id,
-              restauranteId: restauranteId,
-              role: user.role || "garcom",
-              name: user.name || "",
-              createdAt: new Date(),
-            });
-
-            // Reload profiles
-            profiles = await app.db
-              .select()
-              .from(schema.profiles)
-              .where(eq(schema.profiles.userId, user.id))
-              .limit(1);
-          } catch (profileErr) {
-            app.logger.error({ userId: user.id, err: profileErr }, "Failed to create missing profile on sign-in");
-            throw profileErr;
+            restaurantes = await app.db.select().from(schema.restaurante).limit(1);
+          } catch (err) {
+            app.logger.error({ err }, "Failed to query restaurante on sign-in");
+            restaurantes = [];
           }
+
+          let restauranteId: string = "";
+
+          if (restaurantes && restaurantes.length > 0) {
+            restauranteId = restaurantes[0].id;
+          }
+
+          if (!restauranteId) {
+            // Create a default restaurante
+            try {
+              restauranteId = randomUUID();
+              await app.db.insert(schema.restaurante).values({
+                id: restauranteId,
+                nome: 'Default Restaurant',
+              });
+            } catch (err) {
+              app.logger.error({ err }, "Failed to create restaurante on sign-in");
+              throw err;
+            }
+          }
+
+          await app.db.insert(schema.profiles).values({
+            id: randomUUID(),
+            userId: user.id,
+            restauranteId: restauranteId,
+            role: user.role || "garcom",
+            name: user.name || "",
+            createdAt: new Date(),
+          });
+
+          // Reload profiles
+          profiles = await app.db
+            .select()
+            .from(schema.profiles)
+            .where(eq(schema.profiles.userId, user.id))
+            .limit(1);
         }
 
         const profile = profiles && profiles.length > 0
