@@ -104,7 +104,11 @@ export default function FecharContaScreen() {
       await apiPost("/api/comandas/" + id + "/fechar", { gorjeta: gorjetaValue });
       Alert.alert("Conta fechada!", "Comanda encerrada.", [{ text: "OK", onPress: () => router.dismissAll() }]);
     } catch (err: any) {
-      Alert.alert("Registrado!", "Volte para fechar quando pronto.", [{ text: "OK", onPress: () => router.back() }]);
+      if (err?.status === 400) {
+        Alert.alert("Registrado!", "Volte para fechar quando pronto.", [{ text: "OK", onPress: () => router.back() }]);
+      } else {
+        Alert.alert("Erro ao fechar", err?.message || "Não foi possível fechar a comanda. Tente novamente.");
+      }
     }
   };
 
