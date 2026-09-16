@@ -24,6 +24,9 @@ export function registerHistoricoRoutes(app: App) {
                 mesa_numero: { type: "integer", nullable: true },
                 garcom_id: { type: "string", nullable: true },
                 garcom_nome: { type: "string" },
+                fechado_por_id: { type: "string", nullable: true },
+                fechado_por_nome: { type: "string", nullable: true },
+                fechado_por_role: { type: "string", nullable: true },
                 status: { type: "string" },
                 total: { type: "string" },
                 created_at: { type: "string", format: "date-time" },
@@ -74,6 +77,9 @@ export function registerHistoricoRoutes(app: App) {
             ch.created_at,
             ch.closed_at,
             ch.archived_at,
+            ch.fechado_por_id,
+            ch.fechado_por_nome,
+            ch.fechado_por_role,
             COALESCE(u.nome, 'Não informado') as garcom_nome
           FROM comandas_historico ch
           LEFT JOIN usuarios u ON u.id::text = ch.garcom_id
@@ -108,6 +114,9 @@ export function registerHistoricoRoutes(app: App) {
               mesa_numero: comanda.mesa_numero,
               garcom_id: comanda.garcom_id,
               garcom_nome: comanda.garcom_nome || "Não informado",
+              fechado_por_id: comanda.fechado_por_id || null,
+              fechado_por_nome: comanda.fechado_por_nome || null,
+              fechado_por_role: comanda.fechado_por_role || null,
               status: comanda.status,
               total: comanda.total.toString(),
               created_at: new Date(comanda.created_at).toISOString(),
