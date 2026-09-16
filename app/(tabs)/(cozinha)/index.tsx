@@ -1012,3 +1012,31 @@ export default function CozinhaScreen() {
                 <ComandaCard item={item} index={index} />
               )}
               ListEmptyComponent={
+                <View style={{ alignItems: "center", justifyContent: "center", padding: 48, gap: 12 }}>
+                  <View
+                    style={{
+                      width: 72,
+                      height: 72,
+                      borderRadius: 20,
+                      backgroundColor: COLORS.primaryMuted,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <ChefHat size={32} color={COLORS.primary} />
+                  </View>
+                  <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 17, color: COLORS.text }}>
+                    Nenhuma comanda
+                  </Text>
+                  <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 14, color: COLORS.textSecondary, textAlign: "center" }}>
+                    Não há comandas abertas no momento
+                  </Text>
+                </View>
+              }
+            />
+          )}
+        </>
+      )}
+    </View>
+  );
+}
