@@ -864,6 +864,9 @@ export function registerOrderRoutes(app: App) {
             createdAt: createdAt,
             closedAt: closedAt,
             archivedAt: closedAt,
+            fechadoPorId: session.id,
+            fechadoPorNome: session.name,
+            fechadoPorRole: session.role,
             restauranteId,
           });
 
