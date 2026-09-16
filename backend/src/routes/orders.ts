@@ -3,7 +3,7 @@ import { eq, sql, inArray, or, and } from "drizzle-orm";
 import * as schema from "../db/schema/schema.js";
 import { user } from "../db/schema/auth-schema.js";
 import type { App } from "../index.js";
-import { requireAuth as customRequireAuth, requireTenant } from "../utils/auth.js";
+import { requireAuth as customRequireAuth, requireTenant, requireRole } from "../utils/auth.js";
 import { resolveGarcomId } from "../utils/garcom.js";
 import { realtimeHub } from "../realtime/hub.js";
 
@@ -738,13 +738,23 @@ export function registerOrderRoutes(app: App) {
       const session = await customRequireAuth(app, request, reply);
       if (!session) return;
 
+      // Fechamento é permitido para qualquer garçom ou papel gerencial (não para cozinheiro/kitchen)
+      if (
+        !requireRole(
+          session,
+          ["garcom", "gerente", "administrador", "admin", "manager", "superadmin", "super_admin"],
+          reply
+        )
+      )
+        return;
+
       try {
         const restauranteId = requireTenant(session);
         if (!restauranteId) {
           return reply.code(404).send({ error: "Nenhum restaurante associado" });
         }
 
-        app.logger.info({ comandaId: request.params.id, restauranteId }, "Closing and archiving comanda");
+        app.logger.info({ comandaId: request.params.id, restauranteId, closedBy: session.id, closedByRole: session.role }, "Closing and archiving comanda");
 
         // STEP 1: First query mesa_id before any archive logic
         const mesaIdResult = await app.db
