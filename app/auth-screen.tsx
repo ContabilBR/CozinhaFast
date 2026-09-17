@@ -286,6 +286,26 @@ export default function AuthScreen() {
               </View>
             </View>
 
+            {/* Forgot password */}
+            <TouchableOpacity
+              onPress={() => {
+                console.log("[AuthScreen] Esqueci minha senha pressed");
+                router.push("/esqueci-senha" as any);
+              }}
+              style={{ alignSelf: "flex-end", marginTop: -8 }}
+              hitSlop={8}
+            >
+              <Text
+                style={{
+                  fontFamily: "Outfit_400Regular",
+                  fontSize: 13,
+                  color: TEXT_SECONDARY,
+                }}
+              >
+                Esqueci minha senha
+              </Text>
+            </TouchableOpacity>
+
             {/* Error */}
             {!!error && (
               <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 13, color: "#ff6b6b" }}>
