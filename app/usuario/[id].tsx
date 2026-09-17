@@ -74,7 +74,7 @@ export default function EditarUsuarioScreen() {
     setError("");
     try {
       const payload: any = { name: nome.trim(), nome: nome.trim(), email: email.trim(), role };
-      if (senha.trim()) payload.password = senha;
+      if (senha.trim()) payload.senha = senha;
       console.log("[EditarUsuario] PUT /api/usuarios/" + id);
       await apiPut(`/api/usuarios/${id}`, payload);
       console.log("[EditarUsuario] Usuário atualizado com sucesso");
