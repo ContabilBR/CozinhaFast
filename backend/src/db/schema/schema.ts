@@ -32,6 +32,42 @@ export const unidadeMedidaEnum = pgEnum("unidade_medida", ["kg", "g", "l", "ml",
 export const movimentacaoTipoEnum = pgEnum("movimentacao_tipo", ["entrada", "saida", "ajuste"]);
 export const tipoDocumentoFiscalEnum = pgEnum("tipo_documento_fiscal", ["nfce", "nfe", "nfse"]);
 export const regimeTributarioEnum = pgEnum("regime_tributario", ["simples_nacional", "simples_excesso", "regime_normal", "mei"]);
+export const planoEnum = pgEnum("plano", ["trial", "basico", "profissional", "enterprise"]);
+export const assinaturaStatusEnum = pgEnum("assinatura_status", ["trial", "ativa", "inadimplente", "cancelada", "expirada"]);
+
+// Restaurante (Restaurant information) - Define early since many tables reference it
+export const restaurante = pgTable("restaurante", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  nome: text("nome").notNull(),
+  filial: text("filial"),
+  endereco: text("endereco"),
+  cnpj: text("cnpj"),
+  plano: planoEnum("plano").default("trial").notNull(),
+  assinaturaStatus: assinaturaStatusEnum("assinatura_status").default("trial").notNull(),
+  assinaturaAsaasId: text("assinatura_asaas_id"),
+  trialExpiraEm: timestamp("trial_expira_em", { withTimezone: true }),
+  // === Dados fiscais (Tier 2B.1) ===
+  inscricaoEstadual: text("inscricao_estadual"),
+  inscricaoMunicipal: text("inscricao_municipal"),
+  regimeTributario: regimeTributarioEnum("regime_tributario"),
+  cnaePrincipal: text("cnae_principal"),
+  cscToken: text("csc_token"),
+  cscId: text("csc_id"),
+  ambienteFocus: integer("ambiente_focus").default(2).notNull(),
+  ncmPadrao: text("ncm_padrao").default("21069090").notNull(),
+  // === Endereço estruturado (Tier 2B.1) ===
+  cep: text("cep"),
+  logradouro: text("logradouro"),
+  numeroEndereco: text("numero_endereco"),
+  complemento: text("complemento"),
+  bairro: text("bairro"),
+  codigoMunicipioIbge: integer("codigo_municipio_ibge"),
+  uf: text("uf"),
+  telefone: text("telefone"),
+  email: text("email"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
 
 // Mesas (Tables)
 export const mesas = pgTable("mesas", {
@@ -214,43 +250,6 @@ export const pagamentosHistorico = pgTable("pagamentos_historico", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   archivedAt: timestamp("archived_at", { withTimezone: true }).defaultNow().notNull(),
   restauranteId: uuid("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
-});
-
-// Restaurante (Restaurant information)
-export const planoEnum = pgEnum("plano", ["trial", "basico", "profissional", "enterprise"]);
-export const assinaturaStatusEnum = pgEnum("assinatura_status", ["trial", "ativa", "inadimplente", "cancelada", "expirada"]);
-
-export const restaurante = pgTable("restaurante", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  nome: text("nome").notNull(),
-  filial: text("filial"),
-  endereco: text("endereco"),
-  cnpj: text("cnpj"),
-  plano: planoEnum("plano").default("trial").notNull(),
-  assinaturaStatus: assinaturaStatusEnum("assinatura_status").default("trial").notNull(),
-  assinaturaAsaasId: text("assinatura_asaas_id"),
-  trialExpiraEm: timestamp("trial_expira_em", { withTimezone: true }),
-  // === Dados fiscais (Tier 2B.1) ===
-  inscricaoEstadual: text("inscricao_estadual"),
-  inscricaoMunicipal: text("inscricao_municipal"),
-  regimeTributario: regimeTributarioEnum("regime_tributario"),
-  cnaePrincipal: text("cnae_principal"),
-  cscToken: text("csc_token"),
-  cscId: text("csc_id"),
-  ambienteFocus: integer("ambiente_focus").default(2).notNull(),
-  ncmPadrao: text("ncm_padrao").default("21069090").notNull(),
-  // === Endereço estruturado (Tier 2B.1) ===
-  cep: text("cep"),
-  logradouro: text("logradouro"),
-  numeroEndereco: text("numero_endereco"),
-  complemento: text("complemento"),
-  bairro: text("bairro"),
-  codigoMunicipioIbge: integer("codigo_municipio_ibge"),
-  uf: text("uf"),
-  telefone: text("telefone"),
-  email: text("email"),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const notasFiscais = pgTable("notas_fiscais", {

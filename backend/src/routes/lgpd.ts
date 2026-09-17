@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import type { FastifyRequest, FastifyReply } from "fastify";
 import type { App } from "../index.js";
-import { requireAuth as customRequireAuth, requireTenant } from "../utils/auth.js";
+import { requireAuth as customRequireAuth, requireTenant, requireRole } from "../utils/auth.js";
 import * as schema from "../db/schema/schema.js";
 
 export function registerLgpdRoutes(app: App) {
@@ -60,6 +60,14 @@ export function registerLgpdRoutes(app: App) {
             error: { type: "string" },
           },
         },
+        403: {
+          description: "Role not allowed to self-delete (garcom/cozinheiro)",
+          type: "object",
+          properties: {
+            error: { type: "string" },
+            message: { type: "string" },
+          },
+        },
         404: {
           description: "User not found",
           type: "object",
@@ -87,6 +95,11 @@ export function registerLgpdRoutes(app: App) {
     try {
       const authUser = await customRequireAuth(app, request, reply);
       if (!authUser) return;
+      // Exclusão de conta é self-service apenas para gerente/administrador.
+      // Contas de garçom/cozinheiro são criadas e geridas pelo gerente, então
+      // a exclusão delas deve passar por quem administra a equipe, não pelo
+      // próprio garçom/cozinheiro.
+      if (!requireRole(authUser, ["administrador", "gerente"], reply)) return;
       const restauranteId = requireTenant(authUser);
 
       // Try to find usuario in usuarios table, but handle Better Auth users gracefully

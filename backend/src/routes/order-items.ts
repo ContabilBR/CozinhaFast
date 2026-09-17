@@ -1,5 +1,5 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
-import { eq, sql, desc } from "drizzle-orm";
+import { eq, sql, desc, and } from "drizzle-orm";
 import * as schema from "../db/schema/schema.js";
 import type { App } from "../index.js";
 import { requireAuth as customRequireAuth, requireTenant } from "../utils/auth.js";
@@ -27,12 +27,18 @@ function normalizeDecimal(value: any): number {
 
 export function registerOrderItemRoutes(app: App) {
   // GET /api/pedidos - List all pedidos for authenticated user
-  app.fastify.get(
+  app.fastify.get<{ Querystring: { comanda_id?: string } }>(
     "/api/pedidos",
     {
       schema: {
         description: "List all pedidos for authenticated user (requires authentication)",
         tags: ["pedidos"],
+        querystring: {
+          type: "object",
+          properties: {
+            comanda_id: { type: "string", format: "uuid" },
+          },
+        },
         response: {
           200: {
             type: "object",
@@ -62,7 +68,7 @@ export function registerOrderItemRoutes(app: App) {
         },
       },
     },
-    async (request: FastifyRequest, reply: FastifyReply) => {
+    async (request: FastifyRequest<{ Querystring: { comanda_id?: string } }>, reply: FastifyReply) => {
       const authUser = await customRequireAuth(app, request, reply);
       if (!authUser) return;
 
@@ -70,8 +76,34 @@ export function registerOrderItemRoutes(app: App) {
         const authUserId = authUser.id;
         const userRole = authUser.role?.toLowerCase() ?? "";
         const isManager = ["gerente", "admin", "administrador"].includes(userRole);
+        const comandaIdFilter = request.query.comanda_id;
 
-        app.logger.info({ authUserId, userRole, isManager }, "Listing pedidos for user");
+        app.logger.info({ authUserId, userRole, isManager, comandaIdFilter }, "Listing pedidos for user");
+
+        const restauranteId = requireTenant(authUser);
+        if (!restauranteId) {
+          return reply.code(401).send({ error: "Nenhum restaurante associado" });
+        }
+
+        const tenantCondition = eq(schema.comandas.restauranteId, restauranteId);
+
+        let whereCondition;
+        if (comandaIdFilter) {
+          // comanda_id filter: return all pedidos for that comanda within the tenant
+          whereCondition = and(
+            tenantCondition,
+            eq(schema.pedidos.comandaId, comandaIdFilter)
+          );
+        } else if (isManager) {
+          // Manager: all pedidos for the restaurant
+          whereCondition = tenantCondition;
+        } else {
+          // Garcom: only their own comandas, scoped to tenant
+          whereCondition = and(
+            tenantCondition,
+            eq(schema.comandas.garcomId, authUserId)
+          );
+        }
 
         const pedidos = await app.db
           .select({
@@ -94,11 +126,7 @@ export function registerOrderItemRoutes(app: App) {
           .innerJoin(schema.comandas, eq(schema.pedidos.comandaId, schema.comandas.id))
           .leftJoin(schema.mesas, eq(schema.mesas.id, schema.comandas.mesaId))
           .leftJoin(schema.pratos, eq(schema.pedidos.pratoId, schema.pratos.id))
-          .where(
-            isManager
-              ? sql`true`
-              : eq(schema.comandas.garcomId, authUserId)
-          )
+          .where(whereCondition)
           .orderBy(desc(schema.pedidos.createdAt));
 
         app.logger.info({ count: pedidos.length }, "Pedidos retrieved");
