@@ -215,6 +215,25 @@ try {
   app.logger.error({ err }, 'Failed to ensure usuarios_session table');
 }
 
+// Ensure password_reset_tokens table exists
+app.logger.info('Ensuring password_reset_tokens table exists');
+try {
+  await (app.db as any).execute(`
+    CREATE TABLE IF NOT EXISTS "password_reset_tokens" (
+      "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+      "usuario_id" uuid NOT NULL,
+      "token" text NOT NULL UNIQUE,
+      "expires_at" timestamp with time zone NOT NULL,
+      "used_at" timestamp with time zone,
+      "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT "password_reset_tokens_usuario_id_fk" FOREIGN KEY ("usuario_id") REFERENCES "usuarios"("id") ON DELETE cascade
+    );
+  `);
+  app.logger.info('password_reset_tokens table ensured');
+} catch (err) {
+  app.logger.error({ err }, 'Failed to ensure password_reset_tokens table');
+}
+
 // Ensure a default restaurante exists for authentication
 app.logger.info('Ensuring default restaurante exists');
 try {
