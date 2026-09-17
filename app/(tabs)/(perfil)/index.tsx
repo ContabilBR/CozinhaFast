@@ -1,18 +1,21 @@
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import {
   View,
   Text,
   ScrollView,
   Animated,
+  Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/contexts/AuthContext";
 import { AnimatedPressable } from "@/components/AnimatedPressable";
-import { LogOut, User, Mail, Shield, Tag, ChevronRight } from "lucide-react-native";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { LogOut, User, Mail, Shield, Tag, ChevronRight, Trash2 } from "lucide-react-native";
 import { getRoleLabel, getInitials, isAdmin } from "@/utils/helpers";
 import { UserRole } from "@/types";
+import { apiDelete } from "@/utils/api";
 import Constants from "expo-constants";
 
 const ROLE_COLORS: Record<UserRole, string> = {
@@ -31,6 +34,9 @@ export default function PerfilScreen() {
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
+
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   useEffect(() => {
     Animated.parallel([
@@ -56,6 +62,33 @@ export default function PerfilScreen() {
       router.replace("/auth-screen");
     } catch (e) {
       console.error("[Perfil] Sign out error:", e);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    setShowDeleteConfirm(false);
+    setDeletingAccount(true);
+    console.log("[Perfil] Delete account confirmed");
+    try {
+      const result = await apiDelete<{ success: boolean; message: string }>(
+        "/api/lgpd/meus-dados"
+      );
+      console.log("[Perfil] Account deleted successfully");
+      await signOut();
+      Alert.alert(
+        "Conta excluída",
+        result?.message ||
+          "Seus dados pessoais foram anonimizados e sua sessão foi encerrada.",
+        [{ text: "OK", onPress: () => router.replace("/auth-screen") }]
+      );
+    } catch (e: any) {
+      console.error("[Perfil] Delete account error:", e);
+      Alert.alert(
+        "Não foi possível excluir a conta",
+        e?.message || "Tente novamente em instantes."
+      );
+    } finally {
+      setDeletingAccount(false);
     }
   };
 
@@ -234,10 +267,45 @@ export default function PerfilScreen() {
           </AnimatedPressable>
         </Animated.View>
 
+        {/* Exclusão de conta — self-service apenas para gerente/administrador.
+            Contas de garçom/cozinheiro são geridas pelo gerente da equipe. */}
+        {canAdmin && (
+          <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+            <AnimatedPressable
+              onPress={() => setShowDeleteConfirm(true)}
+              disabled={deletingAccount}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                paddingVertical: 14,
+                opacity: deletingAccount ? 0.5 : 1,
+              }}
+            >
+              <Trash2 size={16} color={COLORS.textTertiary} />
+              <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 14, color: COLORS.textTertiary }}>
+                {deletingAccount ? "Excluindo conta..." : "Excluir minha conta"}
+              </Text>
+            </AnimatedPressable>
+          </Animated.View>
+        )}
+
         <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 12, color: COLORS.textTertiary, textAlign: "center" }}>
           CozinhaFast Pro v{appVersion}
         </Text>
       </ScrollView>
+
+      <ConfirmDialog
+        visible={showDeleteConfirm}
+        title="Excluir minha conta"
+        message="Seus dados pessoais serão anonimizados e sua sessão será encerrada. Você não conseguirá mais fazer login com esta conta. Essa ação não pode ser desfeita."
+        confirmLabel="Excluir conta"
+        cancelLabel="Cancelar"
+        destructive
+        onConfirm={handleDeleteAccount}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </View>
   );
 }
