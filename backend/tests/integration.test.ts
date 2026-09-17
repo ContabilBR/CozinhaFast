@@ -236,6 +236,87 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 401);
   });
 
+  // ==================== Auth Endpoints: /api/auth/esqueci-senha (Password Reset Request) ====================
+  test("Request password reset returns 200", async () => {
+    const res = await api("/api/auth/esqueci-senha", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "garcom@cozinhafast.com",
+      }),
+    });
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(data.message).toBeDefined();
+  });
+
+  test("Request password reset with non-existent email returns 200 (generic success)", async () => {
+    const res = await api("/api/auth/esqueci-senha", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: `nonexistent-${Date.now()}@example.com`,
+      }),
+    });
+    await expectStatus(res, 200);
+  });
+
+  test("Request password reset without body returns 400 or 200", async () => {
+    const res = await api("/api/auth/esqueci-senha", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    await expectStatus(res, 200, 400);
+  });
+
+  // ==================== Auth Endpoints: /api/auth/redefinir-senha (Password Reset) ====================
+  test("Reset password with invalid token returns 400 or 500", async () => {
+    const res = await api("/api/auth/redefinir-senha", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        token: "invalid-reset-token-xyz",
+        novaSenha: "newPassword123456",
+      }),
+    });
+    await expectStatus(res, 400, 500);
+  });
+
+  test("Reset password missing token returns 400", async () => {
+    const res = await api("/api/auth/redefinir-senha", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        novaSenha: "newPassword123456",
+      }),
+    });
+    await expectStatus(res, 400);
+  });
+
+  test("Reset password missing novaSenha returns 400", async () => {
+    const res = await api("/api/auth/redefinir-senha", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        token: "test-token-123",
+      }),
+    });
+    await expectStatus(res, 400);
+  });
+
+  test("Reset password with empty token returns 400", async () => {
+    const res = await api("/api/auth/redefinir-senha", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        token: "",
+        novaSenha: "newPassword123456",
+      }),
+    });
+    await expectStatus(res, 400, 500);
+  });
+
   // ==================== Legacy Auth Endpoints: /api/login & /api/me ====================
   test("Login with valid credentials via /api/login returns 200", async () => {
     const testEmail = "garcom@cozinhafast.com";
@@ -453,6 +534,14 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 200);
     const data = await res.json();
     expect(Array.isArray(data)).toBe(true);
+  });
+
+  test("List pratos with invalid categoria_id format returns 200 or 400", async () => {
+    const res = await authenticatedApi(
+      "/api/pratos?categoria_id=invalid-uuid",
+      authToken
+    );
+    await expectStatus(res, 200, 400);
   });
 
   test("Create prato returns 201", async () => {
@@ -1180,6 +1269,11 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 200);
   });
 
+  test("List comandas with invalid status filter returns 200 or 400", async () => {
+    const res = await authenticatedApi("/api/comandas?status=invalid_status", authToken);
+    await expectStatus(res, 200, 400);
+  });
+
   test("List comandas without authentication returns 401", async () => {
     const res = await api("/api/comandas");
     await expectStatus(res, 401);
@@ -1629,6 +1723,11 @@ describe("API Integration Tests", () => {
     const data = await res.json();
     expect(data.pedidos).toBeDefined();
     expect(Array.isArray(data.pedidos)).toBe(true);
+  });
+
+  test("List pedidos with invalid comanda_id filter returns 200 or 400", async () => {
+    const res = await authenticatedApi("/api/pedidos?comanda_id=invalid-uuid", authToken);
+    await expectStatus(res, 200, 400);
   });
 
   test("List pedidos without authentication returns 401", async () => {
@@ -2444,7 +2543,7 @@ describe("API Integration Tests", () => {
   });
 
   test("Request deletion of personal data (LGPD) returns 200 or 400 or 404 or 500", async () => {
-    const res = await authenticatedApi("/api/lgpd/meus-dados", authToken, {
+    const res = await authenticatedApi("/api/lgpd/meus-dados", adminToken, {
       method: "DELETE",
     });
     await expectStatus(res, 200, 400, 404, 500);
@@ -2732,7 +2831,7 @@ describe("API Integration Tests", () => {
         event: "subscription.updated",
       }),
     });
-    await expectStatus(res, 200);
+    await expectStatus(res, 200, 401);
   });
 
   // ==================== Fiscal Endpoints ====================

@@ -1,6 +1,7 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
 import { and, eq } from "drizzle-orm";
 import * as bcrypt from "bcrypt";
+import { randomUUID } from "crypto";
 import * as schema from "../db/schema/schema.js";
 import type { App } from "../index.js";
 import { requireAuth as customRequireAuth, requireRole, requireTenant } from "../utils/auth.js";
@@ -152,11 +153,15 @@ export function registerUsuariosRoutes(app: App) {
         const [usuario] = await app.db
           .insert(schema.usuarios)
           .values({
+            id: randomUUID(),
             nome: request.body.nome,
             email: request.body.email,
             senhaHash: hashedPassword,
             role: request.body.role || "garcom",
             restauranteId,
+            ativo: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
           })
           .returning();
 

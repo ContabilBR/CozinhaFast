@@ -392,6 +392,7 @@ export function registerAuthRoutes(app: App) {
           email: user.email,
           name: user.nome,
           role: user.role,
+          active: true,
         });
       } catch (error) {
         app.logger.error({ err: error }, "Get current user failed");

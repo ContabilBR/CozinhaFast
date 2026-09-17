@@ -98,11 +98,15 @@ export function registerRestauranteSignupRoutes(app: App) {
           const [newUsuario] = await tx
             .insert(schema.usuarios)
             .values({
+              id: randomUUID(),
               nome: adminNome,
               email: adminEmail,
               senhaHash,
               role: "administrador",
               restauranteId: newRestaurante.id,
+              ativo: true,
+              createdAt: new Date(),
+              updatedAt: new Date(),
             })
             .returning();
 

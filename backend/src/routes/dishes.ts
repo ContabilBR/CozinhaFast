@@ -24,7 +24,9 @@ interface CreatePratoBody extends FiscalFields {
   descricao?: string;
   preco: string;
   categoriaId?: string;
+  categoria_id?: string;
   imagemUrl?: string;
+  imagem_url?: string;
   disponivel?: boolean;
   tempoPreparoMinutos?: number | null;
 }
@@ -281,7 +283,9 @@ export function registerDishRoutes(app: App) {
             descricao: { type: "string", nullable: true },
             preco: { type: "string" },
             categoriaId: { type: "string", format: "uuid", nullable: true },
+            categoria_id: { type: "string", format: "uuid", nullable: true },
             imagemUrl: { type: "string", nullable: true },
+            imagem_url: { type: "string", nullable: true },
             disponivel: { type: "boolean" },
             tempoPreparoMinutos: { type: "integer", nullable: true },
             ncm: { type: "string", nullable: true },
@@ -361,8 +365,8 @@ export function registerDishRoutes(app: App) {
           nome: request.body.nome,
           descricao: request.body.descricao,
           preco: normalizedPreco.toString(),
-          categoriaId: request.body.categoriaId,
-          imagemUrl: request.body.imagemUrl,
+          categoriaId: request.body.categoriaId ?? request.body.categoria_id,
+          imagemUrl: request.body.imagemUrl ?? request.body.imagem_url,
           disponivel: request.body.disponivel !== false,
           tempoPreparoMinutos: request.body.tempoPreparoMinutos ?? null,
           restauranteId,
