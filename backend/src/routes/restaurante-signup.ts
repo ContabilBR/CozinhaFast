@@ -63,129 +63,77 @@ export function registerRestauranteSignupRoutes(app: App) {
       const { nome, cnpj, adminNome, adminEmail, adminSenha } = request.body;
 
       try {
+        // 1. Validate required fields
         if (!nome || !adminNome || !adminEmail || !adminSenha) {
+          app.logger.warn({ body: request.body }, "Sign up failed: missing required fields");
           return reply.code(400).send({ error: "nome, adminNome, adminEmail, adminSenha are required" });
         }
 
         app.logger.info({ restauranteName: nome, adminEmail }, "Creating new restaurante signup");
 
-        // Check if email already exists
-        let existingUsuario: any[] = [];
-        try {
-          existingUsuario = await app.db
-            .select()
-            .from(schema.usuarios)
-            .where(eq(schema.usuarios.email, adminEmail))
-            .limit(1);
-        } catch (err) {
-          app.logger.error({ err, adminEmail }, "Failed to check existing usuario");
-          return reply.code(500).send({ error: "Internal server error" });
-        }
+        // 2. Check if email already exists
+        const existingUsuario = await app.db
+          .select()
+          .from(schema.usuarios)
+          .where(eq(schema.usuarios.email, adminEmail))
+          .limit(1);
 
         if (existingUsuario.length > 0) {
           app.logger.warn({ adminEmail }, "Email already exists");
           return reply.code(409).send({ error: "Email already exists" });
         }
 
-        let result: any;
-        try {
-          // Try to use transaction if available, otherwise do sequential operations
-          if (typeof (app.db as any).transaction === 'function') {
-            result = await (app.db as any).transaction(async (tx: any) => {
-              // 1. Insert restaurante
-              const trialExpiraEm = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
-              const restauranteResult = await tx
-                .insert(schema.restaurante)
-                .values({ nome, cnpj, plano: "trial", assinaturaStatus: "trial", trialExpiraEm })
-                .returning();
+        // 3. Execute transaction
+        const result = await (app.db as any).transaction(async (tx: any) => {
+          // 3a. Insert restaurante
+          const trialExpiraEm = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+          const restauranteResult = await tx
+            .insert(schema.restaurante)
+            .values({ nome, cnpj, plano: "trial", assinaturaStatus: "trial", trialExpiraEm })
+            .returning();
 
-              const newRestaurante = Array.isArray(restauranteResult) ? restauranteResult[0] : restauranteResult;
-              app.logger.info({ restauranteId: newRestaurante.id }, "Restaurante created");
+          const newRestaurante = Array.isArray(restauranteResult) ? restauranteResult[0] : restauranteResult;
+          app.logger.info({ restauranteId: newRestaurante.id }, "Restaurante created");
 
-              // 2. Hash password
-              const senhaHash = await bcrypt.hash(adminSenha, 10);
+          // 3b. Hash password
+          const senhaHash = await bcrypt.hash(adminSenha, 10);
+          app.logger.debug({ adminEmail }, "Password hashed");
 
-              // 3. Insert admin usuario
-              const usuarioResult = await tx
-                .insert(schema.usuarios)
-                .values({
-                  id: randomUUID(),
-                  nome: adminNome,
-                  email: adminEmail,
-                  senhaHash,
-                  role: "administrador",
-                  restauranteId: newRestaurante.id,
-                  ativo: true,
-                  createdAt: new Date(),
-                  updatedAt: new Date(),
-                })
-                .returning();
+          // 3c. Insert admin usuario
+          const usuarioId = randomUUID();
+          const now = new Date();
+          const usuarioResult = await tx
+            .insert(schema.usuarios)
+            .values({
+              id: usuarioId,
+              nome: adminNome,
+              email: adminEmail,
+              senhaHash,
+              role: "administrador",
+              restauranteId: newRestaurante.id,
+              ativo: true,
+              createdAt: now,
+              updatedAt: now,
+            })
+            .returning();
 
-              const newUsuario = Array.isArray(usuarioResult) ? usuarioResult[0] : usuarioResult;
-              app.logger.info({ usuarioId: newUsuario.id, restauranteId: newRestaurante.id }, "Admin usuario created");
+          const newUsuario = Array.isArray(usuarioResult) ? usuarioResult[0] : usuarioResult;
+          app.logger.info({ usuarioId: newUsuario.id, restauranteId: newRestaurante.id }, "Admin usuario created");
 
-              // 4. Generate session token
-              const token = randomUUID();
-              const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+          // 3d. Generate session token
+          const token = randomUUID();
+          const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
-              await tx.insert(schema.usuariosSession).values({
-                token,
-                userId: newUsuario.id.toString(),
-                expiresAt,
-              });
+          await tx.insert(schema.usuariosSession).values({
+            token,
+            userId: newUsuario.id,
+            expiresAt,
+          });
 
-              app.logger.info({ restauranteId: newRestaurante.id }, "Session token created");
+          app.logger.info({ restauranteId: newRestaurante.id, tokenStart: token.substring(0, 20) }, "Session token created");
 
-              return { restaurante: newRestaurante, usuario: newUsuario, token };
-            });
-          } else {
-            // Fallback: do operations sequentially without transaction
-            const trialExpiraEm = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
-            const restauranteResult = await app.db
-              .insert(schema.restaurante)
-              .values({ nome, cnpj, plano: "trial", assinaturaStatus: "trial", trialExpiraEm })
-              .returning();
-
-            const newRestaurante = Array.isArray(restauranteResult) ? restauranteResult[0] : restauranteResult;
-            app.logger.info({ restauranteId: newRestaurante.id }, "Restaurante created");
-
-            const senhaHash = await bcrypt.hash(adminSenha, 10);
-
-            const usuarioResult = await app.db
-              .insert(schema.usuarios)
-              .values({
-                id: randomUUID(),
-                nome: adminNome,
-                email: adminEmail,
-                senhaHash,
-                role: "administrador",
-                restauranteId: newRestaurante.id,
-                ativo: true,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-              })
-              .returning();
-
-            const newUsuario = Array.isArray(usuarioResult) ? usuarioResult[0] : usuarioResult;
-            app.logger.info({ usuarioId: newUsuario.id, restauranteId: newRestaurante.id }, "Admin usuario created");
-
-            const token = randomUUID();
-            const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-
-            await app.db.insert(schema.usuariosSession).values({
-              token,
-              userId: newUsuario.id.toString(),
-              expiresAt,
-            });
-
-            app.logger.info({ restauranteId: newRestaurante.id }, "Session token created");
-
-            result = { restaurante: newRestaurante, usuario: newUsuario, token };
-          }
-        } catch (transactionErr) {
-          app.logger.error({ err: transactionErr }, "Failed to execute restaurante signup transaction/operations");
-          throw transactionErr;
-        }
+          return { restaurante: newRestaurante, usuario: newUsuario, token };
+        });
 
         app.logger.info({ restauranteId: result.restaurante.id }, "Restaurante signup completed successfully");
 

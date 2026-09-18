@@ -279,7 +279,7 @@ export function registerAuthRoutes(app: App) {
         const { email, password } = request.body;
 
         if (!email || !password) {
-          return reply.status(401).send({ error: "Credenciais inválidas" });
+          return reply.status(400).send({ error: "Email and password are required" });
         }
 
         // Look up user in custom auth system (usuarios table)
