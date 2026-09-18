@@ -31,19 +31,25 @@ export function isConnectionError(error: any): boolean {
 }
 
 /**
- * Retries a database operation up to 2 times (3 total attempts) on connection errors
- * with a 400ms delay between retries. Non-connection errors are thrown immediately.
+ * Retries a database operation up to `maxRetries` times (total of maxRetries + 1 attempts) on connection errors.
+ * Non-connection errors are thrown immediately. Only retries idempotent operations (SELECT queries).
+ *
+ * @param fn - Function that returns a thenable (query or promise)
+ * @param maxRetries - Max number of retries (default 2, total of 3 attempts)
+ * @param delayMs - Delay between retries in milliseconds (default 400ms)
+ * @returns Result of the operation
  */
 export async function withRetry<T>(
-  fn: () => any, // Function that returns a thenable (query builder or promise)
-  maxRetries: number = 2
+  fn: () => any,
+  maxRetries: number = 2,
+  delayMs: number = 400
 ): Promise<T> {
   let lastError: any;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const result = fn(); // Get the thenable (query or promise)
-      return await result; // Wait for it to resolve/execute
+      const result = fn();
+      return await result;
     } catch (error) {
       lastError = error;
 
@@ -57,69 +63,10 @@ export async function withRetry<T>(
         throw error;
       }
 
-      // Wait 400ms before retrying
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      // Wait before retrying
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }
 
   throw lastError;
-}
-
-/**
- * Creates a proxy around the database client that automatically retries
- * database operations on transient connection failures.
- *
- * Wraps promises and thenables (like Drizzle query builders) to catch
- * connection errors and retry them.
- */
-export function createDbProxy(db: any): any {
-  return new Proxy(db, {
-    get(target, prop) {
-      const value = target[prop];
-
-      // For functions, return a wrapper that handles their results
-      if (typeof value === 'function') {
-        return function (...args: any[]) {
-          const result = value.apply(target, args);
-          return wrapThenable(result);
-        };
-      }
-
-      return value;
-    },
-  });
-}
-
-/**
- * Wraps a thenable (promise or Drizzle query builder) to apply retry logic
- */
-function wrapThenable(value: any): any {
-  // If not a thenable, return as-is
-  if (!value || typeof value.then !== 'function') {
-    return value;
-  }
-
-  // Create a wrapper promise that applies retry logic
-  return new Proxy(value, {
-    get(target, prop) {
-      // Intercept .then() to apply retry logic
-      if (prop === 'then') {
-        return function (...args: any[]) {
-          // Create a retryable operation that calls the original then
-          return withRetry(() => target.then(...args));
-        };
-      }
-
-      // For other properties/methods, return the original
-      const subValue = target[prop];
-      if (typeof subValue === 'function') {
-        return function (...args: any[]) {
-          const result = subValue.apply(target, args);
-          return wrapThenable(result);
-        };
-      }
-
-      return subValue;
-    },
-  });
 }

@@ -161,7 +161,7 @@ try {
       await db.execute('CREATE TABLE IF NOT EXISTS "verification" ("id" text NOT NULL PRIMARY KEY, "identifier" text NOT NULL, "value" text NOT NULL, "expires_at" timestamp with time zone NOT NULL, "created_at" timestamp with time zone NOT NULL DEFAULT now(), "updated_at" timestamp with time zone NOT NULL DEFAULT now());');
 
       // Also create the restaurante table if needed (referenced by profiles)
-      await db.execute('CREATE TABLE IF NOT EXISTS "restaurante" ("id" uuid NOT NULL PRIMARY KEY, "nome" text NOT NULL, "filial" text, "endereco" text, "cnpj" text, "plano" text DEFAULT \'trial\', "assinatura_status" text DEFAULT \'trial\', "assinatura_asaas_id" text, "trial_expira_em" timestamp with time zone, "inscricao_estadual" text, "inscricao_municipal" text, "regime_tributario" text, "cnae_principal" text, "csc_token" text, "csc_id" text, "ambiente_focus" integer DEFAULT 2, "ncm_padrao" text DEFAULT \'21069090\', "cep" text, "logradouro" text, "numero_endereco" text, "complemento" text, "bairro" text, "codigo_municipio_ibge" integer, "uf" text, "telefone" text, "email" text, "created_at" timestamp with time zone NOT NULL DEFAULT now(), "updated_at" timestamp with time zone NOT NULL DEFAULT now());');
+      await db.execute('CREATE TABLE IF NOT EXISTS "restaurante" ("id" uuid PRIMARY KEY DEFAULT gen_random_uuid(), "nome" text NOT NULL, "filial" text, "endereco" text, "cnpj" text, "plano" text DEFAULT \'trial\', "assinatura_status" text DEFAULT \'trial\', "assinatura_asaas_id" text, "trial_expira_em" timestamp with time zone, "inscricao_estadual" text, "inscricao_municipal" text, "regime_tributario" text, "cnae_principal" text, "csc_token" text, "csc_id" text, "ambiente_focus" integer DEFAULT 2, "ncm_padrao" text DEFAULT \'21069090\', "cep" text, "logradouro" text, "numero_endereco" text, "complemento" text, "bairro" text, "codigo_municipio_ibge" integer, "uf" text, "telefone" text, "email" text, "created_at" timestamp with time zone NOT NULL DEFAULT now(), "updated_at" timestamp with time zone NOT NULL DEFAULT now());');
 
       // Create profiles table
       await db.execute('CREATE TABLE IF NOT EXISTS "profiles" ("id" uuid NOT NULL PRIMARY KEY, "user_id" text NOT NULL, "role" text NOT NULL DEFAULT \'garcom\', "name" text, "created_at" timestamp with time zone NOT NULL DEFAULT now(), "restaurante_id" uuid NOT NULL);');
@@ -192,6 +192,24 @@ try {
   app.logger.error({ err }, 'Failed to ensure Better Auth tables - this may cause authentication to fail');
 }
 
+// Ensure the restaurante table exists BEFORE usuarios (which has FK to it)
+app.logger.info('Ensuring restaurante table exists');
+try {
+  await (app.db as any).execute('CREATE TABLE IF NOT EXISTS "restaurante" ("id" uuid PRIMARY KEY DEFAULT gen_random_uuid(), "nome" text NOT NULL, "filial" text, "endereco" text, "cnpj" text, "plano" text DEFAULT \'trial\', "assinatura_status" text DEFAULT \'trial\', "assinatura_asaas_id" text, "trial_expira_em" timestamp with time zone, "inscricao_estadual" text, "inscricao_municipal" text, "regime_tributario" text, "cnae_principal" text, "csc_token" text, "csc_id" text, "ambiente_focus" integer DEFAULT 2, "ncm_padrao" text DEFAULT \'21069090\', "cep" text, "logradouro" text, "numero_endereco" text, "complemento" text, "bairro" text, "codigo_municipio_ibge" integer, "uf" text, "telefone" text, "email" text, "created_at" timestamp with time zone NOT NULL DEFAULT now(), "updated_at" timestamp with time zone NOT NULL DEFAULT now());');
+  app.logger.info('restaurante table ensured');
+} catch (err) {
+  app.logger.error({ err }, 'Failed to ensure restaurante table');
+}
+
+// Ensure the usuarios table exists (custom auth user table)
+app.logger.info('Ensuring usuarios table exists');
+try {
+  await (app.db as any).execute('CREATE TABLE IF NOT EXISTS "usuarios" ("id" text NOT NULL PRIMARY KEY, "nome" text NOT NULL, "email" text NOT NULL UNIQUE, "senha_hash" text, "role" text NOT NULL DEFAULT \'garcom\', "ativo" boolean NOT NULL DEFAULT true, "restaurante_id" uuid NOT NULL, "created_at" timestamp with time zone NOT NULL DEFAULT now(), "updated_at" timestamp with time zone NOT NULL DEFAULT now(), CONSTRAINT "usuarios_restaurante_id_fk" FOREIGN KEY ("restaurante_id") REFERENCES "restaurante"("id") ON DELETE restrict);');
+  app.logger.info('usuarios table ensured');
+} catch (err) {
+  app.logger.error({ err }, 'Failed to ensure usuarios table');
+}
+
 // Ensure the custom-auth session table exists. The Better Auth tables above
 // self-heal on every boot via CREATE TABLE IF NOT EXISTS; usuarios_session
 // (used by /api/login and /api/me for the custom garcom/cozinheiro auth
@@ -200,17 +218,7 @@ try {
 // migration never actually ran. Mirrors the same idempotent-guard pattern.
 app.logger.info('Ensuring usuarios_session table exists');
 try {
-  await (app.db as any).execute(`
-    CREATE TABLE IF NOT EXISTS "usuarios_session" (
-      "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-      "token" text NOT NULL,
-      "user_id" text NOT NULL,
-      "expires_at" timestamp with time zone NOT NULL,
-      "created_at" timestamp with time zone DEFAULT now() NOT NULL,
-      "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-      CONSTRAINT "usuarios_session_token_unique" UNIQUE("token")
-    );
-  `);
+  await (app.db as any).execute('CREATE TABLE IF NOT EXISTS "usuarios_session" ("id" uuid PRIMARY KEY DEFAULT gen_random_uuid(), "token" text NOT NULL, "user_id" text NOT NULL, "expires_at" timestamp with time zone NOT NULL, "created_at" timestamp with time zone DEFAULT now() NOT NULL, "updated_at" timestamp with time zone DEFAULT now() NOT NULL, CONSTRAINT "usuarios_session_token_unique" UNIQUE("token"));');
   app.logger.info('usuarios_session table ensured');
 } catch (err) {
   app.logger.error({ err }, 'Failed to ensure usuarios_session table');
@@ -219,17 +227,7 @@ try {
 // Ensure password_reset_tokens table exists
 app.logger.info('Ensuring password_reset_tokens table exists');
 try {
-  await (app.db as any).execute(`
-    CREATE TABLE IF NOT EXISTS "password_reset_tokens" (
-      "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-      "usuario_id" uuid NOT NULL,
-      "token" text NOT NULL UNIQUE,
-      "expires_at" timestamp with time zone NOT NULL,
-      "used_at" timestamp with time zone,
-      "created_at" timestamp with time zone DEFAULT now() NOT NULL,
-      CONSTRAINT "password_reset_tokens_usuario_id_fk" FOREIGN KEY ("usuario_id") REFERENCES "usuarios"("id") ON DELETE cascade
-    );
-  `);
+  await (app.db as any).execute('CREATE TABLE IF NOT EXISTS "password_reset_tokens" ("id" uuid PRIMARY KEY DEFAULT gen_random_uuid(), "usuario_id" text NOT NULL, "token" text NOT NULL UNIQUE, "expires_at" timestamp with time zone NOT NULL, "used_at" timestamp with time zone, "created_at" timestamp with time zone DEFAULT now() NOT NULL, CONSTRAINT "password_reset_tokens_usuario_id_fk" FOREIGN KEY ("usuario_id") REFERENCES "usuarios"("id") ON DELETE cascade);');
   app.logger.info('password_reset_tokens table ensured');
 } catch (err) {
   app.logger.error({ err }, 'Failed to ensure password_reset_tokens table');
@@ -245,12 +243,19 @@ try {
 
   if (!existingRestaurantes || existingRestaurantes.length === 0) {
     app.logger.info('Creating default restaurante');
-    await app.db.insert(appSchema.restaurante).values({
-      nome: 'Default Restaurant',
-    });
-    app.logger.info('Default restaurante created');
+    const inserted = await app.db
+      .insert(appSchema.restaurante)
+      .values({
+        nome: 'Default Restaurant',
+      })
+      .returning();
+    if (inserted && inserted.length > 0) {
+      app.logger.info({ restauranteId: inserted[0].id }, 'Default restaurante created');
+    } else {
+      app.logger.warn('Default restaurante insert returned no rows');
+    }
   } else {
-    app.logger.debug('Default restaurante already exists');
+    app.logger.debug({ restauranteId: existingRestaurantes[0].id }, 'Default restaurante already exists');
   }
 } catch (err) {
   app.logger.warn({ err }, 'Failed to ensure default restaurante exists');
