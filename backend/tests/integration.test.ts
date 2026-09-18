@@ -139,6 +139,19 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 401);
   });
 
+  test("Get current authenticated user via /api/me returns 200", async () => {
+    const res = await authenticatedApi("/api/me", authToken);
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(data.id).toBeDefined();
+    expect(data.email).toBeDefined();
+  });
+
+  test("Get current authenticated user via /api/me without auth returns 401", async () => {
+    const res = await api("/api/me");
+    await expectStatus(res, 401);
+  });
+
   test("Sign out authenticated user returns 200", async () => {
     const { token: signOutToken } = await signUpTestUser();
     const res = await authenticatedApi("/api/auth/sign-out", signOutToken, {
