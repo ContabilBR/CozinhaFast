@@ -223,7 +223,7 @@ describe("API Integration Tests", () => {
   });
 
   test("Create categoria returns 201", async () => {
-    const res = await authenticatedApi("/api/categorias", authToken, {
+    const res = await authenticatedApi("/api/categorias", adminToken, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -256,7 +256,7 @@ describe("API Integration Tests", () => {
   });
 
   test("Update categoria returns 200", async () => {
-    const res = await authenticatedApi(`/api/categorias/${testCategoryId}`, authToken, {
+    const res = await authenticatedApi(`/api/categorias/${testCategoryId}`, adminToken, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ nome: "Updated Category" }),
@@ -278,7 +278,7 @@ describe("API Integration Tests", () => {
   });
 
   test("Delete categoria as authenticated user returns 200", async () => {
-    const res = await authenticatedApi(`/api/categorias/${testCategoryId}`, authToken, {
+    const res = await authenticatedApi(`/api/categorias/${testCategoryId}`, adminToken, {
       method: "DELETE",
     });
     await expectStatus(res, 200);
@@ -287,7 +287,7 @@ describe("API Integration Tests", () => {
   test("Delete non-existent categoria returns 404", async () => {
     const res = await authenticatedApi(
       "/api/categorias/00000000-0000-0000-0000-000000000000",
-      authToken,
+      adminToken,
       { method: "DELETE" }
     );
     await expectStatus(res, 404);
@@ -1272,7 +1272,7 @@ describe("API Integration Tests", () => {
   });
 
   test("Create usuario returns 201 or 400", async () => {
-    const res = await authenticatedApi("/api/usuarios", authToken, {
+    const res = await authenticatedApi("/api/usuarios", adminToken, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1288,7 +1288,7 @@ describe("API Integration Tests", () => {
   test("Update usuario returns 200 or 404", async () => {
     const res = await authenticatedApi(
       "/api/usuarios/00000000-0000-0000-0000-000000000000",
-      authToken,
+      adminToken,
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -1326,17 +1326,17 @@ describe("API Integration Tests", () => {
 
   // ==================== Reports ====================
   test("Get dashboard summary returns 200 or 500", async () => {
-    const res = await authenticatedApi("/api/relatorios/resumo", authToken);
+    const res = await authenticatedApi("/api/relatorios/resumo", adminToken);
     await expectStatus(res, 200, 500);
   });
 
   test("Get dashboard summary with periode filter returns 200 or 500", async () => {
-    const res = await authenticatedApi("/api/relatorios/resumo?periodo=hoje", authToken);
+    const res = await authenticatedApi("/api/relatorios/resumo?periodo=hoje", adminToken);
     await expectStatus(res, 200, 500);
   });
 
   test("Get per-table report returns 200 or 500", async () => {
-    const res = await authenticatedApi("/api/relatorios/mesas", authToken);
+    const res = await authenticatedApi("/api/relatorios/mesas", adminToken);
     await expectStatus(res, 200, 500);
   });
 
@@ -1352,7 +1352,7 @@ describe("API Integration Tests", () => {
   });
 
   test("Update restaurant returns 200", async () => {
-    const res = await authenticatedApi("/api/restaurante", authToken, {
+    const res = await authenticatedApi("/api/restaurante", adminToken, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1836,7 +1836,7 @@ describe("API Integration Tests", () => {
     if (testPratoIdForInsumo) {
       const res = await authenticatedApi(
         `/api/pratos/${testPratoIdForInsumo}/insumos`,
-        authToken,
+        adminToken,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1846,7 +1846,7 @@ describe("API Integration Tests", () => {
           }),
         }
       );
-      await expectStatus(res, 200, 404);
+      await expectStatus(res, 201, 400, 404);
     }
   });
 

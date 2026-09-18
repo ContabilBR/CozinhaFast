@@ -25,7 +25,7 @@ import { registerRealtimeRoutes } from './routes/realtime.js';
 import { registerCardapioPublicoRoutes } from './routes/cardapio-publico.js';
 import { registerEstoqueRoutes } from './routes/estoque.js';
 import { seedDatabase } from './db/seed.js';
-import { withRetry } from './db/withRetry.js';
+import { enableSelectRetry } from './db/withRetry.js';
 
 // Combine schemas
 const schema = { ...appSchema, ...authSchema };
@@ -33,9 +33,10 @@ const schema = { ...appSchema, ...authSchema };
 // Create application with schema for full database type support
 export const app = await createApplication(schema);
 
-// Note: withRetry is available for use in routes if connection retry is needed.
-// SELECT queries can be wrapped with: await withRetry(() => app.db.select()...from(...).where(...))
-// This approach keeps the retry mechanism available without breaking promise chains globally.
+// Enable automatic retry logic for all SELECT queries on connection errors
+// This transparently handles transient connection failures without requiring
+// changes to individual query call sites
+enableSelectRetry(app.db);
 
 app.withStorage();
 
