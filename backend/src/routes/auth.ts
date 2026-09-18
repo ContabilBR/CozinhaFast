@@ -213,6 +213,11 @@ export function registerAuthRoutes(app: App) {
             name,
             email: normalizedEmail,
             role: userRole,
+            active: true,
+            emailVerified: true,
+            image: null,
+            createdAt: now.toISOString(),
+            updatedAt: now.toISOString(),
           },
         });
       } catch (error) {
@@ -336,9 +341,14 @@ export function registerAuthRoutes(app: App) {
           token,
           user: {
             id: user.id,
-            nome: user.nome,
+            name: user.nome,
             email: user.email,
             role: user.role,
+            active: true,
+            emailVerified: true,
+            image: null,
+            createdAt: user.createdAt?.toISOString() || new Date().toISOString(),
+            updatedAt: user.updatedAt?.toISOString() || new Date().toISOString(),
           },
         });
       } catch (error) {

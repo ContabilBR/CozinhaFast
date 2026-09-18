@@ -11,6 +11,7 @@ describe("API Integration Tests", () => {
   let adminToken: string;
   let adminUserId: string;
   let regularUserToken: string;
+  let garcomToken: string;
 
   let testCategoryId: string;
   let testDishId: string;
@@ -18,6 +19,7 @@ describe("API Integration Tests", () => {
   let testCommandaId: string;
   let testPedidoId: string;
   let testMesaForComandaId: string;
+  let testGarconId: string;
 
   const uniqueEmail = `test-${Date.now()}@example.com`;
   const tableNumber = Math.floor(Math.random() * 900000) + 100000;
@@ -42,6 +44,12 @@ describe("API Integration Tests", () => {
     regularUserToken = token;
   });
 
+  test("Sign up garcom user for role-specific tests", async () => {
+    const { token, user } = await signUpTestUser("garcom");
+    garcomToken = token;
+    testGarconId = user.id;
+  });
+
   // ==================== Auth Endpoints ====================
   test("Sign up with valid credentials returns 201", async () => {
     const testEmail = `signup-${Date.now()}@example.com`;
@@ -58,6 +66,25 @@ describe("API Integration Tests", () => {
     const data = await res.json();
     expect(data.token).toBeDefined();
     expect(data.user.email).toBe(testEmail);
+    expect(data.user.active).toBeDefined();
+    expect(data.user.emailVerified).toBeDefined();
+  });
+
+  test("Sign up with role parameter returns 201", async () => {
+    const testEmail = `signup-role-${Date.now()}@example.com`;
+    const res = await api("/api/auth/sign-up/email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: testEmail,
+        password: "testPassword123456",
+        name: "Sign Up Test User",
+        role: "garcom",
+      }),
+    });
+    await expectStatus(res, 201);
+    const data = await res.json();
+    expect(data.user.role).toBe("garcom");
   });
 
   test("Sign up with duplicate email returns 409", async () => {
@@ -123,6 +150,7 @@ describe("API Integration Tests", () => {
     const data = await signInRes.json();
     expect(data.token).toBeDefined();
     expect(data.user.email).toBe(testEmail);
+    expect(data.user.active).toBeDefined();
   });
 
   test("Sign in with invalid password returns 401", async () => {
@@ -240,6 +268,15 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 200);
   });
 
+  test("Request password reset with no email returns 200 (generic response)", async () => {
+    const res = await api("/api/auth/esqueci-senha", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    await expectStatus(res, 200);
+  });
+
   test("Reset password with valid token returns 200 or 400 or 500", async () => {
     const res = await api("/api/auth/redefinir-senha", {
       method: "POST",
@@ -268,6 +305,7 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 200);
     const data = await res.json();
     expect(data.users).toBeDefined();
+    expect(typeof data.users).toBe("number");
   });
 
   // ==================== Categorias CRUD ====================
@@ -296,6 +334,7 @@ describe("API Integration Tests", () => {
     const data = await res.json();
     testCategoryId = data.categoria.id;
     expect(data.categoria.id).toBeDefined();
+    expect(data.categoria.nome).toBeDefined();
   });
 
   test("Create categoria without authentication returns 401", async () => {
@@ -354,6 +393,25 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 404);
   });
 
+  test("Delete categoria as non-admin returns 403", async () => {
+    // Create a category first
+    const createRes = await authenticatedApi("/api/categorias", adminToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nome: `Protect Category ${Date.now()}`,
+      }),
+    });
+    await expectStatus(createRes, 201);
+    const catData = await createRes.json();
+
+    // Try to delete as regular user
+    const res = await authenticatedApi(`/api/categorias/${catData.categoria.id}`, regularUserToken, {
+      method: "DELETE",
+    });
+    await expectStatus(res, 403);
+  });
+
   // ==================== Pratos CRUD ====================
   test("List all pratos returns 200", async () => {
     const res = await authenticatedApi("/api/pratos", authToken);
@@ -372,6 +430,11 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 200);
   });
 
+  test("List pratos with both filters returns 200", async () => {
+    const res = await authenticatedApi("/api/pratos?categoria_id=00000000-0000-0000-0000-000000000001&disponivel=false", authToken);
+    await expectStatus(res, 200);
+  });
+
   test("Create prato returns 201", async () => {
     const res = await authenticatedApi("/api/pratos", adminToken, {
       method: "POST",
@@ -380,12 +443,38 @@ describe("API Integration Tests", () => {
         nome: `Test Prato ${Date.now()}`,
         preco: "25.99",
         disponivel: true,
+        cfop: "5102",
+        origem_mercadoria: 0,
+        unidade_comercial: "un",
       }),
     });
     await expectStatus(res, 201);
     const data = await res.json();
     testDishId = data.prato.id;
     expect(data.prato).toBeDefined();
+    expect(data.prato.nome).toBeDefined();
+    expect(data.prato.preco).toBeDefined();
+  });
+
+  test("Create prato with optional fiscal fields returns 201", async () => {
+    const res = await authenticatedApi("/api/pratos", adminToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nome: `Fiscal Prato ${Date.now()}`,
+        preco: "30.00",
+        ncm: "21069090",
+        cfop: "5102",
+        cest: "0100100",
+        csosn: "900",
+        cst_icms: "00",
+        origem_mercadoria: 0,
+        unidade_comercial: "un",
+        aliquota_icms: "12.00",
+        tempoPreparoMinutos: 15,
+      }),
+    });
+    await expectStatus(res, 201);
   });
 
   test("Create prato with missing required fields returns 400", async () => {
@@ -438,6 +527,14 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 404);
   });
 
+  test("Get prato with invalid UUID format returns 400", async () => {
+    const res = await authenticatedApi(
+      "/api/pratos/invalid-uuid-format",
+      authToken
+    );
+    await expectStatus(res, 400);
+  });
+
   test("Get prato without authentication returns 401", async () => {
     const res = await api(`/api/pratos/${testDishId}`);
     await expectStatus(res, 401);
@@ -447,7 +544,7 @@ describe("API Integration Tests", () => {
     const res = await authenticatedApi(`/api/pratos/${testDishId}`, adminToken, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ nome: "Updated Prato" }),
+      body: JSON.stringify({ nome: "Updated Prato", preco: "26.99" }),
     });
     await expectStatus(res, 200);
   });
@@ -524,6 +621,35 @@ describe("API Integration Tests", () => {
     const res = await authenticatedApi(
       `/api/pratos/${pratoData.prato.id}/disponibilidade`,
       adminToken,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ disponivel: false }),
+      }
+    );
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(data.prato.disponivel).toBe(false);
+  });
+
+  test("Toggle availability as cozinheiro returns 200", async () => {
+    const createRes = await authenticatedApi("/api/pratos", adminToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nome: `Prato Availability Cozinheiro ${Date.now()}`,
+        preco: "22.50",
+        disponivel: true,
+      }),
+    });
+    await expectStatus(createRes, 201);
+    const pratoData = await createRes.json();
+
+    const { token: cozinheiroToken } = await signUpTestUser("cozinheiro");
+
+    const res = await authenticatedApi(
+      `/api/pratos/${pratoData.prato.id}/disponibilidade`,
+      cozinheiroToken,
       {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -608,6 +734,39 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 400, 413);
   });
 
+  test("Upload photo without authentication returns 401", async () => {
+    const form = new FormData();
+    form.append("file", createTestFile("dish.jpg", "test", "image/jpeg"));
+
+    const res = await api(`/api/pratos/${testDishId}/foto`, {
+      method: "POST",
+      body: form,
+    });
+    await expectStatus(res, 401);
+  });
+
+  test("Upload photo as non-admin returns 403", async () => {
+    const createRes = await authenticatedApi("/api/pratos", adminToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nome: "Prato for Regular User Photo",
+        preco: "20.00",
+      }),
+    });
+    await expectStatus(createRes, 201);
+    const pratoData = await createRes.json();
+
+    const form = new FormData();
+    form.append("file", createTestFile("dish.jpg", "test", "image/jpeg"));
+
+    const res = await authenticatedApi(`/api/pratos/${pratoData.prato.id}/foto`, regularUserToken, {
+      method: "POST",
+      body: form,
+    });
+    await expectStatus(res, 403);
+  });
+
   // ==================== Mesas CRUD ====================
   test("List all mesas returns 200", async () => {
     const res = await authenticatedApi("/api/mesas", authToken);
@@ -639,6 +798,7 @@ describe("API Integration Tests", () => {
     const data = await res.json();
     testTableId = data.id;
     expect(data.numero).toBe(tableNumber);
+    expect(data.status).toBe("disponivel");
   });
 
   test("Create mesa with missing numero returns 400", async () => {
@@ -674,6 +834,15 @@ describe("API Integration Tests", () => {
       body: JSON.stringify({ numero: Math.floor(Math.random() * 900000) + 100000 }),
     });
     await expectStatus(res, 403);
+  });
+
+  test("Create mesa without authentication returns 401", async () => {
+    const res = await api("/api/mesas", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ numero: Math.floor(Math.random() * 900000) + 100000 }),
+    });
+    await expectStatus(res, 401);
   });
 
   test("Get mesa by ID returns 200", async () => {
@@ -801,6 +970,7 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 200);
     const data = await res.json();
     expect(data.comandas).toBeDefined();
+    expect(Array.isArray(data.comandas)).toBe(true);
   });
 
   test("List comandas with status filter returns 200", async () => {
@@ -828,6 +998,7 @@ describe("API Integration Tests", () => {
     const data = await res.json();
     testCommandaId = data.comanda.id;
     expect(data.comanda.mesa_id).toBe(testMesaForComandaId);
+    expect(data.comanda.status).toBe("aberta");
   });
 
   test("Create comanda with non-existent mesa returns 404", async () => {
@@ -846,6 +1017,7 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 200);
     const data = await res.json();
     expect(data.pedidos).toBeDefined();
+    expect(Array.isArray(data.pedidos)).toBe(true);
   });
 
   test("Get non-existent comanda returns 404", async () => {
@@ -877,6 +1049,7 @@ describe("API Integration Tests", () => {
             prato_id: pratoData.prato.id,
             quantidade: 2,
             preco_unitario: 25.99,
+            observacao: "Sem cebola",
           },
         ],
       }),
@@ -906,6 +1079,8 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 200);
     const data = await res.json();
     expect(data.success).toBe(true);
+    expect(data.mesa_numero).toBeDefined();
+    expect(data.total_final).toBeDefined();
   });
 
   test("Close non-existent comanda returns 404", async () => {
@@ -1000,12 +1175,21 @@ describe("API Integration Tests", () => {
     expect(data.comanda === null || data.comanda.id).toBeDefined();
   });
 
+  test("Get current comanda for non-existent mesa returns 404", async () => {
+    const res = await authenticatedApi(
+      `/api/mesas/00000000-0000-0000-0000-000000000000/comanda`,
+      authToken
+    );
+    await expectStatus(res, 404);
+  });
+
   test("Get mesa historico returns 200", async () => {
     const res = await authenticatedApi(`/api/mesas/${testMesaForComandaId}/historico`, authToken);
     await expectStatus(res, 200);
     const data = await res.json();
     expect(data.mesa).toBeDefined();
     expect(data.resumo).toBeDefined();
+    expect(data.comandas).toBeDefined();
   });
 
   test("Get non-existent mesa historico returns 404", async () => {
@@ -1022,6 +1206,7 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 200);
     const data = await res.json();
     expect(data.pedidos).toBeDefined();
+    expect(Array.isArray(data.pedidos)).toBe(true);
   });
 
   test("List pedidos without authentication returns 401", async () => {
@@ -1117,6 +1302,51 @@ describe("API Integration Tests", () => {
       method: "DELETE",
     });
     await expectStatus(res, 401);
+  });
+
+  test("Create pedido standalone returns 201 or 404", async () => {
+    // Create test prato
+    const pratoRes = await authenticatedApi("/api/pratos", adminToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nome: `Standalone Pedido Prato ${Date.now()}`,
+        preco: "15.99",
+      }),
+    });
+    await expectStatus(pratoRes, 201);
+    const pratoData = await pratoRes.json();
+
+    // Create comanda
+    const mesaRes = await authenticatedApi("/api/mesas", adminToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        numero: Math.floor(Math.random() * 900000) + 100000,
+      }),
+    });
+    await expectStatus(mesaRes, 201);
+    const mesaData = await mesaRes.json();
+
+    const comandaRes = await authenticatedApi("/api/comandas", authToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mesaId: mesaData.id }),
+    });
+    await expectStatus(comandaRes, 201);
+    const comandaData = await comandaRes.json();
+
+    // Create pedido
+    const res = await authenticatedApi("/api/pedidos", authToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        comanda_id: comandaData.comanda.id,
+        prato_id: pratoData.prato.id,
+        quantidade: 1,
+      }),
+    });
+    await expectStatus(res, 201, 404);
   });
 
   // ==================== Kitchen Display ====================
@@ -1335,6 +1565,14 @@ describe("API Integration Tests", () => {
 
   test("Get dashboard summary with periodo filter returns 200 or 500", async () => {
     const res = await authenticatedApi("/api/relatorios/resumo?periodo=hoje", adminToken);
+    await expectStatus(res, 200, 500);
+  });
+
+  test("Get dashboard summary with custom date range returns 200 or 500", async () => {
+    const res = await authenticatedApi(
+      "/api/relatorios/resumo?periodo=personalizado&dataInicio=2024-01-01&dataFim=2024-12-31",
+      adminToken
+    );
     await expectStatus(res, 200, 500);
   });
 

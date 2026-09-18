@@ -60,9 +60,9 @@ export function registerRestauranteSignupRoutes(app: App) {
       },
     },
     async (request: FastifyRequest<{ Body: SignupBody }>, reply: FastifyReply) => {
-      try {
-        const { nome, cnpj, adminNome, adminEmail, adminSenha } = request.body;
+      const { nome, cnpj, adminNome, adminEmail, adminSenha } = request.body;
 
+      try {
         if (!nome || !adminNome || !adminEmail || !adminSenha) {
           return reply.code(400).send({ error: "nome, adminNome, adminEmail, adminSenha are required" });
         }
@@ -200,10 +200,23 @@ export function registerRestauranteSignupRoutes(app: App) {
           token: result.token,
         });
       } catch (error: any) {
-        app.logger.error({ err: error }, "Failed to create restaurante signup");
-        if (error?.message?.includes("unique") || error?.message?.includes("duplicate") || error?.code === "23505") {
+        // Check for unique constraint violation (PostgreSQL error code 23505)
+        const isUniqueConstraintError =
+          error?.code === "23505" ||
+          error?.message?.toLowerCase().includes("unique") ||
+          error?.message?.toLowerCase().includes("duplicate") ||
+          (error?.cause && (
+            error.cause.code === "23505" ||
+            error.cause.message?.toLowerCase().includes("unique") ||
+            error.cause.message?.toLowerCase().includes("duplicate")
+          ));
+
+        if (isUniqueConstraintError) {
+          app.logger.warn({ adminEmail, err: error }, "Unique constraint violation - email already exists");
           return reply.code(409).send({ error: "Email already exists" });
         }
+
+        app.logger.error({ err: error, adminEmail, body: request.body }, "Failed to create restaurante signup");
         return reply.code(500).send({ error: "Internal server error" });
       }
     }
