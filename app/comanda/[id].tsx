@@ -64,6 +64,77 @@ function formatBRL(value: number): string {
   return `R$ ${intFormatted},${decPart}`;
 }
 
+// ─── Prato Card (Waiter) ──────────────────────────────────────────────────────
+
+function PratoCardWaiter({
+  item,
+  stagedObservacao,
+  onAdd,
+  onUpdateObservacao,
+  COLORS,
+}: {
+  item: Prato;
+  stagedObservacao: string | undefined;
+  onAdd: (observacao: string) => void;
+  onUpdateObservacao: (text: string) => void;
+  COLORS: any;
+}) {
+  const [pendingObservacao, setPendingObservacao] = useState('');
+  const isStaged = stagedObservacao !== undefined;
+  const formatPrice = (price: number | string) =>
+    `R$ ${Number(price).toFixed(2).replace('.', ',')}`;
+
+  return (
+    <View style={styles.pratoCard}>
+      {item.imagem_url ? (
+        <Image
+          source={{ uri: item.imagem_url }}
+          style={styles.pratoImage}
+          contentFit="cover"
+        />
+      ) : (
+        <View style={styles.pratoImagePlaceholder}>
+          <Ionicons name="restaurant-outline" size={28} color="#9ca3af" />
+        </View>
+      )}
+      <View style={{ flex: 1, marginHorizontal: 10 }}>
+        <Text style={styles.pratoNome}>{item.nome}</Text>
+        {item.descricao ? (
+          <Text style={styles.pratoDesc} numberOfLines={2}>
+            {item.descricao}
+          </Text>
+        ) : null}
+        <Text style={styles.pratoPreco}>{formatPrice(item.preco)}</Text>
+        <TextInput
+          style={[styles.obsInput, { marginTop: 8 }]}
+          value={isStaged ? stagedObservacao : pendingObservacao}
+          onChangeText={(text) => {
+            if (isStaged) {
+              onUpdateObservacao(text);
+            } else {
+              setPendingObservacao(text);
+            }
+          }}
+          placeholder="Observação (opcional)"
+          placeholderTextColor="#9ca3af"
+        />
+      </View>
+      <Pressable
+        onPress={() => {
+          console.log('[ComandaDetail] PratoCardWaiter add pressed', { pratoId: item.id, pratoNome: item.nome, observacao: pendingObservacao });
+          onAdd(pendingObservacao);
+          setPendingObservacao('');
+        }}
+        style={styles.addBtn}
+      >
+        <Text style={styles.addBtnText}>
+          {isStaged ? '✓ Adicionado' : '+ Adicionar'}
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
+
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 
 export default function ComandaDetailScreen() {
@@ -179,8 +250,8 @@ export default function ComandaDetailScreen() {
     fetchData();
   }, [fetchData]);
 
-  const addToStaging = (prato: Prato) => {
-    console.log('[ComandaDetail] addToStaging pressed', { pratoId: prato.id, pratoNome: prato.nome });
+  const addToStaging = (prato: Prato, initialObservacao = '') => {
+    console.log('[ComandaDetail] addToStaging pressed', { pratoId: prato.id, pratoNome: prato.nome, observacao: initialObservacao });
     setStagedItems((prev) => {
       const existing = prev.find((i) => i.pratoId === prato.id);
       if (existing) {
@@ -195,7 +266,7 @@ export default function ComandaDetailScreen() {
           pratoNome: prato.nome,
           pratoPreco: Number(prato.preco),
           quantidade: 1,
-          observacao: '',
+          observacao: initialObservacao,
         },
       ];
     });
@@ -599,33 +670,13 @@ export default function ComandaDetailScreen() {
             renderItem={({ item }) => {
               const staged = stagedItems.find((s) => s.pratoId === item.id);
               return (
-                <View style={styles.pratoCard}>
-                  {item.imagem_url ? (
-                    <Image
-                      source={{ uri: item.imagem_url }}
-                      style={styles.pratoImage}
-                      contentFit="cover"
-                    />
-                  ) : (
-                    <View style={styles.pratoImagePlaceholder}>
-                      <Ionicons name="restaurant-outline" size={28} color="#9ca3af" />
-                    </View>
-                  )}
-                  <View style={{ flex: 1, marginHorizontal: 10 }}>
-                    <Text style={styles.pratoNome}>{item.nome}</Text>
-                    {item.descricao ? (
-                      <Text style={styles.pratoDesc} numberOfLines={2}>
-                        {item.descricao}
-                      </Text>
-                    ) : null}
-                    <Text style={styles.pratoPreco}>{formatPrice(item.preco)}</Text>
-                  </View>
-                  <Pressable onPress={() => addToStaging(item)} style={styles.addBtn}>
-                    <Text style={styles.addBtnText}>
-                      {staged ? `✓ ${staged.quantidade}` : '+ Adicionar'}
-                    </Text>
-                  </Pressable>
-                </View>
+                <PratoCardWaiter
+                  item={item}
+                  stagedObservacao={staged?.observacao}
+                  onAdd={(observacao) => addToStaging(item, observacao)}
+                  onUpdateObservacao={(text) => updateObservacao(item.id, text)}
+                  COLORS={COLORS}
+                />
               );
             }}
             ListEmptyComponent={

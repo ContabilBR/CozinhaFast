@@ -116,7 +116,7 @@ function PratoCard({
 }: {
   prato: ApiPrato;
   cartItem: CartItem | undefined;
-  onAdd: () => void;
+  onAdd: (observacao: string) => void;
   onIncrement: () => void;
   onDecrement: () => void;
   onObservacaoChange: (text: string) => void;
@@ -125,6 +125,7 @@ function PratoCard({
   const COLORS = useColors();
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(10)).current;
+  const [pendingObservacao, setPendingObservacao] = useState('');
 
   useEffect(() => {
     Animated.parallel([
@@ -303,8 +304,9 @@ function PratoCard({
           ) : (
             <AnimatedPressable
               onPress={() => {
-                console.log("[Comanda] Adicionar prato ao carrinho:", prato.nome, "id:", prato.id);
-                onAdd();
+                console.log("[Comanda] Adicionar prato ao carrinho:", prato.nome, "id:", prato.id, "observacao:", pendingObservacao);
+                onAdd(pendingObservacao);
+                setPendingObservacao('');
               }}
               style={{
                 flexDirection: "row",
@@ -330,30 +332,32 @@ function PratoCard({
           )}
         </View>
 
-        {/* Observation field — only when in cart */}
-        {inCart && (
-          <TextInput
-            value={cartItem?.observacao ?? ""}
-            onChangeText={(text) => {
+        {/* Observation field — always visible */}
+        <TextInput
+          value={inCart ? (cartItem?.observacao ?? '') : pendingObservacao}
+          onChangeText={(text) => {
+            if (inCart) {
               console.log("[Comanda] Observação alterada para:", prato.nome, "—", text);
               onObservacaoChange(text);
-            }}
-            placeholder="Observação (ex: sem cebola)"
-            placeholderTextColor={COLORS.textTertiary}
-            style={{
-              marginTop: 10,
-              backgroundColor: COLORS.surfaceSecondary,
-              borderWidth: 1,
-              borderColor: COLORS.border,
-              borderRadius: 10,
-              paddingHorizontal: 12,
-              paddingVertical: 8,
-              fontFamily: "Outfit_400Regular",
-              fontSize: 13,
-              color: COLORS.text,
-            }}
-          />
-        )}
+            } else {
+              setPendingObservacao(text);
+            }
+          }}
+          placeholder="Observação (ex: sem cebola)"
+          placeholderTextColor={COLORS.textTertiary}
+          style={{
+            marginTop: 10,
+            backgroundColor: COLORS.surfaceSecondary,
+            borderWidth: 1,
+            borderColor: COLORS.border,
+            borderRadius: 10,
+            paddingHorizontal: 12,
+            paddingVertical: 8,
+            fontFamily: "Outfit_400Regular",
+            fontSize: 13,
+            color: COLORS.text,
+          }}
+        />
       </View>
     </Animated.View>
   );
@@ -474,7 +478,7 @@ export default function NovaComandaScreen() {
   }, [fetchPratos]);
 
   // ── Cart helpers ─────────────────────────────────────────────────────────────
-  const addToCart = useCallback((prato: ApiPrato) => {
+  const addToCart = useCallback((prato: ApiPrato, initialObservacao = '') => {
     setCart((prev) => {
       const existing = prev.find((c) => c.id === prato.id);
       if (existing) {
@@ -490,7 +494,7 @@ export default function NovaComandaScreen() {
           preco: Number(prato.preco),
           imagem_url: prato.imagem_url,
           quantidade: 1,
-          observacao: "",
+          observacao: initialObservacao,
         },
       ];
     });
@@ -1054,7 +1058,7 @@ export default function NovaComandaScreen() {
                   <PratoCard
                     prato={item}
                     cartItem={cartItem}
-                    onAdd={() => addToCart(item)}
+                    onAdd={(observacao) => addToCart(item, observacao)}
                     onIncrement={() => incrementItem(item.id)}
                     onDecrement={() => decrementItem(item.id)}
                     onObservacaoChange={(text) => setObservacao(item.id, text)}
