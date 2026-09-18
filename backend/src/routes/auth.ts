@@ -136,14 +136,23 @@ export function registerAuthRoutes(app: App) {
         if (!restauranteId) {
           // No restaurante exists, create one
           app.logger.debug({}, "Creating default restaurante");
-          restauranteId = randomUUID();
-          await app.db
-            .insert(schema.restaurante)
-            .values({
-              id: restauranteId,
-              nome: 'Default Restaurant',
-            });
-          app.logger.debug({ restauranteId }, "Created default restaurante");
+          try {
+            const inserted = await app.db
+              .insert(schema.restaurante)
+              .values({
+                nome: 'Default Restaurant',
+              })
+              .returning();
+
+            if (!inserted || inserted.length === 0) {
+              throw new Error('Failed to create restaurante - no ID returned');
+            }
+            restauranteId = inserted[0].id;
+            app.logger.debug({ restauranteId }, "Created default restaurante");
+          } catch (err) {
+            app.logger.error({ err }, "Failed to create restaurante");
+            throw err;
+          }
         }
 
         if (!restauranteId) {
