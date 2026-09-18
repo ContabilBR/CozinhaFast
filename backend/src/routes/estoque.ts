@@ -252,6 +252,10 @@ export function registerEstoqueRoutes(app: App) {
 
       if (!insumo_id || !quantidade) return reply.code(400).send({ error: "insumo_id e quantidade são obrigatórios" });
 
+      // Check if prato exists
+      const [prato] = await db.select().from(schema.pratos).where(eq(schema.pratos.id, pratoId));
+      if (!prato) return reply.code(404).send({ error: "Prato não encontrado" });
+
       const [item] = await db.insert(schema.pratoInsumos).values({
         pratoId, insumoId: insumo_id, quantidadeUsada: quantidade, restauranteId,
       }).returning();

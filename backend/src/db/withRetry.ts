@@ -1,141 +1,88 @@
 /**
- * Detects if an error is a connection-related error that should be retried.
- * Checks both the error message and code, including nested cause objects.
+ * Returns true if the error looks like a transient Postgres connection failure
+ * that is safe to retry (the query never reached the DB, or the DB was waking up).
  */
 export function isConnectionError(err: any): boolean {
   if (!err) return false;
-
-  const errorPatterns = [
-    'ECONNRESET',
-    'ECONNREFUSED',
-    'ENOTFOUND',
-    'connection terminated',
-    'connection closed',
-    'connection refused',
-    'connection reset',
-    'terminating connection',
-    'server closed the connection',
-    'socket hang up',
-    'connect econnrefused',
-    'econnreset',
-    'timed out',
-    'timeout',
+  const patterns = [
+    'ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND',
+    'connection terminated', 'connection closed', 'connection refused',
+    'connection reset', 'terminating connection',
+    'server closed the connection', 'socket hang up',
+    'connect econnrefused', 'econnreset', 'timed out', 'timeout',
   ];
+  const check = (s: string | undefined) =>
+    !!s && patterns.some(p => s.toLowerCase().includes(p.toLowerCase()));
 
-  const checkString = (str: string | undefined) => {
-    if (!str) return false;
-    const lower = str.toLowerCase();
-    return errorPatterns.some(p => lower.includes(p.toLowerCase()));
-  };
-
-  // Check message and code
-  if (checkString(err.message) || checkString(err.code)) {
-    return true;
-  }
-
-  // Check nested cause (from Drizzle or other wrappers)
-  if (err.cause) {
-    if (checkString(err.cause.message) || checkString(err.cause.code)) {
-      return true;
-    }
-  }
-
+  if (check(err.message) || check(err.code)) return true;
+  if (err.cause && (check(err.cause.message) || check(err.cause.code))) return true;
   return false;
 }
 
 /**
- * Retries a database operation up to `maxRetries` times on connection errors.
- * Non-connection errors are thrown immediately.
- *
- * @param fn - Function that returns a promise
- * @param maxRetries - Max number of retries (default 2, total of 3 attempts)
- * @param delayMs - Delay between retries in milliseconds (default 400ms)
- * @returns Result of the operation
+ * Retries `fn` up to `retries` more times on connection errors.
+ * Each retry calls `fn()` fresh — never re-awaits a stale promise.
  */
-export async function withRetry<T>(
-  fn: () => Promise<T>,
-  maxRetries: number = 2,
-  delayMs: number = 400
-): Promise<T> {
-  let lastError: any;
-
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (error) {
-      lastError = error;
-
-      // Only retry on connection errors
-      if (!isConnectionError(error)) {
-        throw error;
-      }
-
-      // Don't retry after the last attempt
-      if (attempt === maxRetries) {
-        throw error;
-      }
-
-      // Wait before retrying
-      await new Promise(resolve => setTimeout(resolve, delayMs));
+export function withRetry<T>(fn: () => Promise<T>, retries = 2, delayMs = 400): Promise<T> {
+  return fn().catch(async (err) => {
+    if (retries > 0 && isConnectionError(err)) {
+      await new Promise(r => setTimeout(r, delayMs));
+      return withRetry(fn, retries - 1, delayMs);
     }
-  }
-
-  throw lastError;
+    throw err;
+  });
 }
 
 /**
- * Wraps a Drizzle SELECT query builder with automatic retry logic on connection errors.
- * Transparently adds retry behavior to query chains without breaking promise integration.
+ * Methods that are safe to retry automatically (idempotent reads).
+ * INSERT / UPDATE / DELETE are intentionally excluded — retrying a write
+ * after the DB already executed it could produce duplicates.
+ */
+const READ_ONLY_METHODS = new Set(['select', 'query', 'findMany', 'findFirst']);
+
+/**
+ * Wraps a Drizzle query builder so that when the promise is awaited,
+ * the entire chain is replayed from scratch on each retry attempt.
  *
- * @param queryBuilder - The initial Drizzle query builder from db.select()
- * @param recreateQuery - Function that returns a fresh db.select() with the same table
- * @param methodChain - The chain of methods to replay (for recursive wrapping)
- * @returns A proxy that transparently adds retry behavior to the query chain
+ * `recreateQuery` must return a *new* query builder (e.g. `() => originalSelect(...args)`).
+ * `methodChain` accumulates the builder calls (.from, .where, .orderBy, …) for replay.
  */
 export function wrapSelectWithRetry(
   queryBuilder: any,
   recreateQuery: () => any,
-  methodChain: Array<{ method: string; args: any[] }> = []
+  methodChain: Array<{ method: string; args: any[] }> = [],
 ): any {
   return new Proxy(queryBuilder, {
     get(target, prop: string | symbol) {
       const value = target[prop];
 
-      // Handle promise-like methods that trigger query execution
-      const promiseMethods = ['then', 'catch', 'finally'];
-      if (promiseMethods.includes(prop as string)) {
+      // When the promise is consumed (.then / .catch / .finally), execute with retry.
+      if (prop === 'then' || prop === 'catch' || prop === 'finally') {
         return function (...promiseArgs: any[]) {
-          // Create a function that rebuilds and executes the query fresh on each attempt
+          // Each withRetry attempt calls this fresh — new query, new promise.
           const executeQuery = () => {
-            // Start with a fresh select call
             let qb = recreateQuery();
-
-            // Replay the entire method chain on the fresh builder
-            for (const { method, args: methodArgs } of methodChain) {
-              qb = qb[method](...methodArgs);
+            for (const { method, args } of methodChain) {
+              qb = qb[method](...args);
             }
-
             return qb;
           };
-
-          // Execute with retry logic
           const retryablePromise = withRetry(executeQuery);
-
-          // Delegate the promise method to the retried result
-          return retryablePromise[prop](...promiseArgs);
+          if (prop === 'then') {
+            return retryablePromise.then(...promiseArgs);
+          } else if (prop === 'catch') {
+            return retryablePromise.catch(...promiseArgs);
+          } else {
+            return retryablePromise.finally(...promiseArgs);
+          }
         };
       }
 
-      // Handle query builder methods - record and continue chain
+      // Builder methods (.from, .where, .orderBy, …) — record and continue chain.
       if (typeof value === 'function' && prop !== Symbol.toStringTag) {
         return function (...methodArgs: any[]) {
-          // Record this method call for replay on retry
           const newChain = [...methodChain, { method: prop as string, args: methodArgs }];
-
-          // Execute the method on the current builder to continue building
           const nextBuilder = value.apply(target, methodArgs);
-
-          // Return a wrapped proxy with the updated chain
           return wrapSelectWithRetry(nextBuilder, recreateQuery, newChain);
         };
       }
@@ -146,25 +93,17 @@ export function wrapSelectWithRetry(
 }
 
 /**
- * Applies automatic retry logic to all SELECT queries on a database instance.
- * Wraps the db.select() method so every query chain automatically retries on connection errors
- * without requiring changes to individual query call sites.
- *
- * @param db - The Drizzle database instance (app.db)
- * @param maxRetries - Max number of retries (default 2)
- * @param delayMs - Delay between retries in milliseconds (default 400ms)
+ * Patches `db` in-place so that READ_ONLY_METHODS automatically retry on
+ * connection errors. Write methods (insert, update, delete) are left untouched —
+ * retrying a write risks duplicates if the DB already executed the statement.
  */
-export function enableSelectRetry(
-  db: any,
-  maxRetries: number = 2,
-  delayMs: number = 400
-): void {
-  const originalSelect = db.select.bind(db);
-
-  db.select = function (...args: any[]) {
-    const queryBuilder = originalSelect(...args);
-
-    // Return a wrapped query builder that will retry on connection errors
-    return wrapSelectWithRetry(queryBuilder, () => originalSelect(...args), []);
-  };
+export function enableSelectRetry(db: any): void {
+  for (const method of READ_ONLY_METHODS) {
+    if (typeof db[method] !== 'function') continue;
+    const original = db[method].bind(db);
+    db[method] = function (...args: any[]) {
+      const queryBuilder = original(...args);
+      return wrapSelectWithRetry(queryBuilder, () => original(...args), []);
+    };
+  }
 }
