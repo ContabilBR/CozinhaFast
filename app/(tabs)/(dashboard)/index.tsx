@@ -321,7 +321,7 @@ export default function DashboardScreen() {
   };
 
   const totalMesasStr = String(resumo.total_mesas || tables.length || 0);
-  const mesasOcupadasStr = String(resumo.mesas_ocupadas || tables.filter((t) => t.status !== "livre").length || 0);
+  const mesasOcupadasStr = String(resumo.mesas_ocupadas || tables.filter((t) => t.status !== "disponivel").length || 0);
   const comandasAbertasStr = String(resumo.comandas_abertas);
   const pedidosPendentesStr = String(resumo.pedidos_pendentes);
   const receitaPeriodoStr = formatCurrency(resumo.receita_periodo);
