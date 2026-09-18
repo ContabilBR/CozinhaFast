@@ -98,11 +98,17 @@ export function registerAuthRoutes(app: App) {
 
         // Check if user already exists in custom auth usuarios table
         const normalizedEmail = email.toLowerCase().trim();
-        const existing = await app.db
-          .select()
-          .from(schema.usuarios)
-          .where(eq(schema.usuarios.email, normalizedEmail))
-          .limit(1);
+        let existing: any[] = [];
+        try {
+          existing = await app.db
+            .select()
+            .from(schema.usuarios)
+            .where(eq(schema.usuarios.email, normalizedEmail))
+            .limit(1);
+        } catch (err) {
+          app.logger.error({ err, email: normalizedEmail }, "Failed to check existing usuario");
+          throw err;
+        }
 
         if (existing && existing.length > 0) {
           app.logger.info({ email: normalizedEmail }, "Sign up failed: email already exists");
@@ -165,14 +171,19 @@ export function registerAuthRoutes(app: App) {
 
         // Create usuario (custom auth system)
         app.logger.debug({ userId, email: normalizedEmail, userRole }, "Creating usuario");
-        await app.db.insert(schema.usuarios).values({
-          id: userId,
-          nome: name,
-          email: normalizedEmail,
-          senhaHash,
-          role: userRole,
-          restauranteId: restauranteId,
-        });
+        try {
+          await app.db.insert(schema.usuarios).values({
+            id: userId,
+            nome: name,
+            email: normalizedEmail,
+            senhaHash,
+            role: userRole,
+            restauranteId: restauranteId,
+          });
+        } catch (err) {
+          app.logger.error({ err, userId, email: normalizedEmail }, "Failed to create usuario");
+          throw err;
+        }
         app.logger.debug({ userId }, "Usuario created");
 
         // Generate session token
@@ -182,11 +193,16 @@ export function registerAuthRoutes(app: App) {
         app.logger.info({ tokenStart: token.substring(0, 20), userId }, "Creating session");
 
         // Create session in custom auth system
-        await app.db.insert(schema.usuariosSession).values({
-          token,
-          userId: userId.toString(),
-          expiresAt,
-        });
+        try {
+          await app.db.insert(schema.usuariosSession).values({
+            token,
+            userId: userId.toString(),
+            expiresAt,
+          });
+        } catch (err) {
+          app.logger.error({ err, userId, tokenStart: token.substring(0, 20) }, "Failed to create usuario session");
+          throw err;
+        }
         app.logger.info({ tokenStart: token.substring(0, 20), userId }, "Session created successfully");
         app.logger.info({ userId, email: normalizedEmail }, "Sign up successful");
 
@@ -263,11 +279,17 @@ export function registerAuthRoutes(app: App) {
 
         // Look up user in custom auth system (usuarios table)
         const normalizedEmail = email.toLowerCase().trim();
-        const users = await app.db
-          .select()
-          .from(schema.usuarios)
-          .where(eq(schema.usuarios.email, normalizedEmail))
-          .limit(1);
+        let users: any[] = [];
+        try {
+          users = await app.db
+            .select()
+            .from(schema.usuarios)
+            .where(eq(schema.usuarios.email, normalizedEmail))
+            .limit(1);
+        } catch (err) {
+          app.logger.error({ err, email: normalizedEmail }, "Failed to query usuarios table");
+          throw err;
+        }
 
         if (!users || users.length === 0) {
           app.logger.info({ email: normalizedEmail }, "Sign in failed: user not found");
@@ -297,11 +319,16 @@ export function registerAuthRoutes(app: App) {
         app.logger.debug({ userId: user.id, tokenLength: token.length }, "Creating session");
 
         // Create session in custom auth system
-        await app.db.insert(schema.usuariosSession).values({
-          token,
-          userId: user.id.toString(),
-          expiresAt,
-        });
+        try {
+          await app.db.insert(schema.usuariosSession).values({
+            token,
+            userId: user.id.toString(),
+            expiresAt,
+          });
+        } catch (err) {
+          app.logger.error({ err, userId: user.id }, "Failed to create usuario session");
+          throw err;
+        }
 
         app.logger.info({ userId: user.id, email: normalizedEmail }, "Sign in successful");
 
@@ -361,11 +388,17 @@ export function registerAuthRoutes(app: App) {
         app.logger.debug({ tokenLength: token.length, tokenStart: token.substring(0, 20) }, "Looking up session in /api/auth/me");
 
         // Look up session in custom auth system (usuariosSession table)
-        const sessions = await app.db
-          .select()
-          .from(schema.usuariosSession)
-          .where(eq(schema.usuariosSession.token, token))
-          .limit(1);
+        let sessions: any[] = [];
+        try {
+          sessions = await app.db
+            .select()
+            .from(schema.usuariosSession)
+            .where(eq(schema.usuariosSession.token, token))
+            .limit(1);
+        } catch (err) {
+          app.logger.error({ err, token: token.substring(0, 20) }, "Failed to query usuariosSession table");
+          return reply.status(401).send({ error: "Não autorizado" });
+        }
 
         app.logger.debug({ sessionsFound: sessions?.length || 0 }, "Session query result in /api/auth/me");
 
@@ -382,11 +415,17 @@ export function registerAuthRoutes(app: App) {
         }
 
         // Get user from usuarios table
-        const users = await app.db
-          .select()
-          .from(schema.usuarios)
-          .where(eq(schema.usuarios.id, session.userId as any))
-          .limit(1);
+        let users: any[] = [];
+        try {
+          users = await app.db
+            .select()
+            .from(schema.usuarios)
+            .where(eq(schema.usuarios.id, session.userId as any))
+            .limit(1);
+        } catch (err) {
+          app.logger.error({ err, userId: session.userId }, "Failed to query usuarios table in /api/auth/me");
+          return reply.status(401).send({ error: "Não autorizado" });
+        }
 
         if (!users || users.length === 0) {
           return reply.status(401).send({ error: "Não autorizado" });
