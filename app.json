@@ -17,7 +17,9 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSPhotoLibraryUsageDescription": "This app uses your photo library to let you upload images.",
-        "NSCameraUsageDescription": "This app uses your camera to let you take photos to upload."
+        "NSCameraUsageDescription": "This app uses your camera to let you take photos to upload.",
+        "NSBluetoothPeripheralUsageDescription": "This app uses Bluetooth to connect to thermal printers for printing receipts and orders.",
+        "NSBluetoothAlwaysUsageDescription": "This app uses Bluetooth to connect to thermal printers for printing receipts and orders."
       }
     },
     "android": {
