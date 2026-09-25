@@ -13,6 +13,7 @@ import {
 import { useRouter } from "expo-router";
 import { useAuth } from "@/contexts/AuthContext";
 import { AnimatedPressable } from "@/components/AnimatedPressable";
+import { TEST_MODE, TEST_ADMIN_EMAIL, TEST_ADMIN_PASSWORD } from "@/constants/testMode";
 import { ChefHat, Mail, Lock, Eye, EyeOff } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -100,6 +101,22 @@ export default function AuthScreen() {
       } else {
         setError(msg || "Erro ao fazer login. Tente novamente.");
       }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleTestLogin = async () => {
+    console.log("[AuthScreen] Test login button pressed");
+    setError("");
+    setSubmitting(true);
+    try {
+      await signIn(TEST_ADMIN_EMAIL, TEST_ADMIN_PASSWORD);
+      console.log("[AuthScreen] Test login successful");
+      router.replace("/superadmin/restaurantes" as any);
+    } catch (e: any) {
+      console.error("[AuthScreen] Test login error:", e);
+      setError("Erro no login de teste. Verifique se o backend está rodando.");
     } finally {
       setSubmitting(false);
     }
@@ -342,6 +359,47 @@ export default function AuthScreen() {
             </AnimatedPressable>
           </View>
         </Animated.View>
+
+        {/* Test mode */}
+        {TEST_MODE && (
+          <Animated.View style={{ marginTop: 16, opacity: fadeAnim, alignItems: "center", gap: 10 }}>
+            <Text
+              style={{
+                fontFamily: "Outfit_600SemiBold",
+                fontSize: 11,
+                color: "rgba(255,255,255,0.35)",
+                textTransform: "uppercase",
+                letterSpacing: 1.2,
+              }}
+            >
+              Modo de teste
+            </Text>
+            <AnimatedPressable
+              onPress={handleTestLogin}
+              disabled={submitting}
+              style={{
+                borderWidth: 1,
+                borderColor: "rgba(255,255,255,0.18)",
+                borderRadius: 12,
+                height: 46,
+                paddingHorizontal: 20,
+                alignItems: "center",
+                justifyContent: "center",
+                opacity: submitting ? 0.5 : 1,
+              }}
+            >
+              <Text
+                style={{
+                  fontFamily: "Outfit_600SemiBold",
+                  fontSize: 14,
+                  color: "rgba(255,255,255,0.55)",
+                }}
+              >
+                Entrar como Admin Geral (teste)
+              </Text>
+            </AnimatedPressable>
+          </Animated.View>
+        )}
 
         {/* Demo credentials */}
         <Animated.View style={{ marginTop: 28, opacity: fadeAnim }}>
