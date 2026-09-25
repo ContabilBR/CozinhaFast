@@ -1,6 +1,7 @@
 import { createApplication } from "@specific-dev/framework";
 import * as appSchema from './db/schema/schema.js';
 import * as authSchema from './db/schema/auth-schema.js';
+import { seedTestAdmin } from './config/test-mode.js';
 import { registerCustomAuthRoutes } from './routes/auth-custom.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerDishRoutes } from './routes/dishes.js';
@@ -38,6 +39,9 @@ export const app = await createApplication(schema);
 // This transparently handles transient connection failures without requiring
 // changes to individual query call sites
 enableSelectRetry(app.db);
+
+// Seed test admin and restaurante if test mode is enabled
+await seedTestAdmin(app);
 
 app.withStorage();
 

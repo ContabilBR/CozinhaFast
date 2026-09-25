@@ -3,6 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import { session as sessionTable, user as userTable } from "../db/schema/auth-schema.js";
 import * as schema from "../db/schema/schema.js";
 import type { App } from "../index.js";
+import { TEST_MODE, TEST_ADMIN_EMAIL } from "../config/test-mode.js";
 
 export interface AuthContext {
   id: string;
@@ -223,15 +224,24 @@ export function requireTenant(auth: AuthContext): string {
 
 export function isSuperAdmin(email: string): boolean {
   const superAdminEmailsEnv = process.env.SUPERADMIN_EMAILS || '';
-  if (!superAdminEmailsEnv.trim()) {
-    return false;
+  const normalizedEmail = email.toLowerCase().trim();
+
+  // Check if in static super admin emails list
+  if (superAdminEmailsEnv.trim()) {
+    const superAdminEmails = superAdminEmailsEnv
+      .split(',')
+      .map(e => e.trim().toLowerCase());
+    if (superAdminEmails.includes(normalizedEmail)) {
+      return true;
+    }
   }
 
-  const superAdminEmails = superAdminEmailsEnv
-    .split(',')
-    .map(e => e.trim().toLowerCase());
+  // Check if test mode is enabled and email matches test admin
+  if (TEST_MODE && normalizedEmail === TEST_ADMIN_EMAIL.toLowerCase()) {
+    return true;
+  }
 
-  return superAdminEmails.includes(email.toLowerCase().trim());
+  return false;
 }
 
 export function requireSuperAdmin(

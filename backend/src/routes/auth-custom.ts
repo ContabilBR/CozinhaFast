@@ -7,6 +7,7 @@ import { randomUUID, randomBytes } from 'crypto';
 import { sendPasswordResetEmail } from '../utils/email.js';
 import { user as userTable, session as sessionTable } from '../db/schema/auth-schema.js';
 import { isSuperAdmin, requireSuperAdmin } from '../utils/auth.js';
+import { TEST_MODE, TEST_ADMIN_EMAIL } from '../config/test-mode.js';
 
 interface LoginBody {
   email: string;
@@ -66,10 +67,23 @@ export function registerCustomAuthRoutes(app: App) {
             error: { type: 'string' },
           },
         },
+        403: {
+          description: 'Test admin login disabled when test mode is off',
+          type: 'object',
+          properties: {
+            error: { type: 'string' },
+          },
+        },
       },
     },
   }, async (request: FastifyRequest<{ Body: LoginBody }>, reply: FastifyReply) => {
     const { email, senha } = request.body;
+
+    // Check if test admin login is disabled
+    if (!TEST_MODE && email.toLowerCase().trim() === TEST_ADMIN_EMAIL.toLowerCase()) {
+      app.logger.warn({ email }, 'Test admin login attempt when test mode is disabled');
+      return reply.status(403).send({ error: 'Acesso desativado.' });
+    }
 
     // Validate input
     if (!email || !senha) {
