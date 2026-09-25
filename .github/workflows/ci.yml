@@ -107,8 +107,12 @@ jobs:
           TEST_BASE_URL: http://localhost:3001
 
       - name: Print server log
+        # Tail only: this is pino request/response logging for every test
+        # request bun:test made, easily tens of thousands of lines, which
+        # buries the actual bun test pass/fail summary at the bottom of the
+        # job log. Keep just enough to spot a crash near the end.
         if: always()
-        run: cat server.log || true
+        run: tail -n 300 server.log || true
 
       - name: Stop backend
         if: always()
