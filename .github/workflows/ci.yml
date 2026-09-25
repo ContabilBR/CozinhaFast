@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  frontend:
+    name: Frontend (lint + typecheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+  backend:
+    name: Backend (typecheck + tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # backend/.npmrc points the @specific-dev scope at GitHub Packages and
+      # needs an authToken with read:packages scope — see backend/README.md.
+      # Requires the NPM_TOKEN secret to be configured on this repository
+      # (Settings -> Secrets and variables -> Actions).
+      - name: Install dependencies
+        run: npm install
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Start backend
+        # No DATABASE_URL is set on purpose: without one, the framework runs
+        # against an ephemeral embedded PGlite database (see drizzle.config.ts),
+        # so tests never touch a real Postgres instance and need no service
+        # container or secret for it.
+        run: |
+          npm run dev > server.log 2>&1 &
+          echo $! > server.pid
+        env:
+          NODE_ENV: test
+          ALLOW_TEST_SIGNUP: "true"
+          SEED_ENABLED: "false"
+          PORT: "3001"
+
+      - name: Wait for backend to be ready
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:3001/api/seed-status > /dev/null; then
+              echo "Backend is up"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Backend did not become ready in time"
+          echo "---- server.log ----"
+          cat server.log
+          exit 1
+
+      - name: Run tests
+        run: bun test
+        env:
+          TEST_BASE_URL: http://localhost:3001
+
+      - name: Print server log
+        if: always()
+        run: cat server.log || true
+
+      - name: Stop backend
+        if: always()
+        run: kill "$(cat server.pid)" 2>/dev/null || true
