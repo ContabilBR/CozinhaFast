@@ -63,6 +63,15 @@ jobs:
         # against an ephemeral embedded PGlite database (see drizzle.config.ts),
         # so tests never touch a real Postgres instance and need no service
         # container or secret for it.
+        #
+        # AWS_S3_BUCKET/AWS_REGION are dummy placeholders: app.withStorage()
+        # (backend/src/index.ts) throws at boot if neither an S3 config nor
+        # STORAGE_API_BASE_URL is present, so the server needs *something*
+        # here just to start. They don't point at a real bucket, so the two
+        # tests that actually exercise /api/upload (which need working
+        # storage) are expected to fail until real (or sandbox) storage
+        # credentials are added as repo secrets — everything else doesn't
+        # touch storage and isn't affected.
         run: |
           npm run dev > server.log 2>&1 &
           echo $! > server.pid
@@ -71,11 +80,13 @@ jobs:
           ALLOW_TEST_SIGNUP: "true"
           SEED_ENABLED: "false"
           PORT: "3001"
+          AWS_S3_BUCKET: "ci-placeholder-bucket"
+          AWS_REGION: "us-east-1"
 
       - name: Wait for backend to be ready
         run: |
           for i in $(seq 1 60); do
-            if curl -sf http://localhost:3001/api/seed-status > /dev/null; then
+            if curl -sf --max-time 5 http://localhost:3001/api/seed-status > /dev/null; then
               echo "Backend is up"
               exit 0
             fi
