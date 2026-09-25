@@ -6,6 +6,7 @@ export type User = {
   nome: string;
   email: string;
   role: string;
+  is_super_admin?: boolean;
 };
 
 type AuthContextType = {

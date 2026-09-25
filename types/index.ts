@@ -108,6 +108,7 @@ export interface RelatorioResumo {
   receita_periodo: number;
   periodo_label: string;
   avg_ticket?: number;
+  total_pratos?: number;
   top_dishes?: Array<{ dish_name: string; quantity_sold: number }>;
   orders_by_status?: {
     aberta: number;

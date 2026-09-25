@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/contexts/AuthContext";
 import { AnimatedPressable } from "@/components/AnimatedPressable";
-import { Settings, UtensilsCrossed, Tag, LayoutGrid, Lock, Users, Store } from "lucide-react-native";
+import { Settings, UtensilsCrossed, Tag, LayoutGrid, Lock, Users, Store, Globe } from "lucide-react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { isAdmin } from "@/utils/helpers";
 
@@ -54,6 +54,13 @@ export default function GestaoScreen() {
   const canAccess = isAdmin(role);
 
   const cards: ManagementCard[] = [
+    ...(user?.is_super_admin ? [{
+      icon: <Globe size={26} color="#6366F1" />,
+      title: "Plataforma",
+      subtitle: "Gerenciar restaurantes",
+      route: "/superadmin/restaurantes",
+      color: "#6366F1",
+    }] : []),
     { icon: <UtensilsCrossed size={26} color={COLORS.primary} />, title: "Pratos", subtitle: "Gerenciar cardápio", route: "/(tabs)/(gestao)/pratos", color: COLORS.primary },
     { icon: <Tag size={26} color="#8B5CF6" />, title: "Categorias", subtitle: "Gerenciar categorias", route: "/(tabs)/(gestao)/categorias", color: "#8B5CF6" },
     { icon: <LayoutGrid size={26} color="#0EA5E9" />, title: "Mesas", subtitle: "Gerenciar mesas", route: "/(tabs)/(gestao)/mesas", color: "#0EA5E9" },
