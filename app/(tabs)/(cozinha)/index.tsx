@@ -29,6 +29,7 @@ import {
   ChevronDown,
   ChevronUp,
   Check,
+  Play,
 } from "lucide-react-native";
 import { useRealtime, type RealtimeStatus } from "@/hooks/useRealtime";
 import { useKeepAwake } from "expo-keep-awake";
@@ -125,6 +126,7 @@ function KitchenTicketCard({
 }) {
   const COLORS = useColors();
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [undoToast, setUndoToast] = useState<{ pedidoId: string; timer: ReturnType<typeof setTimeout> } | null>(null);
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(16)).current;
 
@@ -165,11 +167,30 @@ function KitchenTicketCard({
 
   const urgentBannerText = "Aguardando há " + diffMin + " min — URGENTE";
 
-  const handlePedidoAction = async (pedidoId: string, newStatus: string) => {
-    console.log("[Cozinha] KitchenTicketCard action:", pedidoId, "->", newStatus);
+  const handlePedidoAction = async (pedidoId: string, newStatus: string, isFinalize: boolean) => {
+    console.log("[Cozinha] KitchenTicketCard action:", pedidoId, "->", newStatus, "isFinalize:", isFinalize);
     setUpdatingId(pedidoId);
     try {
       await onAction(pedidoId, newStatus);
+      if (isFinalize) {
+        // Clear any existing toast timer
+        if (undoToast) clearTimeout(undoToast.timer);
+        const timer = setTimeout(() => setUndoToast(null), 5000);
+        setUndoToast({ pedidoId, timer });
+      }
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const handleUndo = async () => {
+    if (!undoToast) return;
+    console.log("[Cozinha] Undo pressed for pedido:", undoToast.pedidoId);
+    clearTimeout(undoToast.timer);
+    setUndoToast(null);
+    setUpdatingId(undoToast.pedidoId);
+    try {
+      await onAction(undoToast.pedidoId, "em_preparo");
     } finally {
       setUpdatingId(null);
     }
@@ -271,17 +292,19 @@ function KitchenTicketCard({
           }}
         >
           {activePedidos.map((pedido) => {
-            const pedidoStatusColor = STATUS_COLORS[pedido.status] || "#94A3B8";
-            const pedidoStatusLabel = STATUS_LABELS[pedido.status] || pedido.status;
             const isPendente = pedido.status === "pendente";
             const isEmPreparo = pedido.status === "em_preparo";
             const isPronto = pedido.status === "pronto";
             const isUpdating = updatingId === pedido.id;
             const pedidoUrgencia = getPedidoUrgencia(pedido);
 
-            const nextStatus = isPendente ? "em_preparo" : isEmPreparo ? "pronto" : null;
-            const actionLabel = isPendente ? "Iniciar" : isEmPreparo ? "Pronto" : null;
-            const actionBg = isPendente ? "#F59E0B" : "#22C55E";
+            // Status badge config
+            const badgeColor = isPronto ? "#22C55E" : isEmPreparo ? "#F59E0B" : "#94A3B8";
+            const badgeLabel = isPronto
+              ? "Pronto"
+              : isEmPreparo
+              ? `Em preparo · ${pedidoUrgencia.diffMin}/${pedidoUrgencia.targetMin} min`
+              : "Pendente";
 
             return (
               <View
@@ -293,6 +316,7 @@ function KitchenTicketCard({
                   paddingVertical: 7,
                   borderBottomWidth: 1,
                   borderBottomColor: COLORS.divider,
+                  opacity: isPronto ? 0.45 : 1,
                 }}
               >
                 {/* Qty badge */}
@@ -317,17 +341,6 @@ function KitchenTicketCard({
                   <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 13, color: COLORS.text }}>
                     {pedido.prato_nome}
                   </Text>
-                  {(isPendente || isEmPreparo) && (
-                    <Text
-                      style={{
-                        fontFamily: "Outfit_600SemiBold",
-                        fontSize: 10,
-                        color: pedidoUrgencia.isUrgent ? "#EF4444" : pedidoUrgencia.isWarning ? "#F59E0B" : COLORS.textTertiary,
-                      }}
-                    >
-                      {pedidoUrgencia.diffMin}/{pedidoUrgencia.targetMin} min
-                    </Text>
-                  )}
                   {pedido.observacao ? (
                     <Text
                       style={{
@@ -345,57 +358,92 @@ function KitchenTicketCard({
                 {/* Status badge */}
                 <View
                   style={{
-                    backgroundColor: pedidoStatusColor + "20",
+                    backgroundColor: badgeColor + "20",
                     borderRadius: 6,
                     paddingHorizontal: 7,
-                    paddingVertical: 2,
+                    paddingVertical: 3,
+                    flexShrink: 1,
+                    maxWidth: 160,
                   }}
                 >
-                  <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 10, color: pedidoStatusColor }}>
-                    {pedidoStatusLabel}
+                  <Text
+                    style={{
+                      fontFamily: "Outfit_600SemiBold",
+                      fontSize: 10,
+                      color: badgeColor,
+                    }}
+                    numberOfLines={1}
+                  >
+                    {badgeLabel}
                   </Text>
                 </View>
 
-                {/* Action */}
-                {isPronto ? (
-                  <View
-                    style={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: 14,
-                      backgroundColor: "#22C55E20",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <Check size={14} color="#22C55E" />
-                  </View>
-                ) : nextStatus && actionLabel ? (
+                {/* Action button — only for pendente and em_preparo */}
+                {isPendente && (
                   <AnimatedPressable
                     onPress={() => {
-                      console.log("[Cozinha] Ticket action button pressed:", pedido.id, "->", nextStatus);
-                      handlePedidoAction(pedido.id, nextStatus);
+                      console.log("[Cozinha] Iniciar pressed:", pedido.id);
+                      handlePedidoAction(pedido.id, "em_preparo", false);
                     }}
                     disabled={isUpdating}
                     style={{
-                      backgroundColor: actionBg,
                       borderRadius: 20,
                       paddingHorizontal: 10,
-                      paddingVertical: 5,
-                      minWidth: 56,
+                      paddingVertical: 6,
+                      minWidth: 72,
                       alignItems: "center",
                       justifyContent: "center",
+                      flexDirection: "row",
+                      gap: 4,
+                      borderWidth: 1.5,
+                      borderColor: "#F59E0B",
+                      backgroundColor: "transparent",
+                    }}
+                  >
+                    {isUpdating ? (
+                      <ActivityIndicator color="#F59E0B" size="small" />
+                    ) : (
+                      <>
+                        <Play size={11} color="#F59E0B" fill="#F59E0B" />
+                        <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 11, color: "#F59E0B" }}>
+                          Iniciar
+                        </Text>
+                      </>
+                    )}
+                  </AnimatedPressable>
+                )}
+
+                {isEmPreparo && (
+                  <AnimatedPressable
+                    onPress={() => {
+                      console.log("[Cozinha] Finalizar pressed:", pedido.id);
+                      handlePedidoAction(pedido.id, "pronto", true);
+                    }}
+                    disabled={isUpdating}
+                    style={{
+                      borderRadius: 20,
+                      paddingHorizontal: 10,
+                      paddingVertical: 6,
+                      minWidth: 80,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexDirection: "row",
+                      gap: 4,
+                      backgroundColor: "#F59E0B",
                     }}
                   >
                     {isUpdating ? (
                       <ActivityIndicator color="#fff" size="small" />
                     ) : (
-                      <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 11, color: "#fff" }}>
-                        {actionLabel}
-                      </Text>
+                      <>
+                        <Check size={11} color="#fff" />
+                        <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 11, color: "#fff" }}>
+                          Finalizar
+                        </Text>
+                      </>
                     )}
                   </AnimatedPressable>
-                ) : null}
+                )}
               </View>
             );
           })}
@@ -407,6 +455,45 @@ function KitchenTicketCard({
             {pendentesCount} pendentes · {emPreparoCount} em preparo · {prontoCount} prontos
           </Text>
         </View>
+
+        {/* Undo toast */}
+        {undoToast && (
+          <View
+            style={{
+              position: "absolute",
+              bottom: 0,
+              left: 0,
+              right: 0,
+              backgroundColor: "#1E293B",
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              paddingHorizontal: 14,
+              paddingVertical: 10,
+              borderBottomLeftRadius: 16,
+              borderBottomRightRadius: 16,
+            }}
+          >
+            <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 12, color: "#CBD5E1" }}>
+              Item marcado como pronto
+            </Text>
+            <AnimatedPressable
+              onPress={handleUndo}
+              style={{
+                paddingHorizontal: 12,
+                paddingVertical: 5,
+                borderRadius: 8,
+                backgroundColor: "#F59E0B20",
+                borderWidth: 1,
+                borderColor: "#F59E0B",
+              }}
+            >
+              <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 12, color: "#F59E0B" }}>
+                Desfazer
+              </Text>
+            </AnimatedPressable>
+          </View>
+        )}
       </View>
     </Animated.View>
   );
