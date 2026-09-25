@@ -65,6 +65,7 @@ export const restaurante = pgTable("restaurante", {
   uf: text("uf"),
   telefone: text("telefone"),
   email: text("email"),
+  ativo: boolean("ativo").default(true).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

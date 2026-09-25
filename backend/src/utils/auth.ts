@@ -220,3 +220,35 @@ export function requireTenant(auth: AuthContext): string {
   }
   return auth.restauranteId;
 }
+
+export function isSuperAdmin(email: string): boolean {
+  const superAdminEmailsEnv = process.env.SUPERADMIN_EMAILS || '';
+  if (!superAdminEmailsEnv.trim()) {
+    return false;
+  }
+
+  const superAdminEmails = superAdminEmailsEnv
+    .split(',')
+    .map(e => e.trim().toLowerCase());
+
+  return superAdminEmails.includes(email.toLowerCase().trim());
+}
+
+export function requireSuperAdmin(
+  request: FastifyRequest,
+  reply: FastifyReply
+): boolean {
+  const userEmail = (request as any).userEmail;
+
+  if (!userEmail) {
+    reply.status(401).send({ error: 'Não autenticado' });
+    return false;
+  }
+
+  if (!isSuperAdmin(userEmail)) {
+    reply.status(403).send({ error: 'Acesso restrito a Super Admin' });
+    return false;
+  }
+
+  return true;
+}

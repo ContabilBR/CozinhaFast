@@ -6,6 +6,7 @@ import * as bcryptjs from 'bcryptjs';
 import { randomUUID, randomBytes } from 'crypto';
 import { sendPasswordResetEmail } from '../utils/email.js';
 import { user as userTable, session as sessionTable } from '../db/schema/auth-schema.js';
+import { isSuperAdmin, requireSuperAdmin } from '../utils/auth.js';
 
 interface LoginBody {
   email: string;
@@ -48,6 +49,7 @@ export function registerCustomAuthRoutes(app: App) {
                 nome: { type: 'string' },
                 email: { type: 'string' },
                 role: { type: 'string' },
+                is_super_admin: { type: 'boolean' },
               },
             },
           },
@@ -123,6 +125,24 @@ export function registerCustomAuthRoutes(app: App) {
         return reply.status(401).send({ error: 'Invalid email or password' });
       }
 
+      // Check if restaurant is active
+      app.logger.debug({ restauranteId: user.restauranteId }, 'Checking restaurant status');
+      const restaurantes = await app.db
+        .select()
+        .from(schema.restaurante)
+        .where(eq(schema.restaurante.id, user.restauranteId));
+
+      if (restaurantes.length === 0) {
+        app.logger.warn({ restauranteId: user.restauranteId }, 'Restaurant not found');
+        return reply.status(401).send({ error: 'Invalid email or password' });
+      }
+
+      const restaurante = restaurantes[0];
+      if (!restaurante.ativo) {
+        app.logger.warn({ restauranteId: restaurante.id, restauranteName: restaurante.nome }, 'Login attempt on inactive restaurant');
+        return reply.status(403).send({ error: 'Restaurante desativado. Entre em contato com o suporte.' });
+      }
+
       // Create session token (uuid)
       const token = randomUUID();
       const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
@@ -145,6 +165,7 @@ export function registerCustomAuthRoutes(app: App) {
           nome: user.nome,
           email: user.email,
           role: user.role,
+          is_super_admin: isSuperAdmin(user.email),
         },
       });
     } catch (err) {
@@ -167,6 +188,7 @@ export function registerCustomAuthRoutes(app: App) {
             nome: { type: 'string' },
             email: { type: 'string' },
             role: { type: 'string' },
+            is_super_admin: { type: 'boolean' },
           },
         },
         401: {
@@ -225,6 +247,7 @@ export function registerCustomAuthRoutes(app: App) {
           nome: user.name,
           email: user.email,
           role: (user as any).role || 'garcom',
+          is_super_admin: isSuperAdmin(user.email),
         });
       }
 
@@ -254,6 +277,7 @@ export function registerCustomAuthRoutes(app: App) {
         nome: user.nome,
         email: user.email,
         role: user.role,
+        is_super_admin: isSuperAdmin(user.email),
       });
     } catch (err) {
       app.logger.error({ err }, 'GET /api/me error');

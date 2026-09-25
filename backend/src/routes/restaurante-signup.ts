@@ -13,6 +13,30 @@ interface SignupBody {
   adminSenha: string;
 }
 
+// In-memory rate limiting: max 10 requests per IP per hour
+const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const ONE_HOUR = 60 * 60 * 1000;
+
+  let record = rateLimitStore.get(ip);
+
+  if (!record || now >= record.resetTime) {
+    // Reset counter
+    rateLimitStore.set(ip, { count: 1, resetTime: now + ONE_HOUR });
+    return true;
+  }
+
+  // Increment and check limit
+  record.count += 1;
+  if (record.count > 10) {
+    return false;
+  }
+
+  return true;
+}
+
 export function registerRestauranteSignupRoutes(app: App) {
   app.fastify.post<{ Body: SignupBody }>(
     "/api/restaurantes/signup",
@@ -63,6 +87,15 @@ export function registerRestauranteSignupRoutes(app: App) {
       const { nome, cnpj, adminNome, adminEmail, adminSenha } = request.body;
 
       try {
+        // 0. Rate limiting check
+        const clientIp = request.ip || request.headers['x-forwarded-for']?.toString().split(',')[0]?.trim() || 'unknown';
+        app.logger.debug({ clientIp }, "Rate limit check for signup");
+
+        if (!checkRateLimit(clientIp)) {
+          app.logger.warn({ clientIp }, "Rate limit exceeded for signup endpoint");
+          return reply.code(429).send({ error: "Muitas tentativas. Tente novamente em 1 hora." });
+        }
+
         // 1. Validate required fields
         if (!nome || !adminNome || !adminEmail || !adminSenha) {
           app.logger.warn({ body: request.body }, "Sign up failed: missing required fields");

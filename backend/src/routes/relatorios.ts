@@ -82,6 +82,7 @@ export function registerRelatoriosRoutes(app: App) {
               total_orders: { type: "number" },
               open_orders: { type: "number" },
               avg_ticket: { type: "number" },
+              total_pratos: { type: "number" },
               top_dishes: {
                 type: "array",
                 items: {
@@ -384,10 +385,20 @@ export function registerRelatoriosRoutes(app: App) {
           cancelada: statusMap.get("cancelada") || 0,
         };
 
+        // Total pratos disponíveis - snapshot at current moment
+        const totalPratosResult = await app.db
+          .select({ count: count() })
+          .from(schema.pratos)
+          .where(and(
+            eq(schema.pratos.restauranteId, tenantId as any),
+            eq(schema.pratos.disponivel, true)
+          ));
+        const totalPratos = totalPratosResult[0]?.count || 0;
+
         app.logger.info(
           {
             tenantId, totalMesas, mesasOcupadas, comandasAbertas, pedidosPendentes, pedidosEmPreparo, pedidosAtrasados, receitaPeriodo, periodoLabel,
-            totalRevenue, comandasHistoricoCount, totalOrders, openOrders, avgTicket, topDishesCount: topDishes.length
+            totalRevenue, comandasHistoricoCount, totalOrders, openOrders, avgTicket, topDishesCount: topDishes.length, totalPratos
           },
           "Resumo retrieved successfully"
         );
@@ -406,6 +417,7 @@ export function registerRelatoriosRoutes(app: App) {
           total_orders: totalOrders,
           open_orders: openOrders,
           avg_ticket: avgTicket,
+          total_pratos: totalPratos,
           top_dishes: topDishes,
           orders_by_status: ordersByStatus,
         });

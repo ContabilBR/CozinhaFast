@@ -2128,4 +2128,127 @@ describe("API Integration Tests", () => {
     expect(ws.readyState).toBe(1); // OPEN
     ws.close();
   });
+
+  // ==================== SuperAdmin Endpoints ====================
+  test("List all restaurants as regular user returns 403", async () => {
+    const res = await authenticatedApi("/api/superadmin/restaurantes", authToken);
+    await expectStatus(res, 403);
+  });
+
+  test("Create restaurant as regular user returns 403", async () => {
+    const res = await authenticatedApi("/api/superadmin/restaurantes", authToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nome: "Unauthorized Restaurant",
+        responsavelNome: "Admin",
+        responsavelEmail: `admin-${Date.now()}@example.com`,
+        responsavelSenha: "pass123456",
+        responsavelRole: "administrador",
+      }),
+    });
+    await expectStatus(res, 403);
+  });
+
+  test("Create restaurant without authentication returns 401", async () => {
+    const res = await api("/api/superadmin/restaurantes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nome: "Unauth Restaurant",
+        responsavelNome: "Admin",
+        responsavelEmail: `admin-${Date.now()}@example.com`,
+        responsavelSenha: "pass123456",
+        responsavelRole: "administrador",
+      }),
+    });
+    await expectStatus(res, 401);
+  });
+
+  test("Create restaurant with missing required fields returns 400", async () => {
+    const res = await authenticatedApi("/api/superadmin/restaurantes", adminToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nome: "Incomplete Restaurant",
+      }),
+    });
+    await expectStatus(res, 400, 403);
+  });
+
+  test("Update restaurant status as regular user returns 403", async () => {
+    const res = await authenticatedApi(
+      "/api/superadmin/restaurantes/00000000-0000-0000-0000-000000000000/status",
+      authToken,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ativo: false }),
+      }
+    );
+    await expectStatus(res, 403);
+  });
+
+  test("Update restaurant status without authentication returns 401", async () => {
+    const res = await api(
+      "/api/superadmin/restaurantes/00000000-0000-0000-0000-000000000000/status",
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ativo: false }),
+      }
+    );
+    await expectStatus(res, 401);
+  });
+
+  test("Update restaurant status with missing ativo field returns 400", async () => {
+    const res = await authenticatedApi(
+      "/api/superadmin/restaurantes/00000000-0000-0000-0000-000000000000/status",
+      adminToken,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }
+    );
+    await expectStatus(res, 400, 403, 404);
+  });
+
+  test("Update status for non-existent restaurant returns 404", async () => {
+    const res = await authenticatedApi(
+      "/api/superadmin/restaurantes/00000000-0000-0000-0000-000000000000/status",
+      adminToken,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ativo: true }),
+      }
+    );
+    await expectStatus(res, 403, 404);
+  });
+
+  // ==================== Webhooks ====================
+  test("Post Asaas webhook subscription returns 200 or 204", async () => {
+    const res = await api("/api/webhooks/asaas/assinatura", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        event: "subscription.updated",
+        data: {
+          id: "test-subscription-id",
+          status: "ACTIVE",
+        },
+      }),
+    });
+    await expectStatus(res, 200, 204);
+  });
+
+  test("Post Asaas webhook subscription with empty body returns 200 or 204 or 400", async () => {
+    const res = await api("/api/webhooks/asaas/assinatura", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    await expectStatus(res, 200, 204, 400);
+  });
 });

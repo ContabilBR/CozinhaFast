@@ -341,7 +341,36 @@ export function registerAssinaturaRoutes(app: App) {
   // POST /api/webhooks/asaas/assinatura — Asaas webhook (public)
   app.fastify.post(
     "/api/webhooks/asaas/assinatura",
+    {
+      schema: {
+        description: "Asaas webhook for subscription events",
+        tags: ["webhooks"],
+        body: {
+          type: "object",
+          properties: {
+            event: { type: "string" },
+            data: { type: "object" },
+            payment: { type: "object" },
+          },
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              received: { type: "boolean" },
+            },
+          },
+          400: {
+            type: "object",
+            properties: {
+              error: { type: "string" },
+            },
+          },
+        },
+      },
+    },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      app.logger.debug({ body: request.body }, "POST /api/webhooks/asaas/assinatura");
       try {
         if (!verifyAsaasWebhook(request, reply, app.logger)) return;
         const body = request.body as any;
@@ -349,6 +378,7 @@ export function registerAssinaturaRoutes(app: App) {
         const payment = body?.payment;
 
         if (!event || !payment) {
+          app.logger.debug({ event, payment }, "Webhook missing event or payment");
           return reply.code(200).send({ received: true });
         }
 
@@ -356,6 +386,7 @@ export function registerAssinaturaRoutes(app: App) {
 
         const externalRef = payment.externalReference;
         if (!externalRef?.startsWith("sub_")) {
+          app.logger.debug({ externalRef }, "Webhook external reference does not start with 'sub_'");
           return reply.code(200).send({ received: true });
         }
 
