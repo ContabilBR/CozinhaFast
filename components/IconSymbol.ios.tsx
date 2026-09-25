@@ -30,12 +30,10 @@ export function IconSymbol({
 }) {
   return (
     <SymbolView
-      onPress={onPress}
-      onClick={onClick}
-      onMouseOver={onMouseOver}
-      onMouseLeave={onMouseLeave}
-      testID={testID}
-      accessibilityLabel={accessibilityLabel}
+      // SymbolViewProps doesn't declare these (web/interaction props aren't
+      // part of expo-symbols' types), but passing them through is harmless —
+      // same as before this was type-checked.
+      {...({ onPress, onClick, onMouseOver, onMouseLeave, testID, accessibilityLabel } as any)}
       weight={weight}
       tintColor={color}
       resizeMode="scaleAspectFit"
