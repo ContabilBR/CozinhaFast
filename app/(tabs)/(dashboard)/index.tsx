@@ -19,6 +19,7 @@ import { apiGet } from "@/utils/api";
 import { setMesaHistoricoId } from "@/utils/mesaHistoricoStore";
 import { formatCurrency, isAdmin } from "@/utils/helpers";
 import { TrendingUp, ShoppingBag, Grid3x3, Clock, RefreshCw, ChevronRight, DollarSign, ChefHat } from "lucide-react-native";
+import { useRealtime, type RealtimeStatus } from "@/hooks/useRealtime";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import type { RelatorioResumo } from "@/types";
@@ -157,6 +158,8 @@ const EMPTY_RESUMO: RelatorioResumo = {
   mesas_ocupadas: 0,
   comandas_abertas: 0,
   pedidos_pendentes: 0,
+  pedidos_em_preparo: 0,
+  pedidos_atrasados: 0,
   receita_periodo: 0,
   periodo_label: "Hoje",
   avg_ticket: 0,
@@ -191,6 +194,7 @@ export default function DashboardScreen() {
   const [showDatePicker, setShowDatePicker] = useState<"inicio" | "fim" | null>(null);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const realtimeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchData = useCallback(async () => {
     if (periodo === "personalizado" && (!dataInicio || !dataFim)) {
@@ -231,6 +235,8 @@ export default function DashboardScreen() {
           mesas_ocupadas: Number(r.mesas_ocupadas ?? 0),
           comandas_abertas: Number(r.comandas_abertas ?? 0),
           pedidos_pendentes: Number(r.pedidos_pendentes ?? 0),
+          pedidos_em_preparo: Number(r.pedidos_em_preparo ?? 0),
+          pedidos_atrasados: Number(r.pedidos_atrasados ?? 0),
           receita_periodo: Number(r.receita_periodo ?? 0),
           periodo_label: String(r.periodo_label ?? "Hoje"),
           avg_ticket: Number(r.avg_ticket ?? 0),
@@ -267,6 +273,15 @@ export default function DashboardScreen() {
   }, [fadeAnim, periodo, dataInicio, dataFim]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const handleRealtimeEvent = useCallback(() => {
+    if (realtimeDebounceRef.current) clearTimeout(realtimeDebounceRef.current);
+    realtimeDebounceRef.current = setTimeout(() => {
+      fetchData();
+    }, 400);
+  }, [fetchData]);
+
+  useRealtime({ onEvent: handleRealtimeEvent });
 
   const handleRefresh = () => {
     console.log("[Dashboard] Manual refresh");
@@ -475,17 +490,61 @@ export default function DashboardScreen() {
                 router.push("/(tabs)/(comandas)");
               }}
             />
-            <StatCard
-              title="Pedidos Pendentes"
-              value={pedidosPendentesStr}
-              color={COLORS.warning}
-              icon={<Clock size={20} color={COLORS.warning} />}
-              loading={loading}
+            {/* Card Na Cozinha */}
+            <AnimatedPressable
               onPress={() => {
-                console.log("[Dashboard] Pedidos Pendentes card pressed");
-                router.push("/(tabs)/(pedidos)");
+                console.log("[Dashboard] Na Cozinha card pressed");
+                router.push("/fila-cozinha");
               }}
-            />
+              style={{
+                flex: 1,
+                backgroundColor: COLORS.surface,
+                borderRadius: 16,
+                padding: 16,
+                borderWidth: 1,
+                borderColor: COLORS.border,
+                gap: 8,
+              }}
+            >
+              <View
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 12,
+                  backgroundColor: COLORS.warning + "18",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Clock size={20} color={COLORS.warning} />
+              </View>
+              {loading ? (
+                <>
+                  <SkeletonLine width="70%" height={22} />
+                  <SkeletonLine width="50%" height={13} />
+                </>
+              ) : (
+                <>
+                  <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 22, color: COLORS.text, letterSpacing: -0.3 }}>
+                    {String((resumo.pedidos_pendentes ?? 0) + (resumo.pedidos_em_preparo ?? 0))}
+                  </Text>
+                  <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 12, color: COLORS.textSecondary }}>
+                    Na Cozinha
+                  </Text>
+                  <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 11, color: COLORS.textSecondary }}>
+                    {resumo.pedidos_pendentes ?? 0} aguardando · {resumo.pedidos_em_preparo ?? 0} em preparo
+                  </Text>
+                  {(resumo.pedidos_atrasados ?? 0) > 0 && (
+                    <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 11, color: "#EF4444" }}>
+                      {resumo.pedidos_atrasados} atrasado{(resumo.pedidos_atrasados ?? 0) > 1 ? "s" : ""}
+                    </Text>
+                  )}
+                </>
+              )}
+              <View style={{ position: "absolute", bottom: 10, right: 10 }}>
+                <ChevronRight size={14} color={COLORS.textSecondary} />
+              </View>
+            </AnimatedPressable>
           </View>
 
           {/* Row 3: Receita no Período */}

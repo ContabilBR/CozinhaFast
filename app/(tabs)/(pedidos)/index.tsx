@@ -32,7 +32,7 @@ interface ApiPedidoFlat {
   quantidade: number;
   preco_unitario?: number;
   observacao?: string;
-  status: "aguardando" | "preparando" | "pronto" | string;
+  status: "pendente" | "em_preparo" | "pronto" | "entregue" | "cancelado" | string;
   created_at?: string;
 }
 
@@ -54,7 +54,7 @@ interface GarcomPedidoItem {
   quantidade: number;
   preco_unitario?: number;
   observacao?: string;
-  status: "aguardando" | "preparando" | "pronto" | string;
+  status: "pendente" | "em_preparo" | "pronto" | "entregue" | "cancelado" | string;
   created_at: string;
 }
 
@@ -270,9 +270,14 @@ function ConfirmDeleteModal({
 }
 
 const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
-  aguardando: { label: "Aguardando", bg: "#F59E0B", text: "#fff" },
-  preparando: { label: "Em Preparação", bg: "#3B82F6", text: "#fff" },
-  pronto: { label: "Pronto", bg: "#10B981", text: "#fff" },
+  pendente:   { label: "Pendente",    bg: "#94A3B820", text: "#94A3B8" },
+  em_preparo: { label: "Em Preparo",  bg: "#F59E0B20", text: "#F59E0B" },
+  pronto:     { label: "Pronto",      bg: "#22C55E20", text: "#22C55E" },
+  entregue:   { label: "Entregue",    bg: "#0D908820", text: "#0D9088" },
+  cancelado:  { label: "Cancelado",   bg: "#EF444420", text: "#EF4444" },
+  // legado — manter para compatibilidade com dados antigos
+  aguardando: { label: "Aguardando",  bg: "#94A3B820", text: "#94A3B8" },
+  preparando: { label: "Em Preparo",  bg: "#F59E0B20", text: "#F59E0B" },
 };
 
 function getStatusConfig(status: string) {

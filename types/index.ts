@@ -103,6 +103,8 @@ export interface RelatorioResumo {
   mesas_ocupadas: number;
   comandas_abertas: number;
   pedidos_pendentes: number;
+  pedidos_em_preparo?: number;
+  pedidos_atrasados?: number;
   receita_periodo: number;
   periodo_label: string;
   avg_ticket?: number;
