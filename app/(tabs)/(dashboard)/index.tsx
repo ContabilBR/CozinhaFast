@@ -461,65 +461,6 @@ export default function DashboardScreen() {
             </View>
           )}
 
-          {/* Onboarding card */}
-          {!loading && resumo.total_mesas === 0 && (resumo.total_pratos ?? 0) === 0 && (
-            <View style={{
-              backgroundColor: COLORS.surface,
-              borderRadius: 16,
-              padding: 18,
-              borderWidth: 1.5,
-              borderColor: COLORS.primary + "40",
-              gap: 14,
-            }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: COLORS.primaryMuted, alignItems: "center", justifyContent: "center" }}>
-                  <Ionicons name="rocket-outline" size={22} color={COLORS.primary} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 16, color: COLORS.text }}>
-                    Configure seu restaurante
-                  </Text>
-                  <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 12, color: COLORS.textSecondary }}>
-                    Complete o cadastro para começar a usar
-                  </Text>
-                </View>
-              </View>
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-                {[
-                  { label: "Restaurante", route: "/(tabs)/(gestao)/restaurante", icon: "storefront-outline" },
-                  { label: "Categorias",  route: "/(tabs)/(gestao)/categorias",  icon: "pricetag-outline" },
-                  { label: "Pratos",      route: "/(tabs)/(gestao)/pratos",      icon: "restaurant-outline" },
-                  { label: "Mesas",       route: "/(tabs)/(gestao)/mesas",       icon: "grid-outline" },
-                  { label: "Usuários",    route: "/(tabs)/(usuarios)",           icon: "people-outline" },
-                ].map((item) => (
-                  <AnimatedPressable
-                    key={item.label}
-                    onPress={() => {
-                      console.log("[Dashboard] Onboarding shortcut pressed:", item.label);
-                      router.push(item.route as any);
-                    }}
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 6,
-                      backgroundColor: COLORS.surfaceSecondary,
-                      borderRadius: 10,
-                      paddingHorizontal: 12,
-                      paddingVertical: 8,
-                      borderWidth: 1,
-                      borderColor: COLORS.border,
-                    }}
-                  >
-                    <Ionicons name={item.icon as any} size={14} color={COLORS.primary} />
-                    <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 13, color: COLORS.text }}>
-                      {item.label}
-                    </Text>
-                  </AnimatedPressable>
-                ))}
-              </View>
-            </View>
-          )}
-
           {/* Row 1: Mesas */}
           <View style={{ flexDirection: "row", gap: 12 }}>
             <StatCard
