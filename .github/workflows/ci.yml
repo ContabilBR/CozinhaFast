@@ -58,12 +58,16 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Start backend
+      - name: Run migrations
         # No DATABASE_URL is set on purpose: without one, the framework runs
         # against an ephemeral embedded PGlite database (see drizzle.config.ts),
         # so tests never touch a real Postgres instance and need no service
-        # container or secret for it.
-        #
+        # container or secret for it. But the schema still has to be created
+        # in that fresh PGlite store explicitly — nothing does it automatically
+        # on server boot.
+        run: npm run db:migrate
+
+      - name: Start backend
         # AWS_S3_BUCKET/AWS_REGION are dummy placeholders: app.withStorage()
         # (backend/src/index.ts) throws at boot if neither an S3 config nor
         # STORAGE_API_BASE_URL is present, so the server needs *something*
