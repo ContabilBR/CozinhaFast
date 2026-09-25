@@ -73,6 +73,8 @@ export function registerRelatoriosRoutes(app: App) {
               mesas_ocupadas: { type: "number" },
               comandas_abertas: { type: "number" },
               pedidos_pendentes: { type: "number" },
+              pedidos_em_preparo: { type: "number" },
+              pedidos_atrasados: { type: "number" },
               receita_periodo: { type: "number" },
               periodo_label: { type: "string" },
               total_revenue: { type: "number" },
@@ -158,6 +160,35 @@ export function registerRelatoriosRoutes(app: App) {
             )
           );
         const pedidosPendentes = pedidosPendentesResult[0]?.count || 0;
+
+        // Pedidos em preparo (status 'em_preparo' em comandas abertas) — snapshot atual, sem filtro
+        const pedidosEmPrepareResult = await app.db
+          .select({ count: count() })
+          .from(schema.pedidos)
+          .innerJoin(schema.comandas, eq(schema.pedidos.comandaId, schema.comandas.id))
+          .where(
+            and(
+              eq(schema.pedidos.restauranteId, tenantId as any),
+              eq(schema.pedidos.status, "em_preparo"),
+              eq(schema.comandas.status, "aberta")
+            )
+          );
+        const pedidosEmPreparo = pedidosEmPrepareResult[0]?.count || 0;
+
+        // Pedidos atrasados (status 'pendente' ou 'em_preparo' em comandas abertas, com tempo desde criação > tempo_preparo_min)
+        const pedidosAtrasadosResult = await (app.db as any).execute(
+          sql`
+            SELECT COUNT(*)::integer as count
+            FROM pedidos p
+            INNER JOIN comandas c ON p.comanda_id = c.id
+            LEFT JOIN pratos pr ON p.prato_id = pr.id
+            WHERE p.restaurante_id = ${tenantId}::uuid
+              AND p.status IN ('pendente', 'em_preparo')
+              AND c.status = 'aberta'
+              AND EXTRACT(EPOCH FROM (NOW() - p.created_at)) / 60 > COALESCE(pr.tempo_preparo_min, 15)
+          `
+        ) as any[];
+        const pedidosAtrasados = pedidosAtrasadosResult[0]?.count || 0;
 
         // Receita no período selecionado - sum from both comandas and comandas_historico
         const receitaPeriodoComandasResult = await app.db
@@ -355,7 +386,7 @@ export function registerRelatoriosRoutes(app: App) {
 
         app.logger.info(
           {
-            tenantId, totalMesas, mesasOcupadas, comandasAbertas, pedidosPendentes, receitaPeriodo, periodoLabel,
+            tenantId, totalMesas, mesasOcupadas, comandasAbertas, pedidosPendentes, pedidosEmPreparo, pedidosAtrasados, receitaPeriodo, periodoLabel,
             totalRevenue, comandasHistoricoCount, totalOrders, openOrders, avgTicket, topDishesCount: topDishes.length
           },
           "Resumo retrieved successfully"
@@ -366,6 +397,8 @@ export function registerRelatoriosRoutes(app: App) {
           mesas_ocupadas: mesasOcupadas,
           comandas_abertas: comandasAbertas,
           pedidos_pendentes: pedidosPendentes,
+          pedidos_em_preparo: pedidosEmPreparo,
+          pedidos_atrasados: pedidosAtrasados,
           receita_periodo: receitaPeriodo,
           periodo_label: periodoLabel,
           total_revenue: totalRevenue,
