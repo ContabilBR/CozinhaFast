@@ -3,12 +3,24 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import { eq } from 'drizzle-orm';
 import * as schema from '../db/schema/schema.js';
 import * as bcryptjs from 'bcryptjs';
-import { randomUUID } from 'crypto';
+import { randomUUID, randomBytes } from 'crypto';
+import { sendPasswordResetEmail } from '../utils/email.js';
 import { user as userTable, session as sessionTable } from '../db/schema/auth-schema.js';
+import { isSuperAdmin, requireSuperAdmin } from '../utils/auth.js';
+import { TEST_MODE, TEST_ADMIN_EMAIL } from '../config/test-mode.js';
 
 interface LoginBody {
   email: string;
   senha: string;
+}
+
+interface EsqueciSenhaBody {
+  email: string;
+}
+
+interface RedefinirSenhaBody {
+  token: string;
+  novaSenha: string;
 }
 
 export function registerCustomAuthRoutes(app: App) {
@@ -38,6 +50,7 @@ export function registerCustomAuthRoutes(app: App) {
                 nome: { type: 'string' },
                 email: { type: 'string' },
                 role: { type: 'string' },
+                is_super_admin: { type: 'boolean' },
               },
             },
           },
@@ -54,10 +67,23 @@ export function registerCustomAuthRoutes(app: App) {
             error: { type: 'string' },
           },
         },
+        403: {
+          description: 'Test admin login disabled when test mode is off',
+          type: 'object',
+          properties: {
+            error: { type: 'string' },
+          },
+        },
       },
     },
   }, async (request: FastifyRequest<{ Body: LoginBody }>, reply: FastifyReply) => {
     const { email, senha } = request.body;
+
+    // Check if test admin login is disabled
+    if (!TEST_MODE && email.toLowerCase().trim() === TEST_ADMIN_EMAIL.toLowerCase()) {
+      app.logger.warn({ email }, 'Test admin login attempt when test mode is disabled');
+      return reply.status(403).send({ error: 'Acesso desativado.' });
+    }
 
     // Validate input
     if (!email || !senha) {
@@ -113,6 +139,24 @@ export function registerCustomAuthRoutes(app: App) {
         return reply.status(401).send({ error: 'Invalid email or password' });
       }
 
+      // Check if restaurant is active
+      app.logger.debug({ restauranteId: user.restauranteId }, 'Checking restaurant status');
+      const restaurantes = await app.db
+        .select()
+        .from(schema.restaurante)
+        .where(eq(schema.restaurante.id, user.restauranteId));
+
+      if (restaurantes.length === 0) {
+        app.logger.warn({ restauranteId: user.restauranteId }, 'Restaurant not found');
+        return reply.status(401).send({ error: 'Invalid email or password' });
+      }
+
+      const restaurante = restaurantes[0];
+      if (!restaurante.ativo) {
+        app.logger.warn({ restauranteId: restaurante.id, restauranteName: restaurante.nome }, 'Login attempt on inactive restaurant');
+        return reply.status(403).send({ error: 'Restaurante desativado. Entre em contato com o suporte.' });
+      }
+
       // Create session token (uuid)
       const token = randomUUID();
       const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
@@ -135,6 +179,7 @@ export function registerCustomAuthRoutes(app: App) {
           nome: user.nome,
           email: user.email,
           role: user.role,
+          is_super_admin: isSuperAdmin(user.email),
         },
       });
     } catch (err) {
@@ -157,6 +202,7 @@ export function registerCustomAuthRoutes(app: App) {
             nome: { type: 'string' },
             email: { type: 'string' },
             role: { type: 'string' },
+            is_super_admin: { type: 'boolean' },
           },
         },
         401: {
@@ -215,6 +261,7 @@ export function registerCustomAuthRoutes(app: App) {
           nome: user.name,
           email: user.email,
           role: (user as any).role || 'garcom',
+          is_super_admin: isSuperAdmin(user.email),
         });
       }
 
@@ -244,10 +291,208 @@ export function registerCustomAuthRoutes(app: App) {
         nome: user.nome,
         email: user.email,
         role: user.role,
+        is_super_admin: isSuperAdmin(user.email),
       });
     } catch (err) {
       app.logger.error({ err }, 'GET /api/me error');
       throw err;
+    }
+  });
+
+  // POST /api/auth/esqueci-senha - Request password reset
+  app.fastify.post<{ Body: EsqueciSenhaBody }>('/api/auth/esqueci-senha', {
+    schema: {
+      description: 'Request a password reset link - always returns generic success message',
+      tags: ['auth'],
+      body: {
+        type: 'object',
+        properties: {
+          email: { type: 'string', format: 'email' },
+        },
+      },
+      response: {
+        200: {
+          description: 'Generic success response (always returned regardless of email existence)',
+          type: 'object',
+          properties: {
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest<{ Body: EsqueciSenhaBody }>, reply: FastifyReply) => {
+    const { email } = request.body;
+
+    app.logger.info({ email }, 'Password reset requested');
+
+    try {
+      // Always return generic message (don't leak if email exists)
+      const genericMessage = 'Se esse e-mail estiver cadastrado, você receberá um link em instantes.';
+
+      if (!email) {
+        return reply.code(200).send({ message: genericMessage });
+      }
+
+      // Normalize and look up user
+      const normalizedEmail = email.toLowerCase().trim();
+      const usuarios = await app.db
+        .select()
+        .from(schema.usuarios)
+        .where(eq(schema.usuarios.email, normalizedEmail));
+
+      if (usuarios.length === 0) {
+        app.logger.debug({ email: normalizedEmail }, 'Password reset requested for non-existent user');
+        return reply.code(200).send({ message: genericMessage });
+      }
+
+      const user = usuarios[0];
+      app.logger.debug({ userId: user.id }, 'User found for password reset');
+
+      // Delete any existing unused tokens for this user
+      await app.db
+        .delete(schema.passwordResetTokens)
+        .where(
+          eq(schema.passwordResetTokens.usuarioId, user.id)
+        );
+
+      // Generate secure token (32 bytes hex)
+      const token = randomBytes(32).toString('hex');
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+      app.logger.debug({ userId: user.id, tokenLength: token.length }, 'Creating password reset token');
+
+      // Insert token
+      await app.db.insert(schema.passwordResetTokens).values({
+        usuarioId: user.id,
+        token,
+        expiresAt,
+      });
+
+      app.logger.debug({ userId: user.id }, 'Password reset token created, sending email');
+
+      // Send email (fire and forget)
+      sendPasswordResetEmail(user.email, token).catch(err => {
+        app.logger.error({ err, userId: user.id, email: user.email }, 'Failed to send password reset email');
+      });
+
+      return reply.code(200).send({ message: genericMessage });
+    } catch (err) {
+      app.logger.error({ err, email }, 'Password reset request error');
+      // Always return generic message even on error
+      return reply.code(200).send({ message: 'Se esse e-mail estiver cadastrado, você receberá um link em instantes.' });
+    }
+  });
+
+  // POST /api/auth/redefinir-senha - Reset password with token
+  app.fastify.post<{ Body: RedefinirSenhaBody }>('/api/auth/redefinir-senha', {
+    schema: {
+      description: 'Reset password using a valid token',
+      tags: ['auth'],
+      body: {
+        type: 'object',
+        required: ['token', 'novaSenha'],
+        properties: {
+          token: { type: 'string' },
+          novaSenha: { type: 'string' },
+        },
+      },
+      response: {
+        200: {
+          description: 'Password reset successful',
+          type: 'object',
+          properties: {
+            message: { type: 'string' },
+          },
+        },
+        400: {
+          type: 'object',
+          properties: {
+            error: { type: 'string' },
+          },
+        },
+        500: {
+          type: 'object',
+          properties: {
+            error: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest<{ Body: RedefinirSenhaBody }>, reply: FastifyReply) => {
+    const { token, novaSenha } = request.body;
+
+    app.logger.info({ tokenLength: token?.length }, 'Password reset attempt');
+
+    try {
+      // Validate inputs
+      if (!token) {
+        app.logger.warn('Password reset attempted without token');
+        return reply.code(400).send({ error: 'Token inválido.' });
+      }
+
+      if (!novaSenha || novaSenha.length < 6) {
+        app.logger.warn('Password reset attempted with weak password');
+        return reply.code(400).send({ error: 'A nova senha deve ter pelo menos 6 caracteres.' });
+      }
+
+      // Look up token
+      app.logger.debug({ tokenLength: token.length }, 'Looking up password reset token');
+      const tokens = await app.db
+        .select()
+        .from(schema.passwordResetTokens)
+        .where(eq(schema.passwordResetTokens.token, token));
+
+      if (tokens.length === 0) {
+        app.logger.warn({ token: token.substring(0, 20) }, 'Password reset token not found');
+        return reply.code(400).send({ error: 'Token inválido ou não encontrado.' });
+      }
+
+      const resetToken = tokens[0];
+
+      // Check if already used
+      if (resetToken.usedAt) {
+        app.logger.warn({ tokenId: resetToken.id }, 'Password reset token already used');
+        return reply.code(400).send({ error: 'Este token já foi utilizado.' });
+      }
+
+      // Check if expired
+      if (new Date(resetToken.expiresAt) < new Date()) {
+        app.logger.warn({ tokenId: resetToken.id }, 'Password reset token expired');
+        return reply.code(400).send({ error: 'Token expirado. Solicite um novo link de redefinição.' });
+      }
+
+      app.logger.debug({ usuarioId: resetToken.usuarioId }, 'Token valid, hashing new password');
+
+      // Hash new password
+      const senhaHash = await bcryptjs.hash(novaSenha, 10);
+
+      // Update user password
+      await app.db
+        .update(schema.usuarios)
+        .set({ senhaHash })
+        .where(eq(schema.usuarios.id, resetToken.usuarioId));
+
+      app.logger.debug({ usuarioId: resetToken.usuarioId }, 'User password updated');
+
+      // Mark token as used
+      await app.db
+        .update(schema.passwordResetTokens)
+        .set({ usedAt: new Date() })
+        .where(eq(schema.passwordResetTokens.id, resetToken.id));
+
+      app.logger.debug({ usuarioId: resetToken.usuarioId }, 'Token marked as used');
+
+      // Invalidate all active sessions for this user
+      await app.db
+        .delete(schema.usuariosSession)
+        .where(eq(schema.usuariosSession.userId, resetToken.usuarioId.toString()));
+
+      app.logger.info({ usuarioId: resetToken.usuarioId }, 'Password reset completed, all sessions invalidated');
+
+      return reply.code(200).send({ message: 'Senha redefinida com sucesso. Faça login com sua nova senha.' });
+    } catch (err) {
+      app.logger.error({ err }, 'Password reset error');
+      return reply.code(500).send({ error: 'Erro interno ao redefinir senha.' });
     }
   });
 

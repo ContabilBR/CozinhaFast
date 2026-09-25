@@ -4,7 +4,7 @@ import { user as userTable, session as sessionTable, account as accountTable } f
 import * as schema from "../db/schema/schema.js";
 import type { App } from "../index.js";
 import { randomUUID } from "crypto";
-import * as bcrypt from "bcrypt";
+import * as bcryptjs from "bcryptjs";
 
 interface SignInBody {
   email: string;
@@ -96,15 +96,22 @@ export function registerAuthRoutes(app: App) {
           return reply.status(400).send({ error: "Name, email e senha são obrigatórios" });
         }
 
-        // Check if user already exists
-        const existing = await app.db
-          .select()
-          .from(userTable)
-          .where(eq(userTable.email, email))
-          .limit(1);
+        // Check if user already exists in custom auth usuarios table
+        const normalizedEmail = email.toLowerCase().trim();
+        let existing: any[] = [];
+        try {
+          existing = await app.db
+            .select()
+            .from(schema.usuarios)
+            .where(eq(schema.usuarios.email, normalizedEmail))
+            .limit(1);
+        } catch (err) {
+          app.logger.error({ err, email: normalizedEmail }, "Failed to check existing usuario");
+          throw err;
+        }
 
         if (existing && existing.length > 0) {
-          app.logger.info({ email }, "Sign up failed: email already exists");
+          app.logger.info({ email: normalizedEmail }, "Sign up failed: email already exists");
           return reply.status(409).send({ error: "Email já cadastrado" });
         }
 
@@ -114,33 +121,6 @@ export function registerAuthRoutes(app: App) {
         const userId = randomUUID();
         const now = new Date();
         const userRole = role || "garcom";
-
-        app.logger.debug({ userId, email, userRole }, "Inserting user");
-        await app.db.insert(userTable).values({
-          id: userId,
-          name,
-          email,
-          emailVerified: false,
-          role: userRole as any,
-          active: true,
-          createdAt: now,
-          updatedAt: now,
-        });
-        app.logger.debug({ userId }, "User inserted");
-
-        // Hash password and create account
-        const hashedPassword = await bcrypt.hash(password, 10);
-        app.logger.debug({ userId }, "Creating account");
-        await app.db.insert(accountTable).values({
-          id: randomUUID(),
-          accountId: userId,
-          providerId: "credential",
-          userId: userId,
-          password: hashedPassword,
-          createdAt: now,
-          updatedAt: now,
-        });
-        app.logger.debug({ userId }, "Account created");
 
         // Ensure a restaurante exists - get first or create default
         app.logger.debug({}, "Looking for existing restaurante");
@@ -163,77 +143,78 @@ export function registerAuthRoutes(app: App) {
           // No restaurante exists, create one
           app.logger.debug({}, "Creating default restaurante");
           try {
-            // Don't rely on .returning() - just insert and use the generated ID
-            const generatedId = randomUUID();
-            await app.db.insert(schema.restaurante).values({
-              id: generatedId,
-              nome: 'Default Restaurant',
-            });
-            restauranteId = generatedId;
+            const inserted = await app.db
+              .insert(schema.restaurante)
+              .values({
+                nome: 'Default Restaurant',
+              })
+              .returning();
+
+            if (!inserted || inserted.length === 0) {
+              throw new Error('Failed to create restaurante - no ID returned');
+            }
+            restauranteId = inserted[0].id;
             app.logger.debug({ restauranteId }, "Created default restaurante");
           } catch (err) {
-            app.logger.error({ err }, "Failed to create default restaurante");
+            app.logger.error({ err }, "Failed to create restaurante");
             throw err;
           }
         }
 
         if (!restauranteId) {
-          throw new Error('No restaurante ID available for profile creation');
+          throw new Error('No restaurante ID available');
         }
 
-        app.logger.info({ userId, restauranteId }, "Creating profile");
+        // Hash password
+        const senhaHash = await bcryptjs.hash(password, 10);
+        app.logger.debug({ userId, email: normalizedEmail }, "Hashed password");
 
-        // Create profile with restaurante association and role
-        const profileId = randomUUID();
+        // Create usuario (custom auth system)
+        app.logger.debug({ userId, email: normalizedEmail, userRole }, "Creating usuario");
         try {
-          await app.db.insert(schema.profiles).values({
-            id: profileId,
-            userId: userId,
-            restauranteId: restauranteId,
+          await app.db.insert(schema.usuarios).values({
+            id: userId,
+            nome: name,
+            email: normalizedEmail,
+            senhaHash,
             role: userRole,
-            name,
-            createdAt: now,
+            restauranteId: restauranteId,
           });
         } catch (err) {
-          app.logger.error({ err, profileId, userId, restauranteId }, "Failed to insert profile");
+          app.logger.error({ err, userId, email: normalizedEmail }, "Failed to create usuario");
           throw err;
         }
+        app.logger.debug({ userId }, "Usuario created");
 
-        app.logger.info({ userId, profileId, restauranteId }, "Profile created successfully");
-
-        // Generate session token (UUID)
+        // Generate session token
         const token = randomUUID();
-        const sessionId = randomUUID();
         const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
 
-        app.logger.info({ tokenStart: token.substring(0, 20), userId, sessionId }, "Creating session");
+        app.logger.info({ tokenStart: token.substring(0, 20), userId }, "Creating session");
 
-        // Create session
+        // Create session in custom auth system
         try {
-          await app.db.insert(sessionTable).values({
-            id: sessionId,
+          await app.db.insert(schema.usuariosSession).values({
             token,
-            userId: userId,
+            userId: userId.toString(),
             expiresAt,
-            createdAt: now,
           });
         } catch (err) {
-          app.logger.error({ err, sessionId, userId, tokenStart: token.substring(0, 20) }, "Failed to insert session");
+          app.logger.error({ err, userId, tokenStart: token.substring(0, 20) }, "Failed to create usuario session");
           throw err;
         }
-
-        app.logger.info({ tokenStart: token.substring(0, 20), userId, sessionId }, "Session created successfully");
-        app.logger.info({ userId, email, tokenStart: token.substring(0, 20) }, "Sign up successful");
+        app.logger.info({ tokenStart: token.substring(0, 20), userId }, "Session created successfully");
+        app.logger.info({ userId, email: normalizedEmail }, "Sign up successful");
 
         return reply.status(201).send({
           token,
           user: {
             id: userId,
             name,
-            email,
+            email: normalizedEmail,
             role: userRole,
             active: true,
-            emailVerified: false,
+            emailVerified: true,
             image: null,
             createdAt: now.toISOString(),
             updatedAt: now.toISOString(),
@@ -298,133 +279,76 @@ export function registerAuthRoutes(app: App) {
         const { email, password } = request.body;
 
         if (!email || !password) {
-          return reply.status(401).send({ error: "Credenciais inválidas" });
+          return reply.status(400).send({ error: "Email and password are required" });
         }
 
-        // Look up user by email
-        const users = await app.db
-          .select()
-          .from(userTable)
-          .where(eq(userTable.email, email))
-          .limit(1);
+        // Look up user in custom auth system (usuarios table)
+        const normalizedEmail = email.toLowerCase().trim();
+        let users: any[] = [];
+        try {
+          users = await app.db
+            .select()
+            .from(schema.usuarios)
+            .where(eq(schema.usuarios.email, normalizedEmail))
+            .limit(1);
+        } catch (err) {
+          app.logger.error({ err, email: normalizedEmail }, "Failed to query usuarios table");
+          throw err;
+        }
 
         if (!users || users.length === 0) {
-          app.logger.info({ email }, "Sign in failed: user not found");
+          app.logger.info({ email: normalizedEmail }, "Sign in failed: user not found");
           return reply.status(401).send({ error: "Credenciais inválidas" });
         }
 
         const user = users[0];
+        const senhaHash = user.senhaHash;
 
-        // Look up account with hashed password
-        const accounts = await app.db
-          .select()
-          .from(accountTable)
-          .where(eq(accountTable.userId, user.id))
-          .limit(1);
-
-        if (!accounts || accounts.length === 0 || !accounts[0].password) {
+        if (!senhaHash) {
           app.logger.info({ userId: user.id }, "Sign in failed: no password set");
           return reply.status(401).send({ error: "Credenciais inválidas" });
         }
 
-        const account = accounts[0];
-
         // Verify password
-        const isPasswordValid = await bcrypt.compare(password, account.password);
+        const isPasswordValid = await bcryptjs.compare(password, senhaHash);
 
         if (!isPasswordValid) {
-          app.logger.info({ email }, "Sign in failed: invalid password");
+          app.logger.info({ email: normalizedEmail }, "Sign in failed: invalid password");
           return reply.status(401).send({ error: "Credenciais inválidas" });
         }
 
-        // Get profile - ensure it exists
-        let profiles = await app.db
-          .select()
-          .from(schema.profiles)
-          .where(eq(schema.profiles.userId, user.id))
-          .limit(1);
-
-        if (!profiles || profiles.length === 0) {
-          // Profile doesn't exist, create one with a default restaurante
-          app.logger.warn({ userId: user.id }, "Profile not found for signed-in user, creating one");
-
-          // Get or create a default restaurante
-          let restaurantes: any = [];
-          try {
-            restaurantes = await app.db.select().from(schema.restaurante).limit(1);
-          } catch (err) {
-            app.logger.error({ err }, "Failed to query restaurante on sign-in");
-            restaurantes = [];
-          }
-
-          let restauranteId: string = "";
-
-          if (restaurantes && restaurantes.length > 0) {
-            restauranteId = restaurantes[0].id;
-          }
-
-          if (!restauranteId) {
-            // Create a default restaurante
-            try {
-              restauranteId = randomUUID();
-              await app.db.insert(schema.restaurante).values({
-                id: restauranteId,
-                nome: 'Default Restaurant',
-              });
-            } catch (err) {
-              app.logger.error({ err }, "Failed to create restaurante on sign-in");
-              throw err;
-            }
-          }
-
-          await app.db.insert(schema.profiles).values({
-            id: randomUUID(),
-            userId: user.id,
-            restauranteId: restauranteId,
-            role: user.role || "garcom",
-            name: user.name || "",
-            createdAt: new Date(),
-          });
-
-          // Reload profiles
-          profiles = await app.db
-            .select()
-            .from(schema.profiles)
-            .where(eq(schema.profiles.userId, user.id))
-            .limit(1);
-        }
-
-        const profile = profiles && profiles.length > 0
-          ? { role: profiles[0].role, name: profiles[0].name }
-          : { role: user.role || "usuario", name: user.name };
-
-        // Generate session token (UUID)
+        // Generate session token
         const token = randomUUID();
         const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
 
-        // Create session
-        await app.db.insert(sessionTable).values({
-          id: randomUUID(),
-          token,
-          userId: user.id,
-          expiresAt,
-          createdAt: new Date(),
-        });
+        app.logger.debug({ userId: user.id, tokenLength: token.length }, "Creating session");
 
-        app.logger.info({ userId: user.id, email }, "Sign in successful");
+        // Create session in custom auth system
+        try {
+          await app.db.insert(schema.usuariosSession).values({
+            token,
+            userId: user.id.toString(),
+            expiresAt,
+          });
+        } catch (err) {
+          app.logger.error({ err, userId: user.id }, "Failed to create usuario session");
+          throw err;
+        }
+
+        app.logger.info({ userId: user.id, email: normalizedEmail }, "Sign in successful");
 
         return reply.status(200).send({
           token,
           user: {
             id: user.id,
-            name: user.name,
+            name: user.nome,
             email: user.email,
             role: user.role,
-            active: user.active,
-            emailVerified: user.emailVerified,
-            image: user.image,
-            createdAt: user.createdAt.toISOString(),
-            updatedAt: user.updatedAt.toISOString(),
+            active: true,
+            emailVerified: true,
+            image: null,
+            createdAt: user.createdAt?.toISOString() || new Date().toISOString(),
+            updatedAt: user.updatedAt?.toISOString() || new Date().toISOString(),
           },
         });
       } catch (error) {
@@ -471,14 +395,20 @@ export function registerAuthRoutes(app: App) {
         }
 
         const token = authHeader.slice(7).trim();
-        app.logger.info({ tokenLength: token.length, tokenStart: token.substring(0, 20) }, "Looking up session in /api/auth/me");
+        app.logger.debug({ tokenLength: token.length, tokenStart: token.substring(0, 20) }, "Looking up session in /api/auth/me");
 
-        // Look up session by token
-        const sessions = await app.db
-          .select()
-          .from(sessionTable)
-          .where(eq(sessionTable.token, token))
-          .limit(1);
+        // Look up session in custom auth system (usuariosSession table)
+        let sessions: any[] = [];
+        try {
+          sessions = await app.db
+            .select()
+            .from(schema.usuariosSession)
+            .where(eq(schema.usuariosSession.token, token))
+            .limit(1);
+        } catch (err) {
+          app.logger.error({ err, token: token.substring(0, 20) }, "Failed to query usuariosSession table");
+          return reply.status(401).send({ error: "Não autorizado" });
+        }
 
         app.logger.debug({ sessionsFound: sessions?.length || 0 }, "Session query result in /api/auth/me");
 
@@ -494,12 +424,18 @@ export function registerAuthRoutes(app: App) {
           return reply.status(401).send({ error: "Não autorizado" });
         }
 
-        // Get user with role and active status from user table
-        const users = await app.db
-          .select()
-          .from(userTable)
-          .where(eq(userTable.id, session.userId))
-          .limit(1);
+        // Get user from usuarios table
+        let users: any[] = [];
+        try {
+          users = await app.db
+            .select()
+            .from(schema.usuarios)
+            .where(eq(schema.usuarios.id, session.userId as any))
+            .limit(1);
+        } catch (err) {
+          app.logger.error({ err, userId: session.userId }, "Failed to query usuarios table in /api/auth/me");
+          return reply.status(401).send({ error: "Não autorizado" });
+        }
 
         if (!users || users.length === 0) {
           return reply.status(401).send({ error: "Não autorizado" });
@@ -507,14 +443,14 @@ export function registerAuthRoutes(app: App) {
 
         const user = users[0];
 
-        app.logger.info({ userId: user.id }, "Get current user");
+        app.logger.info({ userId: user.id }, "Get current user via /api/auth/me");
 
         return reply.code(200).send({
           id: user.id,
           email: user.email,
-          name: user.name,
+          name: user.nome,
           role: user.role,
-          active: user.active,
+          active: true,
         });
       } catch (error) {
         app.logger.error({ err: error }, "Get current user failed");
@@ -556,10 +492,10 @@ export function registerAuthRoutes(app: App) {
 
         const token = authHeader.slice(7).trim();
 
-        // Delete session
+        // Delete session from custom auth system (usuariosSession table)
         await app.db
-          .delete(sessionTable)
-          .where(eq(sessionTable.token, token));
+          .delete(schema.usuariosSession)
+          .where(eq(schema.usuariosSession.token, token));
 
         app.logger.info({}, "Sign out successful");
 

@@ -65,6 +65,7 @@ export const restaurante = pgTable("restaurante", {
   uf: text("uf"),
   telefone: text("telefone"),
   email: text("email"),
+  ativo: boolean("ativo").default(true).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -180,12 +181,14 @@ export const profiles = pgTable("profiles", {
 
 // Usuarios (App-level user management, separate from auth users)
 export const usuarios = pgTable("usuarios", {
-  id: uuid("id").primaryKey().defaultRandom(),
+  id: text("id").primaryKey(),
   nome: text("nome").notNull(),
-  email: text("email").notNull(),
+  email: text("email").notNull().unique(),
   senhaHash: text("senha_hash"),
   role: text("role").notNull().default("garcom"),
+  ativo: boolean("ativo").default(true).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   restauranteId: uuid("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
 });
 
@@ -200,6 +203,16 @@ export const usuariosSession = pgTable("usuarios_session", {
     .defaultNow()
     .$onUpdate(() => /* @__PURE__ */ new Date())
     .notNull(),
+});
+
+// Password Reset Tokens (for password reset flow)
+export const passwordResetTokens = pgTable("password_reset_tokens", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  usuarioId: text("usuario_id").notNull().references(() => usuarios.id, { onDelete: "cascade" }),
+  token: text("token").notNull().unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 // Comandas Historico (Archived Orders)

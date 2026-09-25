@@ -243,17 +243,21 @@ export function registerEstoqueRoutes(app: App) {
   app.fastify.post(
     "/api/pratos/:pratoId/insumos",
     { schema: {} } as any,
-    async (request: FastifyRequest<{ Params: { pratoId: string }; Body: { insumoId: string; quantidadeUsada: string } }>, reply: FastifyReply) => {
+    async (request: FastifyRequest<{ Params: { pratoId: string }; Body: { insumo_id: string; quantidade: string } }>, reply: FastifyReply) => {
     try {
       const session = await customRequireAuth(app, request, reply);
       const restauranteId = requireTenant(session);
       const { pratoId } = request.params;
-      const { insumoId, quantidadeUsada } = request.body;
+      const { insumo_id, quantidade } = request.body;
 
-      if (!insumoId || !quantidadeUsada) return reply.code(400).send({ error: "insumoId e quantidadeUsada são obrigatórios" });
+      if (!insumo_id || !quantidade) return reply.code(400).send({ error: "insumo_id e quantidade são obrigatórios" });
+
+      // Check if prato exists
+      const [prato] = await db.select().from(schema.pratos).where(eq(schema.pratos.id, pratoId));
+      if (!prato) return reply.code(404).send({ error: "Prato não encontrado" });
 
       const [item] = await db.insert(schema.pratoInsumos).values({
-        pratoId, insumoId, quantidadeUsada, restauranteId,
+        pratoId, insumoId: insumo_id, quantidadeUsada: quantidade, restauranteId,
       }).returning();
 
       return reply.code(201).send(item);

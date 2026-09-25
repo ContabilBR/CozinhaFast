@@ -343,12 +343,15 @@ export async function seedDatabase(app: App) {
           if (existing.length === 0) {
             // Insert new usuario with hashed password
             await app.db.insert(schema.usuarios).values({
+              id: randomUUID(),
               nome: u.nome,
               email: u.email,
               senhaHash: senhaHash,
               role: u.role,
               restauranteId: seedRestauranteId,
+              ativo: true,
               createdAt: new Date(),
+              updatedAt: new Date(),
             });
             app.logger.debug({ email: u.email }, 'Inserted new seed usuario');
           } else {
