@@ -40,10 +40,13 @@ enableSelectRetry(app.db);
 
 app.withStorage();
 
-// Configure Better Auth with minimal settings
-// The framework version doesn't expose additionalFields config
-// Better Auth will auto-detect the user table columns (role, active)
-app.withAuth();
+// Note: the app has a single auth system — custom session tokens against
+// usuarios/usuarios_session (see routes/auth-custom.ts and utils/auth.ts).
+// The framework's Better Auth plugin (app.withAuth()) is intentionally not
+// mounted: no client ever talks to it, and leaving it registered only added
+// unused HTTP routes and a wasted DB round-trip on every authenticated
+// request. The user/session/account/verification tables it used still exist
+// in the schema (dropping them is a separate, deliberate migration).
 
 // Export App type for use in route files
 export type App = typeof app;

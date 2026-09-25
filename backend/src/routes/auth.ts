@@ -1,10 +1,16 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
 import { eq } from "drizzle-orm";
-import { user as userTable, session as sessionTable, account as accountTable } from "../db/schema/auth-schema.js";
 import * as schema from "../db/schema/schema.js";
 import type { App } from "../index.js";
 import { randomUUID } from "crypto";
 import * as bcryptjs from "bcryptjs";
+
+// Despite the Better-Auth-shaped paths (/api/auth/sign-up/email, /api/auth/sign-in,
+// /api/auth/me, /api/auth/sign-out), every handler below reads and writes the
+// SAME custom tables as routes/auth-custom.ts (usuarios / usuarios_session).
+// This file exists only so the test suite (see tests/helpers.ts) has stable,
+// unauthenticated entry points to create users with an arbitrary role — the
+// real app only ever calls /api/login and /api/me from auth-custom.ts.
 
 interface SignInBody {
   email: string;
@@ -519,8 +525,6 @@ export function registerAuthRoutes(app: App) {
             type: "object",
             properties: {
               users: { type: "number" },
-              accounts: { type: "number" },
-              profiles: { type: "number" },
             },
           },
         },
@@ -528,22 +532,12 @@ export function registerAuthRoutes(app: App) {
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
-        const users = await app.db.select().from(userTable);
-        const accounts = await app.db
-          .select()
-          .from(accountTable)
-          .where(eq(accountTable.providerId, "credential"));
-        const profiles = await app.db.select().from(schema.profiles);
+        const users = await app.db.select().from(schema.usuarios);
 
-        app.logger.info(
-          { userCount: users.length, accountCount: accounts.length, profileCount: profiles.length },
-          "Seed status retrieved"
-        );
+        app.logger.info({ userCount: users.length }, "Seed status retrieved");
 
         return reply.status(200).send({
           users: users.length,
-          accounts: accounts.length,
-          profiles: profiles.length,
         });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to get seed status");

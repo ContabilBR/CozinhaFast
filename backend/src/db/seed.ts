@@ -1,42 +1,8 @@
 import { eq, sql } from "drizzle-orm";
 import * as schema from "./schema/schema.js";
-import { user as userTable, account as accountTable, session as sessionTable, verification as verificationTable } from "./schema/auth-schema.js";
 import type { App } from "../index.js";
 import { randomUUID } from "crypto";
 import * as bcryptjs from "bcryptjs";
-
-const seedAuthUsers = [
-  {
-    name: "Administrador",
-    email: "admin@cozinhafast.com",
-    password: process.env.SEED_ADMIN_PASSWORD ?? 'change-me-on-first-login',
-    role: "administrador",
-  },
-  {
-    name: "Gerente",
-    email: "gerente@cozinhafast.com",
-    password: process.env.SEED_GERENTE_PASSWORD ?? 'change-me-on-first-login',
-    role: "gerente",
-  },
-  {
-    name: "Gerente Teste",
-    email: "gerente@teste.com",
-    password: process.env.SEED_GERENTE_PASSWORD ?? 'change-me-on-first-login',
-    role: "gerente",
-  },
-  {
-    name: "Garçom",
-    email: "garcom@cozinhafast.com",
-    password: process.env.SEED_GARCOM_PASSWORD ?? 'change-me-on-first-login',
-    role: "garcom",
-  },
-  {
-    name: "Cozinheiro",
-    email: "cozinheiro@cozinhafast.com",
-    password: process.env.SEED_COZINHEIRO_PASSWORD ?? 'change-me-on-first-login',
-    role: "cozinheiro",
-  },
-];
 
 const seedCategorias = [
   { nome: "Entradas", descricao: "Aperitivos e entradas leves" },
@@ -118,21 +84,6 @@ const seedPratos = [
   },
 ];
 
-const seedUsuarios = [
-  { nome: "João Garçom", email: "garcom@cozinhafast.com", password: "123456", role: "garcom" },
-  { nome: "Maria Cozinha", email: "cozinheiro@cozinhafast.com", password: "123456", role: "cozinha" },
-  { nome: "Carlos Gerente", email: "gerente@cozinhafast.com", password: "123456", role: "gerente" },
-  { nome: "Admin Sistema", email: "admin@cozinhafast.com", password: "123456", role: "admin" },
-];
-
-// Seed 4 core users that must always exist - using raw database inserts only
-const seedUsers = [
-  { email: "admin@cozinhafast.com", name: "Administrador", role: "admin", password: process.env.SEED_ADMIN_PASSWORD ?? 'change-me-on-first-login' },
-  { email: "gerente@cozinhafast.com", name: "Gerente", role: "gerente", password: process.env.SEED_GERENTE_PASSWORD ?? 'change-me-on-first-login' },
-  { email: "garcom@cozinhafast.com", name: "Garçom", role: "garcom", password: process.env.SEED_GARCOM_PASSWORD ?? 'change-me-on-first-login' },
-  { email: "cozinheiro@cozinhafast.com", name: "Cozinheiro", role: "cozinheiro", password: process.env.SEED_COZINHEIRO_PASSWORD ?? 'change-me-on-first-login' },
-];
-
 export async function seedDatabase(app: App) {
   try {
     app.logger.info("Starting database seed");
@@ -211,108 +162,7 @@ export async function seedDatabase(app: App) {
       app.logger.warn({ err }, "Failed to ensure enum values");
     }
 
-    // Step 2: Upsert seed users (preserve existing users, never delete)
-    app.logger.info("Upserting seed users");
-    const now = new Date();
-
-    try {
-      // Upsert each seed user: only insert if email doesn't exist
-      app.logger.info({ count: seedUsers.length }, "Upserting seed users with INSERT ... ON CONFLICT");
-
-      for (const seedUser of seedUsers) {
-        try {
-          const existing = await app.db
-            .select({ id: userTable.id })
-            .from(userTable)
-            .where(eq(userTable.email, seedUser.email))
-            .limit(1);
-
-          if (existing.length === 0) {
-            const userId = randomUUID();
-
-            // Insert into user table (will be unique by email)
-            await app.db.insert(userTable).values({
-              id: userId,
-              name: seedUser.name,
-              email: seedUser.email,
-              emailVerified: true,
-              role: seedUser.role as any,
-              active: true,
-              createdAt: now,
-              updatedAt: now,
-            });
-
-            app.logger.debug({ email: seedUser.email, userId }, "Created new seed user");
-
-            // Hash password and insert into account table
-            const hashedPassword = bcryptjs.hashSync(seedUser.password, 10);
-
-            await app.db.insert(accountTable).values({
-              id: randomUUID(),
-              accountId: seedUser.email,
-              providerId: "credential",
-              userId: userId,
-              password: hashedPassword,
-              createdAt: now,
-              updatedAt: now,
-            });
-
-            app.logger.debug({ email: seedUser.email }, `Seed user created: ${seedUser.email}`);
-          } else {
-            app.logger.debug({ email: seedUser.email }, "Seed user already exists, skipping");
-          }
-        } catch (err) {
-          app.logger.warn({ email: seedUser.email, err }, "Failed to upsert seed user");
-        }
-      }
-
-      app.logger.info("Seed users upserted successfully");
-
-      // Step 2a: Create profiles for seeded users
-      app.logger.info("Creating profiles for seeded users");
-      try {
-        for (const seedUser of seedUsers) {
-          try {
-            const user = await app.db
-              .select({ id: userTable.id })
-              .from(userTable)
-              .where(eq(userTable.email, seedUser.email))
-              .limit(1);
-
-            if (user.length > 0) {
-              // Check if profile exists
-              const existingProfile = await app.db
-                .select()
-                .from(schema.profiles)
-                .where(eq(schema.profiles.userId, user[0].id))
-                .limit(1);
-
-              if (existingProfile.length === 0) {
-                // Create profile with seed restaurante
-                await app.db.insert(schema.profiles).values({
-                  userId: user[0].id,
-                  restauranteId: seedRestauranteId,
-                  role: seedUser.role,
-                  name: seedUser.name,
-                  createdAt: now,
-                });
-                app.logger.debug({ email: seedUser.email, userId: user[0].id }, "Created profile for seed user");
-              }
-            }
-          } catch (err) {
-            app.logger.warn({ email: seedUser.email, err }, "Failed to create profile for seed user");
-          }
-        }
-        app.logger.info("Profiles created successfully");
-      } catch (err) {
-        app.logger.warn({ err }, "Failed to create profiles for seed users");
-      }
-    } catch (err) {
-      app.logger.error({ err }, "Failed to upsert seed users");
-      throw err;
-    }
-
-    // Step 2b: Upsert seed usuarios (preserve existing real user accounts across deploys)
+    // Step 2: Upsert seed usuarios (preserve existing real user accounts across deploys)
     app.logger.info("Upserting seed usuarios");
 
     try {

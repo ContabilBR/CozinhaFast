@@ -57,8 +57,10 @@ export interface TestUser {
 }
 
 /**
- * Create a test user via Better Auth sign-up with optional role.
- * Returns the Better Auth token which works with all authenticated endpoints.
+ * Create a test user via the dev/test-only sign-up endpoint (routes/auth.ts),
+ * with an optional role. Despite the Better-Auth-shaped path, this creates a
+ * regular usuarios/usuarios_session record — the same session system every
+ * other endpoint authenticates against.
  */
 export async function signUpTestUser(role: string = "garcom"): Promise<TestUser> {
   const id = crypto.randomUUID();

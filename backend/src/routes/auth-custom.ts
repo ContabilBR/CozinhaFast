@@ -5,7 +5,6 @@ import * as schema from '../db/schema/schema.js';
 import * as bcryptjs from 'bcryptjs';
 import { randomUUID, randomBytes } from 'crypto';
 import { sendPasswordResetEmail } from '../utils/email.js';
-import { user as userTable, session as sessionTable } from '../db/schema/auth-schema.js';
 
 interface LoginBody {
   email: string;
@@ -180,60 +179,11 @@ export function registerCustomAuthRoutes(app: App) {
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     app.logger.info('GET /api/me - Fetching current user profile');
     try {
-      const authHeader = request.headers.authorization;
-
-      if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        app.logger.warn('No Bearer token in Authorization header');
-        return reply.status(401).send({ error: 'Invalid or expired token' });
-      }
-
-      const token = authHeader.slice(7).trim();
-
-      // Try to get session from Better Auth first
-      const betterAuthSessions = await app.db
-        .select()
-        .from(sessionTable)
-        .where(eq(sessionTable.token, token))
-        .limit(1);
-
-      if (betterAuthSessions && betterAuthSessions.length > 0) {
-        const session = betterAuthSessions[0];
-
-        // Check if session is expired
-        if (new Date(session.expiresAt) < new Date()) {
-          app.logger.warn({ token: token.substring(0, 20) }, 'Better Auth session expired');
-          return reply.status(401).send({ error: 'Invalid or expired token' });
-        }
-
-        // Get user from Better Auth user table
-        const users = await app.db
-          .select()
-          .from(userTable)
-          .where(eq(userTable.id, session.userId))
-          .limit(1);
-
-        if (!users || users.length === 0) {
-          app.logger.warn({ userId: session.userId }, 'Better Auth user not found');
-          return reply.status(401).send({ error: 'Invalid or expired token' });
-        }
-
-        const user = users[0];
-        app.logger.info({ userId: user.id, email: user.email }, 'User profile fetched successfully via Better Auth');
-
-        return reply.code(200).send({
-          id: user.id,
-          nome: user.name,
-          email: user.email,
-          role: (user as any).role || 'garcom',
-        });
-      }
-
-      // Fall back to custom auth
       const isAuthenticated = await verifyAndAttachUser(app, request, reply);
       if (!isAuthenticated) return;
 
       const userId = (request as any).userId;
-      app.logger.debug({ userId }, 'User authenticated via custom auth, looking up in usuarios table');
+      app.logger.debug({ userId }, 'User authenticated, looking up in usuarios table');
 
       // Look up user in usuarios table
       const usuarios = await app.db
@@ -247,7 +197,7 @@ export function registerCustomAuthRoutes(app: App) {
       }
 
       const user = usuarios[0];
-      app.logger.info({ userId: user.id, email: user.email }, 'User profile fetched successfully via custom auth');
+      app.logger.info({ userId: user.id, email: user.email }, 'User profile fetched successfully');
 
       return reply.code(200).send({
         id: user.id,
