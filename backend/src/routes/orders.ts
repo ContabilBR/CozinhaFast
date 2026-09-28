@@ -806,8 +806,15 @@ export function registerOrderRoutes(app: App) {
         const gorjetaValue = parseFloat((request.body.gorjeta?.toString()) ?? "0");
         const numPessoas = request.body.num_pessoas ?? 0;
 
-        // Calculate totals
-        const subtotal = parseFloat(comanda.subtotal ?? "0");
+        // Calculate subtotal dynamically from pedidos
+        const subtotalResult = await app.db
+          .select({
+            total: sql<string>`COALESCE(SUM(${schema.pedidos.quantidade} * CAST(${schema.pedidos.precoUnitario} AS DECIMAL(10,2))), 0)`,
+          })
+          .from(schema.pedidos)
+          .where(eq(schema.pedidos.comandaId, request.params.id));
+        const subtotal = parseFloat(subtotalResult[0]?.total ?? "0");
+        app.logger.info({ comandaId: request.params.id, subtotalCalculated: subtotal }, "Subtotal dynamically calculated from pedidos");
         const totalFinal = subtotal + gorjetaValue;
         const valorPorPessoa = numPessoas > 0 ? totalFinal / numPessoas : null;
 
