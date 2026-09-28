@@ -258,10 +258,28 @@ export function registerOrderItemRoutes(app: App) {
           .returning();
 
         // Update comanda total
-        const newTotal = (parseFloat(comanda[0].total) + itemTotal).toFixed(2);
+        const subtotalResult = await app.db
+          .select({
+            subtotal: sql<string>`COALESCE(SUM(quantidade * preco_unitario), 0)`,
+          })
+          .from(schema.pedidos)
+          .where(eq(schema.pedidos.comandaId, comandaId));
+
+        const subtotalValue = subtotalResult[0]?.subtotal || "0";
+        const subtotal = parseFloat(String(subtotalValue));
+
+        const comandaData = await app.db
+          .select({ gorjeta: schema.comandas.gorjeta })
+          .from(schema.comandas)
+          .where(eq(schema.comandas.id, comandaId));
+
+        const gorjetaValue = comandaData[0]?.gorjeta || "0";
+        const gorjeta = parseFloat(String(gorjetaValue));
+        const newTotal = (subtotal + gorjeta).toFixed(2);
+
         await app.db
           .update(schema.comandas)
-          .set({ total: newTotal })
+          .set({ subtotal: subtotal.toString(), total: newTotal })
           .where(eq(schema.comandas.id, comandaId));
 
         app.logger.info({ pedidoId: pedido.id }, "Pedido created successfully");
@@ -578,25 +596,29 @@ export function registerOrderItemRoutes(app: App) {
           .returning();
 
         // Recalculate and update parent comanda's total
-        if (typeof (app.db as any).execute === 'function') {
-          await (app.db as any).execute(
-            sql`UPDATE comandas SET total = (SELECT COALESCE(SUM(quantidade * preco_unitario), 0) FROM pedidos WHERE comanda_id = ${pedido.comandaId}) WHERE id = ${pedido.comandaId}`
-          );
-        } else {
-          // Fallback: manually calculate and update
-          const result = await app.db
-            .select({
-              total: sql<number>`COALESCE(SUM(quantidade * preco_unitario), 0)`,
-            })
-            .from(schema.pedidos)
-            .where(eq(schema.pedidos.comandaId, pedido.comandaId));
+        const subtotalResult = await app.db
+          .select({
+            subtotal: sql<string>`COALESCE(SUM(quantidade * preco_unitario), 0)`,
+          })
+          .from(schema.pedidos)
+          .where(eq(schema.pedidos.comandaId, pedido.comandaId));
 
-          const newTotal = result[0]?.total || 0;
-          await app.db
-            .update(schema.comandas)
-            .set({ total: newTotal.toString() as any })
-            .where(eq(schema.comandas.id, pedido.comandaId));
-        }
+        const subtotalValue = subtotalResult[0]?.subtotal || "0";
+        const subtotal = parseFloat(String(subtotalValue));
+
+        const gorjetaResult = await app.db
+          .select({ gorjeta: schema.comandas.gorjeta })
+          .from(schema.comandas)
+          .where(eq(schema.comandas.id, pedido.comandaId));
+
+        const gorjetaValue = gorjetaResult[0]?.gorjeta || "0";
+        const gorjeta = parseFloat(String(gorjetaValue));
+        const newTotal = (subtotal + gorjeta).toFixed(2);
+
+        await app.db
+          .update(schema.comandas)
+          .set({ subtotal: subtotal.toString(), total: newTotal })
+          .where(eq(schema.comandas.id, pedido.comandaId));
 
         app.logger.info({ pedidoId: updated.id }, "Pedido updated successfully");
 
@@ -711,17 +733,28 @@ export function registerOrderItemRoutes(app: App) {
         }
 
         // Step d: Recalculate and update parent comanda's total
-        const result = await app.db
+        const subtotalResult = await app.db
           .select({
-            total: sql<number>`COALESCE(SUM(quantidade * preco_unitario), 0)`,
+            subtotal: sql<string>`COALESCE(SUM(quantidade * preco_unitario), 0)`,
           })
           .from(schema.pedidos)
           .where(eq(schema.pedidos.comandaId, pedido.comandaId));
 
-        const newTotal = result[0]?.total || 0;
+        const subtotalValue = subtotalResult[0]?.subtotal || "0";
+        const subtotal = parseFloat(String(subtotalValue));
+
+        const gorjetaResult = await app.db
+          .select({ gorjeta: schema.comandas.gorjeta })
+          .from(schema.comandas)
+          .where(eq(schema.comandas.id, pedido.comandaId));
+
+        const gorjetaValue = gorjetaResult[0]?.gorjeta || "0";
+        const gorjeta = parseFloat(String(gorjetaValue));
+        const newTotal = (subtotal + gorjeta).toFixed(2);
+
         await app.db
           .update(schema.comandas)
-          .set({ total: newTotal.toString() as any })
+          .set({ subtotal: subtotal.toString(), total: newTotal })
           .where(eq(schema.comandas.id, pedido.comandaId));
 
         // Step e: Check remaining pedidos count

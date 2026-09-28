@@ -1,4 +1,4 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import type { FastifyRequest, FastifyReply } from "fastify";
 import type { App } from "../index.js";
 import * as schema from "../db/schema/schema.js";
@@ -205,31 +205,30 @@ init()
         if (!mesa) return reply.code(404).send({ error: "Mesa não encontrada" });
 
         const result = await (db as any).transaction(async (tx: any) => {
-          let subtotal = 0;
           const itensPedido: any[] = [];
+
+          // Validate pratos and collect order items
           for (const item of itens) {
-            const [prato] = await tx.select({ id: schema.pratos.id, preco: schema.pratos.preco, nome: schema.pratos.nome }).from(schema.pratos).where(and(eq(schema.pratos.id, item.prato_id), eq(schema.pratos.restauranteId, restaurante_id)));
+            const [prato] = await tx.select({ id: schema.pratos.id, preco: schema.pratos.preco }).from(schema.pratos).where(and(eq(schema.pratos.id, item.prato_id), eq(schema.pratos.restauranteId, restaurante_id)));
             if (!prato) return { error: "Prato não encontrado: " + item.prato_id };
-            const preco = parseFloat(prato.preco);
-            subtotal += preco * item.quantidade;
             itensPedido.push({ pratoId: item.prato_id, quantidade: item.quantidade, precoUnitario: prato.preco, observacao: item.observacao || null });
           }
 
+          // Check for existing open comanda
           let comanda;
           const [comandaExistente] = await tx.select().from(schema.comandas).where(and(eq(schema.comandas.mesaId, mesa.id), eq(schema.comandas.status, "aberta"), eq(schema.comandas.restauranteId, restaurante_id)));
 
           if (comandaExistente) {
             comanda = comandaExistente;
-            const novoSubtotal = parseFloat(comanda.subtotal || comanda.total || "0") + subtotal;
-            await tx.update(schema.comandas).set({ subtotal: novoSubtotal.toString(), total: novoSubtotal.toString() }).where(eq(schema.comandas.id, comanda.id));
           } else {
             [comanda] = await tx.insert(schema.comandas).values({
               tipo: "mesa", mesaId: mesa.id, mesaNumero: mesa_numero, status: "aberta",
-              clienteNome: cliente_nome || "Cliente QR", subtotal: subtotal.toString(), total: subtotal.toString(), restauranteId: restaurante_id,
+              clienteNome: cliente_nome || "Cliente QR", subtotal: "0", total: "0", restauranteId: restaurante_id,
             }).returning();
             await tx.update(schema.mesas).set({ status: "ocupada" }).where(eq(schema.mesas.id, mesa.id));
           }
 
+          // Insert order items
           for (const item of itensPedido) {
             await tx.insert(schema.pedidos).values({
               comandaId: comanda.id, pratoId: item.pratoId, quantidade: item.quantidade,
@@ -237,7 +236,25 @@ init()
             });
           }
 
-          return { comanda_id: comanda.id, mesa: mesa_numero, itens_adicionados: itensPedido.length, subtotal_adicionado: subtotal };
+          // Recalculate subtotal via SQL aggregation
+          const subtotalResult = await tx.select({
+            subtotal: sql<string>`COALESCE(SUM(quantidade * preco_unitario), 0)`,
+          }).from(schema.pedidos).where(eq(schema.pedidos.comandaId, comanda.id));
+
+          const subtotalValue = subtotalResult[0]?.subtotal || "0";
+          const subtotal = parseFloat(String(subtotalValue));
+
+          // Fetch gorjeta from comanda
+          const gorjetaResult = await tx.select({ gorjeta: schema.comandas.gorjeta }).from(schema.comandas).where(eq(schema.comandas.id, comanda.id));
+          const gorjetaValue = gorjetaResult[0]?.gorjeta || "0";
+          const gorjeta = parseFloat(String(gorjetaValue));
+
+          const newTotal = (subtotal + gorjeta).toFixed(2);
+
+          // Update comanda with calculated subtotal and total
+          await tx.update(schema.comandas).set({ subtotal: subtotal.toString(), total: newTotal }).where(eq(schema.comandas.id, comanda.id));
+
+          return { comanda_id: comanda.id, mesa: mesa_numero, itens_adicionados: itensPedido.length };
         });
 
         if (result.error) return reply.code(400).send({ error: result.error });

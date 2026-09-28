@@ -603,19 +603,29 @@ export function registerOrderRoutes(app: App) {
           .returning();
 
         // Recalculate total: SUM(quantidade * preco_unitario)
-        const allPedidos = await app.db
-          .select()
+        const subtotalResult = await app.db
+          .select({
+            subtotal: sql<string>`COALESCE(SUM(quantidade * preco_unitario), 0)`,
+          })
           .from(schema.pedidos)
           .where(eq(schema.pedidos.comandaId, comandaId));
 
-        const total = allPedidos.reduce((sum, p) => {
-          return sum + parseFloat(p.precoUnitario) * p.quantidade;
-        }, 0);
+        const subtotalValue = subtotalResult[0]?.subtotal || "0";
+        const subtotal = parseFloat(String(subtotalValue));
 
-        // Update comanda total
+        const gorjetaResult = await app.db
+          .select({ gorjeta: schema.comandas.gorjeta })
+          .from(schema.comandas)
+          .where(eq(schema.comandas.id, comandaId));
+
+        const gorjetaValue = gorjetaResult[0]?.gorjeta || "0";
+        const gorjeta = parseFloat(String(gorjetaValue));
+        const total = (subtotal + gorjeta).toFixed(2);
+
+        // Update comanda subtotal and total
         await app.db
           .update(schema.comandas)
-          .set({ total: total.toString() })
+          .set({ subtotal: subtotal.toString(), total })
           .where(eq(schema.comandas.id, comandaId));
 
         app.logger.info(
@@ -669,7 +679,7 @@ export function registerOrderRoutes(app: App) {
         if (!comanda.length) return reply.code(404).send({ error: "Comanda não encontrada" });
         if (comanda[0].status !== "aberta") return reply.code(400).send({ error: "Comanda não está aberta" });
         const gorjeta = Math.max(0, (request.body as any)?.gorjeta || 0);
-        const subtotal = parseFloat(comanda[0].subtotal || comanda[0].total || "0");
+        const subtotal = parseFloat(comanda[0].subtotal ?? "0");
         const novoTotal = subtotal + gorjeta;
         await app.db.update(schema.comandas).set({ total: novoTotal.toString(), gorjeta: gorjeta.toString() }).where(eq(schema.comandas.id, request.params.id));
         return reply.code(200).send({ subtotal, gorjeta, total: novoTotal });
@@ -778,6 +788,7 @@ export function registerOrderRoutes(app: App) {
             garcomId: schema.comandas.garcomId,
             status: schema.comandas.status,
             total: schema.comandas.total,
+            subtotal: schema.comandas.subtotal,
             createdAt: schema.comandas.createdAt,
           })
           .from(schema.comandas)
@@ -796,7 +807,7 @@ export function registerOrderRoutes(app: App) {
         const numPessoas = request.body.num_pessoas ?? 0;
 
         // Calculate totals
-        const subtotal = parseFloat(comanda.total || "0");
+        const subtotal = parseFloat(comanda.subtotal ?? "0");
         const totalFinal = subtotal + gorjetaValue;
         const valorPorPessoa = numPessoas > 0 ? totalFinal / numPessoas : null;
 
