@@ -1640,10 +1640,10 @@ export function registerOrderRoutes(app: App) {
           };
         });
 
-        // Step 9: Compute resumo (using subtotal for revenue)
+        // Step 9: Compute resumo (using GREATEST(subtotal, total) for revenue)
         const totalArrecadado =
-          archivedComandasResult.reduce((sum, c) => sum + parseFloat(c.subtotal || "0"), 0) +
-          activeComandasResult.reduce((sum, c) => sum + parseFloat(c.subtotal || "0"), 0);
+          archivedComandasResult.reduce((sum, c) => sum + Math.max(parseFloat(c.subtotal || "0"), parseFloat(c.total || "0")), 0) +
+          activeComandasResult.reduce((sum, c) => sum + Math.max(parseFloat(c.subtotal || "0"), parseFloat(c.total || "0")), 0);
 
         const totalComandasCount = archivedComandasResult.length + activeComandasResult.length;
 
