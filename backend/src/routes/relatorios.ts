@@ -101,6 +101,9 @@ export function registerRelatoriosRoutes(app: App) {
                   cancelada: { type: "number" },
                 },
               },
+              gorjeta_total: { type: "number" },
+              comandas_com_gorjeta: { type: "number" },
+              gorjeta_media: { type: "number" },
             },
           },
           401: { type: "object", properties: { error: { type: "string" } } },
@@ -395,6 +398,37 @@ export function registerRelatoriosRoutes(app: App) {
           ));
         const totalPratos = totalPratosResult[0]?.count || 0;
 
+        // Gorjeta no período — comandas_historico
+        const gorjetaHistResult = await app.db
+          .select({
+            gorjeta_total: sql<number>`COALESCE(SUM(COALESCE(${schema.comandasHistorico.gorjeta}, 0)), 0)`,
+            comandas_com_gorjeta: sql<number>`COUNT(*) FILTER (WHERE COALESCE(${schema.comandasHistorico.gorjeta}, 0) > 0)`,
+          })
+          .from(schema.comandasHistorico)
+          .where(and(
+            eq(schema.comandasHistorico.restauranteId, tenantId as any),
+            gte(schema.comandasHistorico.closedAt, inicio),
+            lt(schema.comandasHistorico.closedAt, fim),
+          ));
+
+        // Gorjeta no período — comandas (status = 'fechada')
+        const gorjetaComandasResult = await app.db
+          .select({
+            gorjeta_total: sql<number>`COALESCE(SUM(COALESCE(${schema.comandas.gorjeta}, 0)), 0)`,
+            comandas_com_gorjeta: sql<number>`COUNT(*) FILTER (WHERE COALESCE(${schema.comandas.gorjeta}, 0) > 0)`,
+          })
+          .from(schema.comandas)
+          .where(and(
+            eq(schema.comandas.restauranteId, tenantId as any),
+            eq(schema.comandas.status, 'fechada'),
+            gte(schema.comandas.closedAt, inicio),
+            lt(schema.comandas.closedAt, fim),
+          ));
+
+        const gorjetaTotal = Number(gorjetaHistResult[0]?.gorjeta_total ?? 0) + Number(gorjetaComandasResult[0]?.gorjeta_total ?? 0);
+        const comandasComGorjeta = Number(gorjetaHistResult[0]?.comandas_com_gorjeta ?? 0) + Number(gorjetaComandasResult[0]?.comandas_com_gorjeta ?? 0);
+        const gorjetaMedia = comandasComGorjeta > 0 ? gorjetaTotal / comandasComGorjeta : 0;
+
         app.logger.info(
           {
             tenantId, totalMesas, mesasOcupadas, comandasAbertas, pedidosPendentes, pedidosEmPreparo, pedidosAtrasados, receitaPeriodo, periodoLabel,
@@ -420,6 +454,9 @@ export function registerRelatoriosRoutes(app: App) {
           total_pratos: totalPratos,
           top_dishes: topDishes,
           orders_by_status: ordersByStatus,
+          gorjeta_total: gorjetaTotal,
+          comandas_com_gorjeta: comandasComGorjeta,
+          gorjeta_media: gorjetaMedia,
         });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to get resumo");
@@ -456,6 +493,7 @@ export function registerRelatoriosRoutes(app: App) {
                     mesa_numero: { type: "number" },
                     ticket_medio: { type: "number" },
                     comandas_fechadas: { type: "number" },
+                    gorjeta_total: { type: "number" },
                     top_dishes: {
                       type: "array",
                       items: {
@@ -490,13 +528,13 @@ export function registerRelatoriosRoutes(app: App) {
         // Ticket médio e nº de comandas fechadas por mesa, no período (ativas + histórico)
         const ticketPorMesaResult = await (app.db as any).execute(
           sql`
-            SELECT mesa_numero, AVG(subtotal)::float AS ticket_medio, COUNT(*)::integer AS comandas_fechadas
+            SELECT mesa_numero, AVG(subtotal)::float AS ticket_medio, COUNT(*)::integer AS comandas_fechadas, COALESCE(SUM(COALESCE(gorjeta_val, 0)), 0)::float AS gorjeta_total
             FROM (
-              SELECT mesa_numero, total AS subtotal FROM comandas
+              SELECT mesa_numero, total AS subtotal, COALESCE(gorjeta, 0) AS gorjeta_val FROM comandas
               WHERE restaurante_id = ${tenantId}::uuid AND status = 'fechada' AND mesa_numero IS NOT NULL
                 AND closed_at >= ${inicio.toISOString()}::timestamptz AND closed_at < ${fim.toISOString()}::timestamptz
               UNION ALL
-              SELECT mesa_numero, total AS subtotal FROM comandas_historico
+              SELECT mesa_numero, total AS subtotal, COALESCE(gorjeta, 0) AS gorjeta_val FROM comandas_historico
               WHERE restaurante_id = ${tenantId}::uuid AND status = 'fechada' AND mesa_numero IS NOT NULL
                 AND closed_at >= ${inicio.toISOString()}::timestamptz AND closed_at < ${fim.toISOString()}::timestamptz
             ) t
@@ -556,6 +594,7 @@ export function registerRelatoriosRoutes(app: App) {
                 mesa_numero: mesaNumero,
                 ticket_medio: parseFloat(String(row.ticket_medio || 0)),
                 comandas_fechadas: parseInt(String(row.comandas_fechadas || 0)),
+                gorjeta_total: parseFloat(String(row.gorjeta_total ?? 0)),
                 top_dishes: pratosPorMesa.get(mesaNumero) || [],
               };
             })
