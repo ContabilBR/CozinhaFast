@@ -26,6 +26,7 @@ interface RestauranteItem {
   created_at: string;
   email_responsavel?: string;
   ativo: boolean;
+  plano?: string;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -33,6 +34,8 @@ const STATUS_COLORS: Record<string, string> = {
   ativa: "#22C55E",
   inadimplente: "#EF4444",
   desativado: "#94A3B8",
+  cancelada: "#94A3B8",
+  expirada: "#6B7280",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -40,6 +43,8 @@ const STATUS_LABELS: Record<string, string> = {
   ativa: "Ativa",
   inadimplente: "Inadimplente",
   desativado: "Desativado",
+  cancelada: "Cancelada",
+  expirada: "Expirada",
 };
 
 function formatDate(iso: string) {
@@ -59,6 +64,7 @@ export default function SuperAdminRestaurantesScreen() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [updatingPlanoId, setUpdatingPlanoId] = useState<string | null>(null);
 
   const fetchRestaurantes = useCallback(async () => {
     console.log("[SuperAdmin] GET /api/superadmin/restaurantes");
@@ -94,6 +100,36 @@ export default function SuperAdminRestaurantesScreen() {
       Alert.alert("Erro", "Não foi possível alterar o status.");
     } finally {
       setTogglingId(null);
+    }
+  };
+
+  const handleAlterarPlano = async (item: RestauranteItem, novoPlano: string) => {
+    console.log("[SuperAdmin] handleAlterarPlano pressed for:", item.id, "→", novoPlano);
+    setUpdatingPlanoId(item.id);
+    try {
+      await apiPatch(`/api/superadmin/restaurantes/${item.id}/assinatura`, { plano: novoPlano, assinatura_status: "ativa" });
+      console.log("[SuperAdmin] Plano updated for:", item.id, "→", novoPlano);
+      setRestaurantes(prev => prev.map(r => r.id === item.id ? { ...r, plano: novoPlano, assinatura_status: "ativa" } : r));
+    } catch (e) {
+      console.error("[SuperAdmin] Failed to update plano:", e);
+      Alert.alert("Erro", "Não foi possível alterar o plano.");
+    } finally {
+      setUpdatingPlanoId(null);
+    }
+  };
+
+  const handleAlterarStatus = async (item: RestauranteItem, novoStatus: string) => {
+    console.log("[SuperAdmin] handleAlterarStatus pressed for:", item.id, "→", novoStatus);
+    setUpdatingPlanoId(item.id);
+    try {
+      await apiPatch(`/api/superadmin/restaurantes/${item.id}/assinatura`, { assinatura_status: novoStatus });
+      console.log("[SuperAdmin] Assinatura status updated for:", item.id, "→", novoStatus);
+      setRestaurantes(prev => prev.map(r => r.id === item.id ? { ...r, assinatura_status: novoStatus } : r));
+    } catch (e) {
+      console.error("[SuperAdmin] Failed to update assinatura status:", e);
+      Alert.alert("Erro", "Não foi possível alterar o status.");
+    } finally {
+      setUpdatingPlanoId(null);
     }
   };
 
@@ -237,9 +273,23 @@ export default function SuperAdminRestaurantesScreen() {
             const statusColor = STATUS_COLORS[item.assinatura_status] ?? "#94A3B8";
             const statusLabel = STATUS_LABELS[item.assinatura_status] ?? item.assinatura_status;
             const isToggling = togglingId === item.id;
+            const isUpdatingPlano = updatingPlanoId === item.id;
             const dataFormatada = formatDate(item.created_at);
             const ativoLabel = item.ativo ? "Ativo" : "Desativado";
             const ativoColor = item.ativo ? "#22C55E" : "#EF4444";
+
+            const PLANO_BUTTONS = [
+              { label: "Trial", value: "trial" },
+              { label: "Básico", value: "basico" },
+              { label: "Pro", value: "profissional" },
+              { label: "Enterprise", value: "enterprise" },
+            ];
+
+            const STATUS_BUTTONS = [
+              { label: "Ativa", value: "ativa" },
+              { label: "Inadimplente", value: "inadimplente" },
+              { label: "Cancelada", value: "cancelada" },
+            ];
 
             return (
               <View
@@ -369,6 +419,104 @@ export default function SuperAdminRestaurantesScreen() {
                       />
                     )}
                   </View>
+                </View>
+
+                {/* Plano + Status inline controls */}
+                <View
+                  style={{
+                    flexDirection: "row",
+                    flexWrap: "wrap",
+                    gap: 6,
+                    marginTop: 10,
+                    alignItems: "center",
+                  }}
+                >
+                  {/* Plan group */}
+                  {isUpdatingPlano ? (
+                    <ActivityIndicator size="small" color="#6366F1" />
+                  ) : (
+                    PLANO_BUTTONS.map((btn) => {
+                      const isActive = item.plano === btn.value;
+                      return (
+                        <Pressable
+                          key={btn.value}
+                          onPress={() => {
+                            if (!isActive) {
+                              console.log("[SuperAdmin] Plano button pressed:", btn.value, "for:", item.id);
+                              handleAlterarPlano(item, btn.value);
+                            }
+                          }}
+                          style={{
+                            paddingHorizontal: 8,
+                            paddingVertical: 4,
+                            borderRadius: 6,
+                            backgroundColor: isActive ? "#6366F1" : "transparent",
+                            borderWidth: isActive ? 0 : 1,
+                            borderColor: "#334155",
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 11,
+                              fontFamily: "Outfit_600SemiBold",
+                              color: isActive ? "#fff" : "#94A3B8",
+                            }}
+                          >
+                            {btn.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })
+                  )}
+
+                  {/* Divider */}
+                  <View
+                    style={{
+                      width: 1,
+                      alignSelf: "stretch",
+                      backgroundColor: "#1E293B",
+                      marginHorizontal: 4,
+                    }}
+                  />
+
+                  {/* Status group */}
+                  {isUpdatingPlano ? (
+                    <ActivityIndicator size="small" color="#F97316" />
+                  ) : (
+                    STATUS_BUTTONS.map((btn) => {
+                      const isActive = item.assinatura_status === btn.value;
+                      const activeBg = STATUS_COLORS[btn.value] ?? "#94A3B8";
+                      return (
+                        <Pressable
+                          key={btn.value}
+                          onPress={() => {
+                            if (!isActive) {
+                              console.log("[SuperAdmin] Status button pressed:", btn.value, "for:", item.id);
+                              handleAlterarStatus(item, btn.value);
+                            }
+                          }}
+                          style={{
+                            paddingHorizontal: 8,
+                            paddingVertical: 4,
+                            borderRadius: 6,
+                            backgroundColor: isActive ? activeBg : "transparent",
+                            borderWidth: isActive ? 0 : 1,
+                            borderColor: "#334155",
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 11,
+                              fontFamily: "Outfit_600SemiBold",
+                              color: isActive ? "#fff" : "#94A3B8",
+                            }}
+                          >
+                            {btn.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })
+                  )}
                 </View>
               </View>
             );
