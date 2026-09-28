@@ -191,10 +191,10 @@ export function registerRelatoriosRoutes(app: App) {
         ) as any[];
         const pedidosAtrasados = pedidosAtrasadosResult[0]?.count || 0;
 
-        // Receita no período selecionado - sum from both comandas and comandas_historico using GREATEST(subtotal, total)
+        // Receita no período selecionado - sum from both comandas and comandas_historico using total (subtotal + gorjeta)
         const receitaPeriodoComandasResult = await (app.db as any).execute(
           sql`
-            SELECT COALESCE(SUM(GREATEST(subtotal, total)), 0)::float AS total
+            SELECT COALESCE(SUM(total), 0)::float AS total
             FROM comandas
             WHERE restaurante_id = ${tenantId}::uuid
               AND status = 'fechada'
@@ -205,7 +205,7 @@ export function registerRelatoriosRoutes(app: App) {
 
         const receitaPeriodoHistoricoResult = await (app.db as any).execute(
           sql`
-            SELECT COALESCE(SUM(GREATEST(subtotal, total)), 0)::float AS total
+            SELECT COALESCE(SUM(total), 0)::float AS total
             FROM comandas_historico
             WHERE restaurante_id = ${tenantId}::uuid
               AND status = 'fechada'
@@ -218,10 +218,10 @@ export function registerRelatoriosRoutes(app: App) {
         const receitaPeriodoHist = receitaPeriodoHistoricoResult[0]?.total || 0;
         const receitaPeriodo = receitaPeriodoCom + receitaPeriodoHist;
 
-        // Total revenue - sum of all closed comandas from both tables (all-time, sem filtro) using GREATEST(subtotal, total)
+        // Total revenue - sum of all closed comandas from both tables (all-time, sem filtro) using total (subtotal + gorjeta)
         const totalRevenueComandasResult = await (app.db as any).execute(
           sql`
-            SELECT COALESCE(SUM(GREATEST(subtotal, total)), 0)::float AS total
+            SELECT COALESCE(SUM(total), 0)::float AS total
             FROM comandas
             WHERE restaurante_id = ${tenantId}::uuid
               AND status = 'fechada'
@@ -230,7 +230,7 @@ export function registerRelatoriosRoutes(app: App) {
 
         const totalRevenueHistoricoResult = await (app.db as any).execute(
           sql`
-            SELECT COALESCE(SUM(GREATEST(subtotal, total)), 0)::float AS total
+            SELECT COALESCE(SUM(total), 0)::float AS total
             FROM comandas_historico
             WHERE restaurante_id = ${tenantId}::uuid
               AND status = 'fechada'
@@ -492,11 +492,11 @@ export function registerRelatoriosRoutes(app: App) {
           sql`
             SELECT mesa_numero, AVG(subtotal)::float AS ticket_medio, COUNT(*)::integer AS comandas_fechadas
             FROM (
-              SELECT mesa_numero, GREATEST(subtotal, total) AS subtotal FROM comandas
+              SELECT mesa_numero, total AS subtotal FROM comandas
               WHERE restaurante_id = ${tenantId}::uuid AND status = 'fechada' AND mesa_numero IS NOT NULL
                 AND closed_at >= ${inicio.toISOString()}::timestamptz AND closed_at < ${fim.toISOString()}::timestamptz
               UNION ALL
-              SELECT mesa_numero, GREATEST(subtotal, total) AS subtotal FROM comandas_historico
+              SELECT mesa_numero, total AS subtotal FROM comandas_historico
               WHERE restaurante_id = ${tenantId}::uuid AND status = 'fechada' AND mesa_numero IS NOT NULL
                 AND closed_at >= ${inicio.toISOString()}::timestamptz AND closed_at < ${fim.toISOString()}::timestamptz
             ) t
