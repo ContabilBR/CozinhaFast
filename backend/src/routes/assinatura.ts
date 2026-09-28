@@ -13,55 +13,6 @@ export const PLANOS = {
   enterprise: { nome: "Enterprise", preco: 399.90, dias_trial: 0, max_mesas: 999, max_usuarios: 999 },
 };
 
-// === Asaas Integration ===
-const ASAAS_BASE_URL = process.env.ASAAS_ENV === "production" ? "https://api.asaas.com/api/v3" : "https://sandbox.asaas.com/api/v3";
-
-function getAsaasApiKey(): string {
-  const key = process.env.ASAAS_API_KEY;
-  if (!key) throw new Error("ASAAS_API_KEY não configurada");
-  return key;
-}
-
-async function asaasRequest(method: string, path: string, body?: any): Promise<any> {
-  const res = await fetch(ASAAS_BASE_URL + path, {
-    method,
-    headers: { "Content-Type": "application/json", "access_token": getAsaasApiKey() },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const data = await res.json();
-  if (!res.ok && res.status !== 422) {
-    throw new Error("Asaas API error " + res.status + ": " + JSON.stringify(data));
-  }
-  return data;
-}
-
-async function getOrCreateCustomer(restauranteId: string, email: string, cpfCnpj: string): Promise<string> {
-  const externalRef = `sub_${restauranteId}`;
-  const search = await asaasRequest("GET", "/customers?externalReference=" + externalRef);
-  if (search.data && search.data.length > 0) return search.data[0].id;
-
-  const customer = await asaasRequest("POST", "/customers", {
-    name: `Restaurante ${restauranteId}`,
-    email,
-    cpfCnpj,
-    externalReference: externalRef,
-  });
-  return customer.id;
-}
-
-async function createSubscription(customerId: string, valor: number, restauranteId: string): Promise<string> {
-  const hoje = new Date().toISOString().split("T")[0];
-  const subscription = await asaasRequest("POST", "/subscriptions", {
-    customer: customerId,
-    billingType: "UNDEFINED",
-    value: valor,
-    nextDueDate: hoje,
-    description: `Assinatura ${restauranteId}`,
-    externalReference: `sub_${restauranteId}`,
-  });
-  return subscription.id;
-}
-
 // === Middleware ===
 export async function checkAssinatura(app: App, restauranteId: string): Promise<boolean> {
   const db = app.db as any;
@@ -245,28 +196,19 @@ export function registerAssinaturaRoutes(app: App) {
 
         const valor = PLANOS[plano as keyof typeof PLANOS].preco;
 
-        try {
-          const customerId = await getOrCreateCustomer(restauranteId, email, cpf_cnpj);
-          const subscriptionId = await createSubscription(customerId, valor, restauranteId);
+        await db.update(schema.restaurante).set({
+          plano,
+          assinaturaStatus: "ativa",
+          trialExpiraEm: null,
+        }).where(eq(schema.restaurante.id, restauranteId));
 
-          await db.update(schema.restaurante).set({
-            plano,
-            assinaturaStatus: "ativa",
-            assinaturaAsaasId: subscriptionId,
-            trialExpiraEm: null,
-          }).where(eq(schema.restaurante.id, restauranteId));
-
-          app.logger.info({ restauranteId, plano, subscriptionId }, "Subscription upgraded successfully");
-          return reply.code(200).send({
-            success: true,
-            plano,
-            assinatura_id: subscriptionId,
-            valor_mensal: valor,
-          });
-        } catch (err) {
-          app.logger.error({ err: (err as any).message }, "Erro ao criar assinatura no Asaas");
-          return reply.code(502).send({ error: "Erro ao processar assinatura. Verifique sua conexão com o serviço de pagamento." });
-        }
+        app.logger.info({ restauranteId, plano }, "Subscription upgraded successfully");
+        return reply.code(200).send({
+          success: true,
+          plano,
+          assinatura_id: null,
+          valor_mensal: valor,
+        });
       } catch (err) {
         app.logger.error({ err }, "Erro ao fazer upgrade");
         return reply.code(500).send({ error: "Erro interno do servidor" });
@@ -309,18 +251,6 @@ export function registerAssinaturaRoutes(app: App) {
 
         const rest = await db.select().from(schema.restaurante).where(eq(schema.restaurante.id, restauranteId));
         if (!rest.length) return reply.code(404).send({ error: "Restaurante não encontrado" });
-
-        const restaurante = rest[0];
-        if (!restaurante.assinaturaAsaasId) {
-          return reply.code(400).send({ error: "Nenhuma assinatura ativa para cancelar" });
-        }
-
-        // Try to cancel in Asaas but don't fail if it doesn't work
-        try {
-          await asaasRequest("DELETE", "/subscriptions/" + restaurante.assinaturaAsaasId);
-        } catch (err) {
-          app.logger.warn({ err: (err as any).message }, "Erro ao cancelar assinatura no Asaas");
-        }
 
         await db.update(schema.restaurante).set({
           assinaturaStatus: "cancelada",

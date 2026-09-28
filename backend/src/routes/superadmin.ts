@@ -33,6 +33,11 @@ interface UpdateRestauranteStatusBody {
   ativo: boolean;
 }
 
+interface UpdateRestauranteAssinaturaBody {
+  plano?: "trial" | "basico" | "profissional" | "enterprise";
+  assinatura_status?: "trial" | "ativa" | "inadimplente" | "cancelada" | "expirada";
+}
+
 export function registerSuperAdminRoutes(app: App) {
   // GET /api/superadmin/restaurantes - List all restaurants (Super Admin only)
   app.fastify.get<{}>(
@@ -436,6 +441,113 @@ export function registerSuperAdminRoutes(app: App) {
         return reply.code(200).send({ success: true, ativo });
       } catch (err) {
         app.logger.error({ err, restauranteId: id }, "Failed to update restaurant status");
+        throw err;
+      }
+    }
+  );
+
+  // PATCH /api/superadmin/restaurantes/:id/assinatura - Update restaurant subscription (Super Admin only)
+  app.fastify.patch<{
+    Params: { id: string };
+    Body: UpdateRestauranteAssinaturaBody;
+  }>(
+    "/api/superadmin/restaurantes/:id/assinatura",
+    {
+      schema: {
+        description: "Update restaurant subscription plan and status (Super Admin only)",
+        tags: ["superadmin"],
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: {
+            id: { type: "string", format: "uuid" },
+          },
+        },
+        body: {
+          type: "object",
+          properties: {
+            plano: { type: "string", enum: ["trial", "basico", "profissional", "enterprise"], nullable: true },
+            assinatura_status: { type: "string", enum: ["trial", "ativa", "inadimplente", "cancelada", "expirada"], nullable: true },
+          },
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              plano: { type: "string", nullable: true },
+              assinatura_status: { type: "string", nullable: true },
+            },
+          },
+          400: { type: "object", properties: { error: { type: "string" } } },
+          401: { type: "object", properties: { error: { type: "string" } } },
+          403: { type: "object", properties: { error: { type: "string" } } },
+          404: { type: "object", properties: { error: { type: "string" } } },
+        },
+      },
+    },
+    async (
+      request: FastifyRequest<{
+        Params: { id: string };
+        Body: UpdateRestauranteAssinaturaBody;
+      }>,
+      reply: FastifyReply
+    ) => {
+      const { id } = request.params;
+      const { plano, assinatura_status } = request.body;
+
+      app.logger.info(
+        { restauranteId: id, plano, assinatura_status },
+        "PATCH /api/superadmin/restaurantes/:id/assinatura - Updating restaurant subscription"
+      );
+
+      // Verify authentication and super admin status
+      const isAuth = await verifyAndAttachUser(app, request, reply);
+      if (!isAuth) return;
+
+      if (!requireSuperAdmin(request, reply)) return;
+
+      try {
+        // Check if at least one field is provided
+        if (plano === undefined && assinatura_status === undefined) {
+          app.logger.warn({ restauranteId: id }, "No fields provided for update");
+          return reply.code(400).send({ error: "Nenhum campo para atualizar" });
+        }
+
+        // Check if restaurant exists
+        const restaurantes = await app.db
+          .select()
+          .from(schema.restaurante)
+          .where(eq(schema.restaurante.id, id as any));
+
+        if (restaurantes.length === 0) {
+          app.logger.warn({ restauranteId: id }, "Restaurant not found");
+          return reply.code(404).send({ error: "Restaurant not found" });
+        }
+
+        // Build update object with only provided fields
+        const updates: any = {};
+        if (plano !== undefined) updates.plano = plano;
+        if (assinatura_status !== undefined) updates.assinaturaStatus = assinatura_status;
+
+        // Update restaurant record
+        await app.db
+          .update(schema.restaurante)
+          .set(updates)
+          .where(eq(schema.restaurante.id, id as any));
+
+        app.logger.info(
+          { restauranteId: id, plano, assinatura_status },
+          "Restaurant subscription updated successfully"
+        );
+
+        return reply.code(200).send({
+          success: true,
+          plano: plano ?? null,
+          assinatura_status: assinatura_status ?? null,
+        });
+      } catch (err) {
+        app.logger.error({ err, restauranteId: id }, "Failed to update restaurant subscription");
         throw err;
       }
     }

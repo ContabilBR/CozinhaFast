@@ -2227,6 +2227,112 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 403, 404);
   });
 
+  test("Update restaurant subscription as regular user returns 403", async () => {
+    const res = await authenticatedApi(
+      "/api/superadmin/restaurantes/00000000-0000-0000-0000-000000000000/assinatura",
+      authToken,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plano: "basico" }),
+      }
+    );
+    await expectStatus(res, 403);
+  });
+
+  test("Update restaurant subscription without authentication returns 401", async () => {
+    const res = await api(
+      "/api/superadmin/restaurantes/00000000-0000-0000-0000-000000000000/assinatura",
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plano: "basico" }),
+      }
+    );
+    await expectStatus(res, 401);
+  });
+
+  test("Update restaurant subscription with plano returns 200 or 404 or 403", async () => {
+    const res = await authenticatedApi(
+      "/api/superadmin/restaurantes/00000000-0000-0000-0000-000000000000/assinatura",
+      adminToken,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plano: "profissional" }),
+      }
+    );
+    await expectStatus(res, 200, 403, 404);
+  });
+
+  test("Update restaurant subscription with status returns 200 or 404 or 403", async () => {
+    const res = await authenticatedApi(
+      "/api/superadmin/restaurantes/00000000-0000-0000-0000-000000000000/assinatura",
+      adminToken,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assinatura_status: "ativa" }),
+      }
+    );
+    await expectStatus(res, 200, 403, 404);
+  });
+
+  test("Update restaurant subscription with both plano and status returns 200 or 404 or 403", async () => {
+    const res = await authenticatedApi(
+      "/api/superadmin/restaurantes/00000000-0000-0000-0000-000000000000/assinatura",
+      adminToken,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          plano: "enterprise",
+          assinatura_status: "inadimplente",
+        }),
+      }
+    );
+    await expectStatus(res, 200, 403, 404);
+  });
+
+  test("Update subscription for non-existent restaurant returns 404 or 403", async () => {
+    const res = await authenticatedApi(
+      "/api/superadmin/restaurantes/00000000-0000-0000-0000-000000000000/assinatura",
+      adminToken,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plano: "basico" }),
+      }
+    );
+    await expectStatus(res, 403, 404);
+  });
+
+  test("Update restaurant subscription with invalid plano returns 400 or 403", async () => {
+    const res = await authenticatedApi(
+      "/api/superadmin/restaurantes/00000000-0000-0000-0000-000000000000/assinatura",
+      adminToken,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plano: "invalid_plan" }),
+      }
+    );
+    await expectStatus(res, 400, 403, 404);
+  });
+
+  test("Update restaurant subscription with invalid status returns 400 or 403", async () => {
+    const res = await authenticatedApi(
+      "/api/superadmin/restaurantes/00000000-0000-0000-0000-000000000000/assinatura",
+      adminToken,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assinatura_status: "invalid_status" }),
+      }
+    );
+    await expectStatus(res, 400, 403, 404);
+  });
+
   // ==================== Webhooks ====================
   test("Post Asaas webhook subscription returns 200 or 204", async () => {
     const res = await api("/api/webhooks/asaas/assinatura", {
