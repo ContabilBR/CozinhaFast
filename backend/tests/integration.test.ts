@@ -356,7 +356,7 @@ describe("API Integration Tests", () => {
   });
 
   test("Update categoria returns 200", async () => {
-    const res = await authenticatedApi(`/api/categorias/${testCategoryId}`, authToken, {
+    const res = await authenticatedApi(`/api/categorias/${testCategoryId}`, adminToken, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ nome: "Updated Category" }),
@@ -367,7 +367,7 @@ describe("API Integration Tests", () => {
   test("Update non-existent categoria returns 404", async () => {
     const res = await authenticatedApi(
       "/api/categorias/00000000-0000-0000-0000-000000000000",
-      authToken,
+      adminToken,
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },

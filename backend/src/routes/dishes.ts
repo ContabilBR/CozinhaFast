@@ -884,13 +884,14 @@ export function registerDishRoutes(app: App) {
       if (!requireRole(authUser, ["administrador", "gerente", "cozinheiro"], reply)) return;
 
       try {
+        const restauranteId = requireTenant(authUser);
         app.logger.info({ pratoId: request.params.id }, "Uploading prato photo");
 
         // Check if prato exists first
         const existing = await app.db
           .select()
           .from(schema.pratos)
-          .where(eq(schema.pratos.id, request.params.id));
+          .where(and(eq(schema.pratos.id, request.params.id), eq(schema.pratos.restauranteId, restauranteId)));
 
         if (!existing.length) {
           app.logger.warn({ pratoId: request.params.id }, "Prato not found");

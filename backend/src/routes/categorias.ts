@@ -195,13 +195,16 @@ export function registerCategoriasRoutes(app: App) {
       const authUser = await customRequireAuth(app, request, reply);
       if (!authUser) return;
 
+      if (!requireRole(authUser, ["administrador", "gerente"], reply)) return;
+
       try {
+        const restauranteId = requireTenant(authUser);
         app.logger.info({ categoriaId: request.params.id }, "Updating categoria");
 
         const existing = await app.db
           .select()
           .from(schema.categorias)
-          .where(eq(schema.categorias.id, request.params.id));
+          .where(and(eq(schema.categorias.id, request.params.id), eq(schema.categorias.restauranteId, restauranteId)));
 
         if (!existing.length) {
           return reply.code(404).send({ error: "Categoria not found" });
@@ -267,13 +270,14 @@ export function registerCategoriasRoutes(app: App) {
       if (!requireRole(authUser, ["administrador", "gerente"], reply)) return;
 
       try {
+        const restauranteId = requireTenant(authUser);
         app.logger.info({ categoriaId: request.params.id }, "Deleting categoria");
 
         // Check if categoria exists
         const existing = await app.db
           .select()
           .from(schema.categorias)
-          .where(eq(schema.categorias.id, request.params.id));
+          .where(and(eq(schema.categorias.id, request.params.id), eq(schema.categorias.restauranteId, restauranteId)));
 
         if (!existing.length) {
           app.logger.warn({ categoriaId: request.params.id }, "Categoria not found");

@@ -9,6 +9,7 @@ describe("Tenant Isolation Tests", () => {
   let mesaAId: string;
   let pratoAId: string;
   let comandaAId: string;
+  let categoriaAId: string;
 
   // Create first restaurant with admin user
   test("Create restaurant A with admin user", async () => {
@@ -88,6 +89,7 @@ describe("Tenant Isolation Tests", () => {
     expect(catRes.status).toBe(201);
     const catData = await catRes.json();
     const categoriaId = catData.id;
+    categoriaAId = categoriaId;
 
     const pratoRes = await api("/api/pratos", {
       method: "POST",
@@ -347,5 +349,40 @@ describe("Tenant Isolation Tests", () => {
     const comandas = data.comandas || [];
     // Should not contain comanda from restaurant A
     expect(!comandas.some((c: any) => c.id === comandaAId)).toBe(true);
+  });
+
+  it("Restaurant B cannot PUT categoria from restaurant A", async () => {
+    const res = await fetch(`http://localhost:3001/api/categorias/${categoriaAId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenB}` },
+      body: JSON.stringify({ nome: "Tentativa B" }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("Restaurant B cannot DELETE categoria from restaurant A", async () => {
+    const res = await fetch(`http://localhost:3001/api/categorias/${categoriaAId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${tokenB}` },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("Restaurant B cannot POST foto to prato from restaurant A", async () => {
+    const res = await fetch(`http://localhost:3001/api/pratos/${pratoAId}/foto`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenB}` },
+      body: JSON.stringify({ imagem_base64: "data:image/png;base64,abc" }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("Restaurant A can still PUT its own categoria", async () => {
+    const res = await fetch(`http://localhost:3001/api/categorias/${categoriaAId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenA}` },
+      body: JSON.stringify({ nome: "Categoria A Atualizada" }),
+    });
+    expect(res.status).toBe(200);
   });
 });
