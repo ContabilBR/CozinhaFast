@@ -100,8 +100,8 @@ export function registerOrderRoutes(app: App) {
             c.status,
             c.created_at,
             c.closed_at,
-            COUNT(p.id)::integer AS item_count,
-            COALESCE(SUM(p.quantidade * p.preco_unitario), 0) as total
+            COUNT(p.id) FILTER (WHERE p.status <> 'cancelado')::integer AS item_count,
+            COALESCE(SUM(p.quantidade * p.preco_unitario) FILTER (WHERE p.status <> 'cancelado'), 0) as total
           FROM comandas c
           LEFT JOIN mesas m ON m.id = c.mesa_id
           LEFT JOIN pedidos p ON p.comanda_id = c.id
@@ -293,7 +293,7 @@ export function registerOrderRoutes(app: App) {
             // Update comanda total to ensure consistency with pedidos
             await tx
               .execute(sql`UPDATE comandas SET total = (
-                SELECT COALESCE(SUM(quantidade * preco_unitario), 0) FROM pedidos WHERE comanda_id = ${newComanda.id}
+                SELECT COALESCE(SUM(quantidade * preco_unitario) FILTER (WHERE status <> 'cancelado'), 0) FROM pedidos WHERE comanda_id = ${newComanda.id}
               ) WHERE id = ${newComanda.id}`);
           }
 
@@ -606,7 +606,7 @@ export function registerOrderRoutes(app: App) {
         // Recalculate total: SUM(quantidade * preco_unitario)
         const subtotalResult = await app.db
           .select({
-            subtotal: sql<string>`COALESCE(SUM(quantidade * preco_unitario), 0)`,
+            subtotal: sql<string>`COALESCE(SUM(quantidade * preco_unitario) FILTER (WHERE status <> 'cancelado'), 0)`,
           })
           .from(schema.pedidos)
           .where(eq(schema.pedidos.comandaId, comandaId));
@@ -1144,7 +1144,7 @@ export function registerOrderRoutes(app: App) {
             c.created_at AS comanda_created_at,
             COALESCE(u.name, us.nome, 'Garçom') AS garcom_nome,
             COALESCE(u.email, us.email) AS garcom_email,
-            COALESCE(SUM(p.quantidade * p.preco_unitario), 0)::float as total
+            COALESCE(SUM(p.quantidade * p.preco_unitario) FILTER (WHERE p.status <> 'cancelado'), 0)::float as total
           FROM comandas c
           LEFT JOIN "user" u ON u.id = c.garcom_id
           LEFT JOIN usuarios us ON us.id::text = c.garcom_id
@@ -1649,7 +1649,9 @@ export function registerOrderRoutes(app: App) {
 
           // Get pedidos for this comanda
           const comandaPedidos = pedidosByComandaId.get(row.id) || [];
-          const totalItens = comandaPedidos.reduce((sum, p) => sum + (Number(p.quantidade) || 0), 0);
+          const totalItens = comandaPedidos
+            .filter((p) => p.status !== "cancelado")
+            .reduce((sum, p) => sum + (Number(p.quantidade) || 0), 0);
 
           return {
             id: row.id,
