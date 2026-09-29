@@ -25,13 +25,16 @@
  *  - comandas de delivery são recusadas (o delivery terá fluxo de encerramento próprio:
  *    apagar a comanda apagaria a entrega por cascade, e não existe histórico de entregas).
  *
- * AINDA COMO NA ETAPA A (corrigido em etapa futura):
- *  - o total é a soma de TODOS os pedidos, inclusive cancelados.
+ * ETAPA C (cancelamento de item):
+ *  - o total ignora pedidos cancelados (ver services/total-comanda.ts): item cancelado não é venda;
+ *  - o recibo (itens) não lista itens cancelados, mas o histórico de pedidos guarda TODOS,
+ *    inclusive os cancelados, com motivo, quem cancelou e se foi após o início (perda).
  */
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import * as schema from "../db/schema/schema.js";
 import type { App } from "../index.js";
 import { realtimeHub } from "../realtime/hub.js";
+import { subtotalDaComanda } from "./total-comanda.js";
 
 export interface QuemFechou {
   id: string;
@@ -133,13 +136,7 @@ export async function fecharComanda(
       }
 
       // 4) Subtotal calculado a partir dos pedidos
-      const subtotalResult = await tx
-        .select({
-          total: sql<string>`COALESCE(SUM(${schema.pedidos.quantidade} * CAST(${schema.pedidos.precoUnitario} AS DECIMAL(10,2))), 0)`,
-        })
-        .from(schema.pedidos)
-        .where(eq(schema.pedidos.comandaId, comandaId));
-      const subtotal = parseFloat(subtotalResult[0]?.total ?? "0");
+      const subtotal = await subtotalDaComanda(tx, comandaId);
       app.logger.info({ comandaId, subtotalCalculated: subtotal }, "Subtotal dynamically calculated from pedidos");
       const totalFinal = subtotal + gorjetaValue;
 
@@ -157,13 +154,23 @@ export async function fecharComanda(
           observacao: schema.pedidos.observacao,
           status: schema.pedidos.status,
           createdAt: schema.pedidos.createdAt,
+          canceladoEm: schema.pedidos.canceladoEm,
+          canceladoPorId: schema.pedidos.canceladoPorId,
+          canceladoPorNome: schema.pedidos.canceladoPorNome,
+          canceladoPorRole: schema.pedidos.canceladoPorRole,
+          motivoCancelamento: schema.pedidos.motivoCancelamento,
+          motivoCancelamentoDetalhe: schema.pedidos.motivoCancelamentoDetalhe,
+          canceladoAposInicio: schema.pedidos.canceladoAposInicio,
           pratoNome: schema.pratos.nome,
         })
         .from(schema.pedidos)
         .leftJoin(schema.pratos, eq(schema.pedidos.pratoId, schema.pratos.id))
         .where(eq(schema.pedidos.comandaId, comandaId));
 
-      const itens: ItemFechado[] = pedidos.map((p: any) => ({
+      // O recibo lista só o que foi vendido: itens cancelados ficam de fora
+      const itens: ItemFechado[] = pedidos
+        .filter((p: any) => p.status !== "cancelado")
+        .map((p: any) => ({
         prato_nome: p.pratoNome || "N/A",
         quantidade: p.quantidade,
         preco_unitario: parseFloat(p.precoUnitario || "0"),
@@ -223,6 +230,13 @@ export async function fecharComanda(
             observacao: p.observacao,
             status: p.status,
             createdAt: p.createdAt,
+            canceladoEm: p.canceladoEm,
+            canceladoPorId: p.canceladoPorId,
+            canceladoPorNome: p.canceladoPorNome,
+            canceladoPorRole: p.canceladoPorRole,
+            motivoCancelamento: p.motivoCancelamento,
+            motivoCancelamentoDetalhe: p.motivoCancelamentoDetalhe,
+            canceladoAposInicio: p.canceladoAposInicio,
             archivedAt: closedAt,
             restauranteId,
           }))
