@@ -150,6 +150,15 @@ export const pedidos = pgTable("pedidos", {
   status: pedidoStatusEnum("status").default("pendente").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   restauranteId: uuid("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
+  // Cancelamento do item: preenchido só quando status = 'cancelado'.
+  // canceladoAposInicio = true quando o item já estava em preparo ou pronto (conta como perda, não como venda).
+  canceladoEm: timestamp("cancelado_em", { withTimezone: true }),
+  canceladoPorId: text("cancelado_por_id"),
+  canceladoPorNome: text("cancelado_por_nome"),
+  canceladoPorRole: text("cancelado_por_role"),
+  motivoCancelamento: text("motivo_cancelamento"),
+  motivoCancelamentoDetalhe: text("motivo_cancelamento_detalhe"),
+  canceladoAposInicio: boolean("cancelado_apos_inicio"),
 });
 
 // Pagamentos (Payments)
@@ -247,6 +256,13 @@ export const pedidosHistorico = pgTable("pedidos_historico", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   archivedAt: timestamp("archived_at", { withTimezone: true }).defaultNow().notNull(),
   restauranteId: uuid("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
+  canceladoEm: timestamp("cancelado_em", { withTimezone: true }),
+  canceladoPorId: text("cancelado_por_id"),
+  canceladoPorNome: text("cancelado_por_nome"),
+  canceladoPorRole: text("cancelado_por_role"),
+  motivoCancelamento: text("motivo_cancelamento"),
+  motivoCancelamentoDetalhe: text("motivo_cancelamento_detalhe"),
+  canceladoAposInicio: boolean("cancelado_apos_inicio"),
 });
 
 // Pagamentos Historico (Archived Payments)
