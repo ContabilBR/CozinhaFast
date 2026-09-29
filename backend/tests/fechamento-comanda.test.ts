@@ -2,10 +2,11 @@ import { describe, test, expect, beforeAll } from "bun:test";
 import { api, authenticatedApi, expectStatus } from "./helpers";
 
 // ---------------------------------------------------------------------------
-// Testes de caracterização do fechamento de comanda: POST /api/comandas/:id/fechar
+// Testes do fechamento de comanda: POST /api/comandas/:id/fechar
 //
-// Descrevem o comportamento ATUAL da rota. Não testam correções futuras (outro
-// restaurante, chamadas simultâneas, delivery, gorjeta negativa, itens cancelados).
+// Cenários 1 a 9: comportamento que a rota já tinha (Etapa A).
+// Cenários 10 a 14: correções da Etapa B (outro restaurante, chamadas simultâneas,
+// delivery e gorjeta negativa). Itens cancelados ainda entram no total (etapa futura).
 //
 // ISOLAMENTO DE DADOS
 // Estes testes rodam contra o banco real do ambiente e o fechamento grava linhas
@@ -16,7 +17,7 @@ import { api, authenticatedApi, expectStatus } from "./helpers";
 // - Não usamos signUpTestUser: ele coloca o usuário no primeiro restaurante do banco.
 // - Não registramos cleanupTestData: ele varre o restaurante padrão, não o de teste.
 // - A rota de signup de restaurante aceita no máximo 10 chamadas por hora por IP;
-//   este arquivo usa apenas uma.
+//   este arquivo usa duas (uma no beforeAll e outra no Cenário 10).
 // ---------------------------------------------------------------------------
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
@@ -50,6 +51,29 @@ async function criarUsuario(adminToken: string, role: "garcom" | "cozinheiro"): 
   const login = (await loginRes.json()) as any;
 
   return { token: login.token, id: login.user.id, nome: login.user.nome, role: login.user.role };
+}
+
+// Cria um restaurante exclusivo de teste pela rota de signup e devolve o token do administrador.
+async function criarRestauranteDeTeste(prefixo: string): Promise<string> {
+  const sufixo = Date.now();
+  const cnpj = `9${String(sufixo % 10000000).padStart(7, "0")}${Math.floor(Math.random() * 10000)
+    .toString()
+    .padStart(4, "0")}`;
+  const res = await api("/api/restaurantes/signup", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({
+      nome: `${prefixo} ${sufixo}`,
+      cnpj,
+      adminNome: "Admin Fechamento",
+      adminEmail: `admin-fechamento-${sufixo}-${Math.floor(Math.random() * 100000)}@test.com`,
+      adminSenha: SENHA,
+    }),
+  });
+  await expectStatus(res, 201);
+  const token = ((await res.json()) as any).token;
+  expect(token).toBeDefined();
+  return token;
 }
 
 describe("Fechamento de Comanda: POST /api/comandas/:id/fechar", () => {
@@ -91,24 +115,7 @@ describe("Fechamento de Comanda: POST /api/comandas/:id/fechar", () => {
   beforeAll(async () => {
     // Restaurante exclusivo de teste, com seu próprio administrador.
     const sufixo = Date.now();
-    const cnpj = `9${String(sufixo % 10000000).padStart(7, "0")}${Math.floor(Math.random() * 10000)
-      .toString()
-      .padStart(4, "0")}`;
-    const signupRes = await api("/api/restaurantes/signup", {
-      method: "POST",
-      headers: JSON_HEADERS,
-      body: JSON.stringify({
-        nome: `Teste Fechamento ${sufixo}`,
-        cnpj,
-        adminNome: "Admin Fechamento",
-        adminEmail: `admin-fechamento-${sufixo}@test.com`,
-        adminSenha: SENHA,
-      }),
-    });
-    await expectStatus(signupRes, 201);
-    const signup = (await signupRes.json()) as any;
-    adminToken = signup.token;
-    expect(adminToken).toBeDefined();
+    adminToken = await criarRestauranteDeTeste("Teste Fechamento");
 
     // Uma única mesa (número alto, fora da faixa de mesas reais) e um único prato.
     const mesaRes = await authenticatedApi("/api/mesas", adminToken, {
@@ -303,14 +310,14 @@ describe("Fechamento de Comanda: POST /api/comandas/:id/fechar", () => {
   // =========================================================================
   // Cenário 8: fechar uma comanda cancelada
   // =========================================================================
-  test("Cenário 8: fechar comanda cancelada retorna 400 com 'comanda não está aberta'", async () => {
+  test("Cenário 8: fechar comanda cancelada retorna 409 com 'comanda não está aberta'", async () => {
     const comandaId = await abrirComanda(25, 1);
 
     const cancelarRes = await authenticatedApi(`/api/comandas/${comandaId}/cancelar`, garcom.token, { method: "PUT" });
     await expectStatus(cancelarRes, 200);
 
     const res = await fechar(comandaId);
-    await expectStatus(res, 400);
+    await expectStatus(res, 409);
     expect(((await res.json()) as any).error).toBe("comanda não está aberta");
   });
 
@@ -327,5 +334,132 @@ describe("Fechamento de Comanda: POST /api/comandas/:id/fechar", () => {
     // A comanda continua aberta: liberamos a mesa.
     const cancelarRes = await authenticatedApi(`/api/comandas/${comandaId}/cancelar`, garcom.token, { method: "PUT" });
     await expectStatus(cancelarRes, 200);
+  });
+  // =========================================================================
+  // ETAPA B
+  // =========================================================================
+
+  // Cancela a comanda para liberar a mesa única para o cenário seguinte.
+  async function cancelarComanda(comandaId: string): Promise<void> {
+    const res = await authenticatedApi(`/api/comandas/${comandaId}/cancelar`, garcom.token, { method: "PUT" });
+    await expectStatus(res, 200);
+  }
+
+  // Cenário 10: comanda de outro restaurante
+  test("Cenário 10: administrador de outro restaurante não consegue fechar a comanda (404)", async () => {
+    const comandaId = await abrirComanda(30, 1);
+    const tokenOutroRestaurante = await criarRestauranteDeTeste("Teste Fechamento Outro");
+
+    const res = await fechar(comandaId, {}, tokenOutroRestaurante);
+    await expectStatus(res, 404);
+
+    // A comanda continua aberta, no restaurante de origem
+    const mesaComandaRes = await authenticatedApi(`/api/mesas/${mesaId}/comanda`, garcom.token);
+    await expectStatus(mesaComandaRes, 200);
+    const mesaComanda = (await mesaComandaRes.json()) as any;
+    expect(mesaComanda.comanda).not.toBeNull();
+    expect(mesaComanda.comanda.id).toBe(comandaId);
+
+    // E o histórico do restaurante de origem não ganhou a comanda
+    const historicoRes = await authenticatedApi("/api/historico", garcom.token);
+    await expectStatus(historicoRes, 200);
+    const historico = (await historicoRes.json()) as any[];
+    expect(historico.find((h: any) => h.id === comandaId)).toBeUndefined();
+
+    await cancelarComanda(comandaId);
+  });
+
+  // Cenário 11: chamadas simultâneas
+  test("Cenário 11: duas chamadas simultâneas fecham a comanda uma única vez, sem erro 500", async () => {
+    const comandaId = await abrirComanda(30, 1);
+
+    const [a, b] = await Promise.all([fechar(comandaId), fechar(comandaId)]);
+    const codigos = [a.status, b.status].sort((x, y) => x - y);
+
+    // Exatamente uma fecha; a outra é recusada (404 se chegou depois do fechamento, 409 se viu a comanda já fechada)
+    expect(codigos.filter((c) => c === 200).length).toBe(1);
+    expect(codigos.includes(500)).toBe(false);
+    const outro = codigos.find((c) => c !== 200) as number;
+    expect([404, 409]).toContain(outro);
+
+    // O histórico tem uma única linha dessa comanda
+    const historicoRes = await authenticatedApi("/api/historico", garcom.token);
+    await expectStatus(historicoRes, 200);
+    const historico = (await historicoRes.json()) as any[];
+    expect(historico.filter((h: any) => h.id === comandaId).length).toBe(1);
+  });
+
+  // Cenário 12: delivery
+  test("Cenário 12: comanda de delivery não fecha por esta rota (409) e continua existindo", async () => {
+    const deliveryRes = await authenticatedApi("/api/delivery/pedidos", adminToken, {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({
+        cliente_nome: "Cliente Teste",
+        cliente_telefone: "21999990000",
+        endereco: "Rua Teste, 1",
+        itens: [{ prato_id: pratoId, quantidade: 1 }],
+      }),
+    });
+    await expectStatus(deliveryRes, 201);
+
+    // O corpo do 201 não traz as propriedades da comanda (o schema da rota não as declara).
+    // Pegamos o id pela listagem de delivery, que neste restaurante de teste tem só este pedido.
+    const listaRes = await authenticatedApi("/api/delivery/pedidos", adminToken);
+    await expectStatus(listaRes, 200);
+    const lista = (await listaRes.json()) as any;
+    expect(lista.pedidos.length).toBe(1);
+    const comandaId: string = lista.pedidos[0].comanda.id;
+    expect(comandaId).toBeDefined();
+
+    const res = await fechar(comandaId);
+    await expectStatus(res, 409);
+    expect(((await res.json()) as any).error).toBe("Comandas de delivery não são fechadas por esta rota.");
+
+    // A comanda continua existindo...
+    const comandaRes = await authenticatedApi(`/api/comandas/${comandaId}`, garcom.token);
+    await expectStatus(comandaRes, 200);
+    expect(((await comandaRes.json()) as any).id).toBe(comandaId);
+
+    // ...e a entrega também (apagar a comanda a apagaria por cascade)
+    const listaDepoisRes = await authenticatedApi("/api/delivery/pedidos", adminToken);
+    await expectStatus(listaDepoisRes, 200);
+    const listaDepois = (await listaDepoisRes.json()) as any;
+    expect(listaDepois.pedidos.length).toBe(1);
+    expect(listaDepois.pedidos[0].comanda.id).toBe(comandaId);
+  });
+
+  // Cenário 13: gorjeta negativa no fechamento
+  test("Cenário 13: gorjeta negativa no fechamento retorna 400 e não altera nada", async () => {
+    const comandaId = await abrirComanda(30, 1);
+
+    const res = await fechar(comandaId, { gorjeta: -5 });
+    await expectStatus(res, 400);
+
+    // A comanda continua aberta
+    const mesaComandaRes = await authenticatedApi(`/api/mesas/${mesaId}/comanda`, garcom.token);
+    await expectStatus(mesaComandaRes, 200);
+    const mesaComanda = (await mesaComandaRes.json()) as any;
+    expect(mesaComanda.comanda).not.toBeNull();
+    expect(mesaComanda.comanda.id).toBe(comandaId);
+
+    await cancelarComanda(comandaId);
+  });
+
+  // Cenário 14: gorjeta negativa no registro de pagamento
+  test("Cenário 14: gorjeta negativa no registro de pagamento retorna 400 e o pagamento não é gravado", async () => {
+    const comandaId = await abrirComanda(30, 1);
+
+    const pagamentoRes = await authenticatedApi(`/api/comandas/${comandaId}/pagamentos`, garcom.token, {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ forma_pagamento: "dinheiro", valor: 10, gorjeta: -5 }),
+    });
+    await expectStatus(pagamentoRes, 400);
+
+    // Se o pagamento de 10 tivesse sido gravado, o fechamento (total 30) falharia com "Total pago".
+    // Fechar com sucesso prova que nada foi gravado, e libera a mesa.
+    const res = await fechar(comandaId);
+    await expectStatus(res, 200);
   });
 });
