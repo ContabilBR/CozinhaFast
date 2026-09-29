@@ -238,7 +238,7 @@ init()
 
           // Recalculate subtotal via SQL aggregation
           const subtotalResult = await tx.select({
-            subtotal: sql<string>`COALESCE(SUM(quantidade * preco_unitario), 0)`,
+            subtotal: sql<string>`COALESCE(SUM(quantidade * preco_unitario) FILTER (WHERE status <> 'cancelado'), 0)`,
           }).from(schema.pedidos).where(eq(schema.pedidos.comandaId, comanda.id));
 
           const subtotalValue = subtotalResult[0]?.subtotal || "0";
