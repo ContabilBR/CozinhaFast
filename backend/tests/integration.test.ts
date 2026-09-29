@@ -1349,6 +1349,178 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 201, 404);
   });
 
+  test("Cancel pedido returns 200 or 403 or 404 or 409", async () => {
+    // Create test prato
+    const pratoRes = await authenticatedApi("/api/pratos", adminToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nome: `Cancel Pedido Prato ${Date.now()}`,
+        preco: "18.99",
+      }),
+    });
+    await expectStatus(pratoRes, 201);
+    const pratoData = await pratoRes.json();
+
+    // Create mesa and comanda
+    const mesaRes = await authenticatedApi("/api/mesas", adminToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        numero: Math.floor(Math.random() * 900000) + 100000,
+      }),
+    });
+    await expectStatus(mesaRes, 201);
+    const mesaData = await mesaRes.json();
+
+    const comandaRes = await authenticatedApi("/api/comandas", authToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mesaId: mesaData.id }),
+    });
+    await expectStatus(comandaRes, 201);
+    const comandaData = await comandaRes.json();
+
+    // Add pedido to comanda
+    const pedidosRes = await authenticatedApi(
+      `/api/comandas/${comandaData.comanda.id}/pedidos`,
+      authToken,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: [
+            {
+              prato_id: pratoData.prato.id,
+              quantidade: 2,
+              preco_unitario: 18.99,
+              observacao: "Test observation",
+            },
+          ],
+        }),
+      }
+    );
+    await expectStatus(pedidosRes, 201);
+    const pedidosData = await pedidosRes.json();
+    const cancelPedidoId = pedidosData.pedidos[0].id;
+
+    // Cancel the pedido
+    const res = await authenticatedApi(
+      `/api/pedidos/${cancelPedidoId}/cancelar`,
+      authToken,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          motivo: "cliente_desistiu",
+          detalhe: "Customer changed their mind",
+        }),
+      }
+    );
+    await expectStatus(res, 200, 403, 404, 409);
+    if (res.status === 200) {
+      const data = await res.json();
+      expect(data.success).toBeDefined();
+      expect(data.id).toBeDefined();
+    }
+  });
+
+  test("Cancel pedido without motivo returns 400", async () => {
+    const res = await authenticatedApi(
+      "/api/pedidos/00000000-0000-0000-0000-000000000000/cancelar",
+      authToken,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ detalhe: "Missing motivo" }),
+      }
+    );
+    await expectStatus(res, 400);
+  });
+
+  test("Cancel pedido with erro_lancamento motivo returns 200 or 403 or 404 or 409", async () => {
+    // Create test prato
+    const pratoRes = await authenticatedApi("/api/pratos", adminToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nome: `Erro Lancamento Prato ${Date.now()}`,
+        preco: "22.00",
+      }),
+    });
+    await expectStatus(pratoRes, 201);
+    const pratoData = await pratoRes.json();
+
+    // Create mesa and comanda
+    const mesaRes = await authenticatedApi("/api/mesas", adminToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        numero: Math.floor(Math.random() * 900000) + 100000,
+      }),
+    });
+    await expectStatus(mesaRes, 201);
+    const mesaData = await mesaRes.json();
+
+    const comandaRes = await authenticatedApi("/api/comandas", authToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mesaId: mesaData.id }),
+    });
+    await expectStatus(comandaRes, 201);
+    const comandaData = await comandaRes.json();
+
+    // Add pedido to comanda
+    const pedidosRes = await authenticatedApi(
+      `/api/comandas/${comandaData.comanda.id}/pedidos`,
+      authToken,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: [
+            {
+              prato_id: pratoData.prato.id,
+              quantidade: 1,
+              preco_unitario: 22.00,
+            },
+          ],
+        }),
+      }
+    );
+    await expectStatus(pedidosRes, 201);
+    const pedidosData = await pedidosRes.json();
+    const pedidoId = pedidosData.pedidos[0].id;
+
+    // Cancel with erro_lancamento motivo
+    const res = await authenticatedApi(
+      `/api/pedidos/${pedidoId}/cancelar`,
+      authToken,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          motivo: "erro_lancamento",
+          detalhe: "Ordered wrong dish",
+        }),
+      }
+    );
+    await expectStatus(res, 200, 403, 404, 409);
+  });
+
+  test("Cancel non-existent pedido returns 404", async () => {
+    const res = await authenticatedApi(
+      "/api/pedidos/00000000-0000-0000-0000-000000000000/cancelar",
+      authToken,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ motivo: "cliente_desistiu" }),
+      }
+    );
+    await expectStatus(res, 404);
+  });
+
   // ==================== Kitchen Display ====================
   test("Get all comandas for kitchen display returns 200 or 500", async () => {
     const res = await authenticatedApi("/api/cozinha/comandas", authToken);
