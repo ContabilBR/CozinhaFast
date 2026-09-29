@@ -17,6 +17,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { apiGet, apiPost } from '@/utils/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useColors } from '@/hooks/useColors';
+import { CancelarItemModal } from '@/components/CancelarItemModal';
+import { cancelarItem, permissaoCancelarItem, subtotalItensAtivos } from '@/utils/cancelamento';
 
 type Prato = {
   id: string;
@@ -147,6 +149,7 @@ export default function ComandaDetailScreen() {
   const [comanda, setComanda] = useState<Comanda | null>(null);
   const [pratos, setPratos] = useState<Prato[]>([]);
   const [pedidosEnviados, setPedidosEnviados] = useState<Pedido[]>([]);
+  const [itemParaCancelar, setItemParaCancelar] = useState<{ id: string; nome: string; aposInicio: boolean } | null>(null);
   const [stagedItems, setStagedItems] = useState<StagedItem[]>([]);
   const [activeTab, setActiveTab] = useState<'cardapio' | 'pedido'>('cardapio');
   const [loading, setLoading] = useState(true);
@@ -342,10 +345,8 @@ export default function ComandaDetailScreen() {
     }
   };
 
-  const total = pedidosEnviados.reduce(
-    (sum, p) => sum + p.quantidade * Number(p.preco_unitario),
-    0
-  );
+  // Item cancelado não é venda: fica fora do total
+  const total = subtotalItensAtivos(pedidosEnviados);
   const totalDisplay = `R$ ${total.toFixed(2).replace(".", ",")}`;
   console.log("[ComandaDetail] total calculado:", totalDisplay, "— pedidos:", pedidosEnviados.length);
 
@@ -353,6 +354,48 @@ export default function ComandaDetailScreen() {
   const headerTitle = `Comanda — Mesa ${mesaNum}`;
 
   const canFechar = comanda?.status === 'aberta' && pedidosEnviados.length > 0;
+
+  // Botão de cancelar item (ou cadeado quando o item já iniciou e o perfil não pode cancelar)
+  const renderAcaoCancelar = (p: Pedido, pratoNome: string) => {
+    const permissao = permissaoCancelarItem(user?.role, p.status);
+    if (permissao.pode) {
+      return (
+        <Pressable
+          onPress={() => setItemParaCancelar({ id: p.id, nome: pratoNome, aposInicio: permissao.aposInicio })}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={{ marginLeft: 8, padding: 2 }}
+        >
+          <Ionicons name="close-circle-outline" size={24} color="#ef4444" />
+        </Pressable>
+      );
+    }
+    if (permissao.aposInicio) {
+      return (
+        <Pressable
+          onPress={() => Alert.alert('Cancelamento não permitido', permissao.motivoNegado ?? '')}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={{ marginLeft: 8, padding: 2 }}
+        >
+          <Ionicons name="lock-closed-outline" size={20} color="#9ca3af" />
+        </Pressable>
+      );
+    }
+    return null;
+  };
+
+  const modalCancelarItem = (
+    <CancelarItemModal
+      visible={itemParaCancelar !== null}
+      pratoNome={itemParaCancelar?.nome ?? ''}
+      aposInicio={itemParaCancelar?.aposInicio ?? false}
+      onClose={() => setItemParaCancelar(null)}
+      onConfirm={async (motivo, detalhe) => {
+        if (!itemParaCancelar) return;
+        await cancelarItem(itemParaCancelar.id, motivo, detalhe);
+        await fetchData();
+      }}
+    />
+  );
 
   const pratoCategories = useMemo(() => {
     const names = new Set<string>();
@@ -458,6 +501,7 @@ export default function ComandaDetailScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
         <NavBar title={headerTitle} />
+        {modalCancelarItem}
 
         <ScrollView contentContainerStyle={mgStyles.scrollContent}>
           {/* Header card */}
@@ -516,7 +560,7 @@ export default function ComandaDetailScreen() {
               return (
                 <View key={p.id} style={mgStyles.pedidoCard}>
                   <View style={{ flex: 1 }}>
-                    <Text style={mgStyles.pedidoNome}>{pratoNome}</Text>
+                    <Text style={[mgStyles.pedidoNome, p.status === 'cancelado' && { textDecorationLine: 'line-through', color: '#9ca3af' }]}>{pratoNome}</Text>
                     <Text style={mgStyles.pedidoQty}>{linhaPreco}</Text>
                     {p.observacao ? (
                       <Text style={mgStyles.pedidoObs}>{p.observacao}</Text>
@@ -525,6 +569,7 @@ export default function ComandaDetailScreen() {
                   <View style={[mgStyles.pedidoStatusBadge, { backgroundColor: pedidoStatusColor }]}>
                     <Text style={mgStyles.pedidoStatusText}>{pedidoStatusLabel}</Text>
                   </View>
+                  {renderAcaoCancelar(p, pratoNome)}
                 </View>
               );
             })
@@ -562,6 +607,7 @@ export default function ComandaDetailScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <NavBar title={headerTitle} />
+      {modalCancelarItem}
 
       {/* Tab bar */}
       <View style={styles.tabBar}>
@@ -746,7 +792,7 @@ export default function ComandaDetailScreen() {
                 return (
                   <View key={p.id} style={styles.pedidoCard}>
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.pedidoNome, { fontWeight: '700' }]}>
+                      <Text style={[styles.pedidoNome, { fontWeight: '700' }, p.status === 'cancelado' && { textDecorationLine: 'line-through', color: '#9ca3af' }]}>
                         {pratoNome}
                       </Text>
                       <Text style={styles.pedidoObs}>{qtyPreco}</Text>
@@ -757,6 +803,7 @@ export default function ComandaDetailScreen() {
                     <View style={[styles.statusBadge, { backgroundColor: statusColor(p.status) }]}>
                       <Text style={styles.statusText}>{p.status}</Text>
                     </View>
+                    {renderAcaoCancelar(p, pratoNome)}
                   </View>
                 );
               })
@@ -1125,5 +1172,3 @@ const mgStyles = StyleSheet.create({
     fontFamily: 'Outfit_700Bold',
   },
 });
-
-
