@@ -11,6 +11,7 @@ import {
   Platform,
   UIManager,
   TouchableOpacity,
+  Pressable,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
@@ -31,7 +32,7 @@ import {
   Check,
   Play,
 } from "lucide-react-native";
-import { useRealtime, type RealtimeStatus } from "@/hooks/useRealtime";
+import { useRealtime, type RealtimeStatus, type RealtimeEvent } from "@/hooks/useRealtime";
 import { useKeepAwake } from "expo-keep-awake";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -735,10 +736,25 @@ export default function CozinhaScreen() {
     }
   }, []);
 
+  // Aviso de item cancelado (o item some da fila sozinho; o aviso diz à cozinha para parar o preparo)
+  const [avisoCancelamento, setAvisoCancelamento] = useState<{ texto: string; aposInicio: boolean } | null>(null);
+  const avisoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Debounce ref for grouping rapid realtime events
   const realtimeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleRealtimeEvent = useCallback(() => {
+  const handleRealtimeEvent = useCallback((event?: RealtimeEvent) => {
+    if (event?.type === "pedido.status_changed" && event.payload?.status === "cancelado") {
+      const mesa = event.payload.mesa_numero ?? "?";
+      const prato = event.payload.prato_nome ?? "item";
+      const aposInicio = event.payload.cancelado_apos_inicio === true;
+      setAvisoCancelamento({
+        texto: `Mesa ${mesa}: ${prato} foi cancelado.${aposInicio ? " Pare o preparo." : ""}`,
+        aposInicio,
+      });
+      if (avisoTimerRef.current) clearTimeout(avisoTimerRef.current);
+      avisoTimerRef.current = setTimeout(() => setAvisoCancelamento(null), 15000);
+    }
     if (realtimeDebounceRef.current) clearTimeout(realtimeDebounceRef.current);
     realtimeDebounceRef.current = setTimeout(() => {
       console.log("[Cozinha] Realtime event — refreshing comandas");
@@ -1124,6 +1140,30 @@ export default function CozinhaScreen() {
           )}
         </>
       )}
+
+      {/* Aviso de item cancelado */}
+      {avisoCancelamento ? (
+        <Pressable
+          onPress={() => setAvisoCancelamento(null)}
+          style={{
+            position: "absolute",
+            top: insets.top + 8,
+            left: 12,
+            right: 12,
+            zIndex: 50,
+            elevation: 8,
+            backgroundColor: avisoCancelamento.aposInicio ? "#DC2626" : "#F59E0B",
+            borderRadius: 14,
+            paddingVertical: 12,
+            paddingHorizontal: 14,
+          }}
+        >
+          <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 15, color: "#fff" }}>Item cancelado</Text>
+          <Text style={{ fontFamily: "Outfit_500Medium", fontSize: 14, color: "#fff", marginTop: 2 }}>
+            {avisoCancelamento.texto}
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
