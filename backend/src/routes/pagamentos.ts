@@ -4,6 +4,7 @@ import type { FastifyRequest, FastifyReply } from "fastify";
 import type { App } from "../index.js";
 import { requireAuth as customRequireAuth, requireTenant } from "../utils/auth.js";
 import * as schema from "../db/schema/schema.js";
+import { subtotalDaComanda } from "../services/total-comanda.js";
 
 // Pagamento de comanda (dinheiro, cartão, Pix) é sempre reconciliado manualmente pelo
 // garçom — o restaurante usa a própria maquininha/chave Pix e o app só registra qual
@@ -48,7 +49,7 @@ export function registerPagamentoRoutes(app: App) {
         // Calcular total já pago
         const pagamentosExistentes = await db.select({ valor: schema.pagamentos.valor }).from(schema.pagamentos).where(and(eq(schema.pagamentos.comandaId, request.params.id), eq(schema.pagamentos.status, "confirmado")));
         const totalPago = pagamentosExistentes.reduce((sum: number, p: any) => sum + parseFloat(p.valor), 0);
-        const totalComanda = parseFloat(comanda[0].total || "0");
+        const totalComanda = await subtotalDaComanda(db, request.params.id);
         const restante = totalComanda - totalPago;
 
         // Considerar a gorjeta no cálculo do valor devido, sem persistir no total
@@ -176,7 +177,7 @@ export function registerPagamentoRoutes(app: App) {
         const comanda = await db.select({ id: schema.comandas.id, status: schema.comandas.status, total: schema.comandas.total }).from(schema.comandas).where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)));
         if (!comanda.length) return reply.code(404).send({ error: "Comanda não encontrada" });
 
-        const totalComanda = parseFloat(comanda[0].total || "0");
+        const totalComanda = await subtotalDaComanda(db, request.params.id);
         const gorjeta = request.body.gorjeta || 0;
         const totalComGorjeta = totalComanda + gorjeta;
 
@@ -186,13 +187,16 @@ export function registerPagamentoRoutes(app: App) {
         const restante = totalComGorjeta - totalPago;
 
         // Buscar todos os pedidos da comanda
-        const pedidos = await db.select({
+        const pedidosDaComanda = await db.select({
           id: schema.pedidos.id,
           pratoId: schema.pedidos.pratoId,
           quantidade: schema.pedidos.quantidade,
           precoUnitario: schema.pedidos.precoUnitario,
           observacao: schema.pedidos.observacao,
+          status: schema.pedidos.status,
         }).from(schema.pedidos).where(eq(schema.pedidos.comandaId, request.params.id));
+        // Itens cancelados não entram na divisão
+        const pedidos = pedidosDaComanda.filter((p: any) => p.status !== "cancelado");
 
         const { tipo } = request.body;
 
