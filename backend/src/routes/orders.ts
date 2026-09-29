@@ -6,6 +6,7 @@ import type { App } from "../index.js";
 import { requireAuth as customRequireAuth, requireTenant, requireRole } from "../utils/auth.js";
 import { resolveGarcomId } from "../utils/garcom.js";
 import { realtimeHub } from "../realtime/hub.js";
+import { fecharComanda } from "../services/fechamento-comanda.js";
 
 interface CreateComandaBody {
   mesaId?: string;
@@ -766,237 +767,43 @@ export function registerOrderRoutes(app: App) {
 
         app.logger.info({ comandaId: request.params.id, restauranteId, closedBy: session.id, closedByRole: session.role }, "Closing and archiving comanda");
 
-        // STEP 1: First query mesa_id before any archive logic
-        const mesaIdResult = await app.db
-          .select({ mesaId: schema.comandas.mesaId })
-          .from(schema.comandas)
-          .where(eq(schema.comandas.id, request.params.id));
+        // Parâmetros com valores padrão; a gorjeta é lida como número
+        const gorjetaValue = parseFloat((request.body?.gorjeta?.toString()) ?? "0");
+        const numPessoas = request.body?.num_pessoas ?? 0;
 
-        if (!mesaIdResult.length) {
-          return reply.code(404).send({ error: "Comanda not found" });
-        }
-
-        const mesaId = mesaIdResult[0].mesaId;
-        app.logger.info({ comandaId: request.params.id, mesaId }, "Comanda found, mesa_id extracted");
-
-        // Fetch full comanda details with mesa info for response
-        const comandas = await app.db
-          .select({
-            id: schema.comandas.id,
-            mesaId: schema.comandas.mesaId,
-            mesaNumero: schema.mesas.numero,
-            garcomId: schema.comandas.garcomId,
-            status: schema.comandas.status,
-            total: schema.comandas.total,
-            subtotal: schema.comandas.subtotal,
-            createdAt: schema.comandas.createdAt,
-          })
-          .from(schema.comandas)
-          .leftJoin(schema.mesas, eq(schema.mesas.id, schema.comandas.mesaId))
-          .where(eq(schema.comandas.id, request.params.id));
-
-        const comanda = comandas[0];
-
-        // Check if comanda is open
-        if (comanda.status !== "aberta") {
-          return reply.code(400).send({ error: "comanda não está aberta" });
-        }
-
-        // Extract parameters with defaults, parse gorjeta as float
-        const gorjetaValue = parseFloat((request.body.gorjeta?.toString()) ?? "0");
-        const numPessoas = request.body.num_pessoas ?? 0;
-
-        // Calculate subtotal dynamically from pedidos
-        const subtotalResult = await app.db
-          .select({
-            total: sql<string>`COALESCE(SUM(${schema.pedidos.quantidade} * CAST(${schema.pedidos.precoUnitario} AS DECIMAL(10,2))), 0)`,
-          })
-          .from(schema.pedidos)
-          .where(eq(schema.pedidos.comandaId, request.params.id));
-        const subtotal = parseFloat(subtotalResult[0]?.total ?? "0");
-        app.logger.info({ comandaId: request.params.id, subtotalCalculated: subtotal }, "Subtotal dynamically calculated from pedidos");
-        const totalFinal = subtotal + gorjetaValue;
-        const valorPorPessoa = numPessoas > 0 ? totalFinal / numPessoas : null;
-
-        // Capture timestamps
-        const createdAt = comanda.createdAt;
-        const closedAt = new Date();
-
-        // Fetch pedidos before transaction to include in response
-        const pedidos = await app.db
-          .select({
-            id: schema.pedidos.id,
-            comandaId: schema.pedidos.comandaId,
-            pratoId: schema.pedidos.pratoId,
-            quantidade: schema.pedidos.quantidade,
-            precoUnitario: schema.pedidos.precoUnitario,
-            observacao: schema.pedidos.observacao,
-            status: schema.pedidos.status,
-            createdAt: schema.pedidos.createdAt,
-            pratoNome: schema.pratos.nome,
-          })
-          .from(schema.pedidos)
-          .leftJoin(schema.pratos, eq(schema.pedidos.pratoId, schema.pratos.id))
-          .where(eq(schema.pedidos.comandaId, request.params.id));
-
-        // Build itens array from pedidos
-        const itens = pedidos.map((p) => ({
-          prato_nome: p.pratoNome || "N/A",
-          quantidade: p.quantidade,
-          preco_unitario: parseFloat(p.precoUnitario || "0"),
-          subtotal_item: p.quantidade * parseFloat(p.precoUnitario || "0"),
-        }));
-
-        // Verificar pagamentos
-        const pagamentosComanda = await app.db
-          .select()
-          .from(schema.pagamentos)
-          .where(eq(schema.pagamentos.comandaId, request.params.id));
-
-        const totalPagoConfirmado = pagamentosComanda
-          .filter((p: any) => p.status === "confirmado")
-          .reduce((sum: number, p: any) => sum + parseFloat(p.valor), 0);
-
-        const pagamentosPendentes = pagamentosComanda.filter((p: any) => p.status === "pendente");
-
-        if (pagamentosPendentes.length > 0) {
-          return reply.code(400).send({ error: "Existem pagamentos pendentes (ex: Pix aguardando confirmação). Confirme ou cancele antes de fechar." });
-        }
-
-        if (pagamentosComanda.length > 0 && totalPagoConfirmado < totalFinal - 0.01) {
-          return reply.code(400).send({ error: `Total pago (R$ ${totalPagoConfirmado.toFixed(2)}) é menor que o total da comanda (R$ ${totalFinal.toFixed(2)}).` });
-        }
-
-        // STEP 2: Run the archive logic
-        await (app.db as any).transaction(async (tx: any) => {
-          // Copy comanda to historico with status 'fechada'
-          await tx.insert(schema.comandasHistorico).values({
-            id: comanda.id,
-            mesaId: comanda.mesaId,
-            mesaNumero: comanda.mesaNumero,
-            garcomId: comanda.garcomId,
-            status: "fechada",
-            total: totalFinal.toString(),
-            subtotal: subtotal.toString(),
-            gorjeta: gorjetaValue.toString(),
-            createdAt: createdAt,
-            closedAt: closedAt,
-            archivedAt: closedAt,
-            fechadoPorId: session.id,
-            fechadoPorNome: session.name,
-            fechadoPorRole: session.role,
-            restauranteId,
-          });
-
-          // Copy pedidos to historico
-          if (pedidos.length > 0) {
-            await tx.insert(schema.pedidosHistorico).values(
-              pedidos.map((p) => ({
-                id: p.id,
-                comandaId: p.comandaId,
-                pratoId: p.pratoId,
-                pratoNome: p.pratoNome,
-                quantidade: p.quantidade,
-                precoUnitario: p.precoUnitario,
-                observacao: p.observacao,
-                status: p.status,
-                createdAt: p.createdAt,
-                archivedAt: closedAt,
-                restauranteId,
-              }))
-            );
-          }
-
-          // Copiar pagamentos para histórico
-          if (pagamentosComanda.length > 0) {
-            await tx.insert(schema.pagamentosHistorico).values(
-              pagamentosComanda.filter((p: any) => p.status === "confirmado").map((p: any) => ({
-                id: p.id,
-                comandaId: p.comandaId,
-                formaPagamento: p.formaPagamento,
-                status: p.status,
-                valor: p.valor,
-                troco: p.troco,
-                pixTxId: p.pixTxId,
-                referencia: p.referencia,
-                confirmadoEm: p.confirmadoEm,
-                createdAt: p.createdAt,
-                archivedAt: closedAt,
-                restauranteId,
-              }))
-            );
-
-            // Deletar pagamentos da comanda
-            await tx.delete(schema.pagamentos).where(eq(schema.pagamentos.comandaId, request.params.id));
-          }
-
-          // Update comanda with subtotal and gorjeta before deleting
-          await tx
-            .update(schema.comandas)
-            .set({
-              subtotal: subtotal.toString(),
-              gorjeta: gorjetaValue.toString(),
-            })
-            .where(eq(schema.comandas.id, request.params.id));
-
-          // Delete pedidos
-          await tx
-            .delete(schema.pedidos)
-            .where(eq(schema.pedidos.comandaId, request.params.id));
-
-          // Delete comanda
-          await tx
-            .delete(schema.comandas)
-            .where(eq(schema.comandas.id, request.params.id));
-
-          // STEP 3: After archive, ALWAYS release mesa to disponivel
-          if (mesaId) {
-            try {
-              await tx
-                .update(schema.mesas)
-                .set({ status: "disponivel" })
-                .where(eq(schema.mesas.id, mesaId));
-
-              app.logger.info({ mesaId }, "Mesa released to disponivel");
-            } catch (err) {
-              app.logger.error({ mesaId, error: (err as any).message }, "Failed to release mesa");
-              throw err;
-            }
-          }
+        // Toda a regra de fechamento vive no módulo services/fechamento-comanda.ts
+        const resultado = await fecharComanda(app, {
+          restauranteId,
+          comandaId: request.params.id,
+          gorjeta: gorjetaValue,
+          fechadoPor: { id: session.id, nome: session.name, role: session.role },
         });
 
-        app.logger.info(
-          { comandaId: request.params.id, subtotal, gorjeta: gorjetaValue, totalFinal, itemCount: itens.length },
-          `[fechar] comanda ${request.params.id}: subtotal=${subtotal}, gorjeta=${gorjetaValue}, total=${totalFinal}`
-        );
-
-        // Publish realtime event
-        try {
-          realtimeHub.publish(restauranteId, {
-            type: "comanda.closed",
-            entityId: request.params.id,
-            occurredAt: new Date().toISOString(),
-          });
-        } catch (err) {
-          app.logger.error({ err }, "Failed to publish comanda.closed event");
+        switch (resultado.tipo) {
+          case "nao_encontrada":
+            return reply.code(404).send({ error: "Comanda not found" });
+          case "nao_aberta":
+            return reply.code(400).send({ error: "comanda não está aberta" });
+          case "pagamentos_pendentes":
+            return reply.code(400).send({ error: "Existem pagamentos pendentes (ex: Pix aguardando confirmação). Confirme ou cancele antes de fechar." });
+          case "pago_a_menos":
+            return reply.code(400).send({ error: `Total pago (R$ ${resultado.totalPago.toFixed(2)}) é menor que o total da comanda (R$ ${resultado.totalDevido.toFixed(2)}).` });
         }
+
+        const valorPorPessoa = numPessoas > 0 ? resultado.totalFinal / numPessoas : null;
 
         return reply.code(200).send({
           success: true,
-          mesa_numero: comanda.mesaNumero,
-          subtotal,
-          gorjeta: gorjetaValue,
-          total_final: totalFinal,
+          mesa_numero: resultado.mesaNumero,
+          subtotal: resultado.subtotal,
+          gorjeta: resultado.gorjeta,
+          total_final: resultado.totalFinal,
           num_pessoas: numPessoas > 0 ? numPessoas : null,
           valor_por_pessoa: valorPorPessoa,
-          created_at: createdAt.toISOString(),
-          closed_at: closedAt.toISOString(),
-          itens,
-          pagamentos: pagamentosComanda.filter((p: any) => p.status === "confirmado").map((p: any) => ({
-            forma_pagamento: p.formaPagamento,
-            valor: parseFloat(p.valor),
-            troco: parseFloat(p.troco || "0"),
-          })),
+          created_at: resultado.createdAt.toISOString(),
+          closed_at: resultado.closedAt.toISOString(),
+          itens: resultado.itens,
+          pagamentos: resultado.pagamentos,
         });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to close and archive comanda");
