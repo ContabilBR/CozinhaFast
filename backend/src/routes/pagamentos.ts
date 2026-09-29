@@ -26,6 +26,7 @@ export function registerPagamentoRoutes(app: App) {
             valor: { type: "number", minimum: 0.01 },
             troco: { type: "number", minimum: 0 },
             referencia: { type: "string" },
+            gorjeta: { type: "number", minimum: 0 },
           },
           required: ["forma_pagamento", "valor"],
         },
