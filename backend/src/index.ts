@@ -28,6 +28,7 @@ import { registerEstoqueRoutes } from './routes/estoque.js';
 import { registerSuperAdminRoutes } from './routes/superadmin.js';
 import { seedDatabase } from './db/seed.js';
 import { enableSelectRetry } from './db/withRetry.js';
+import { garantirColunasDeCancelamento } from './db/ensure-schema.js';
 
 // Combine schemas
 const schema = { ...appSchema, ...authSchema };
@@ -39,6 +40,9 @@ export const app = await createApplication(schema);
 // This transparently handles transient connection failures without requiring
 // changes to individual query call sites
 enableSelectRetry(app.db);
+
+// Garante as colunas de cancelamento de item (as migrações não rodam sozinhas no deploy)
+await garantirColunasDeCancelamento(app);
 
 // Seed test admin and restaurante if test mode is enabled
 await seedTestAdmin(app);
