@@ -146,7 +146,8 @@ export default function MesaDetailScreen() {
   const garcomName = (mesa as any)?.garcom?.name;
 
   const isOcupada = (mesaStatus as string) === "ocupada";
-  const pedidosCount = comanda?.pedidos?.length ?? 0;
+  // Itens cancelados não aparecem nem entram na contagem (não são venda)
+  const pedidosCount = comanda?.pedidos?.filter((p) => p.status !== "cancelado").length ?? 0;
   const abertoEm = comanda ? formatDateTime(comanda.aberta_em || (comanda as any).created_at || "") : "";
   const totalFormatted = comanda ? formatPrice(comanda.total) : "0,00";
 
@@ -317,7 +318,7 @@ export default function MesaDetailScreen() {
                     </View>
                   ) : (
                     <View style={{ gap: 10 }}>
-                      {comanda.pedidos.map((pedido) => {
+                      {comanda.pedidos.filter((p) => p.status !== "cancelado").map((pedido) => {
                         const statusCfg = getPedidoStatusConfig(pedido.status);
                         const precoFormatted = formatPrice(pedido.preco_unitario);
                         const qtdPreco = `${pedido.quantidade}x R$ ${precoFormatted}`;
