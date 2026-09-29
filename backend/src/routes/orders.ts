@@ -705,7 +705,7 @@ export function registerOrderRoutes(app: App) {
         body: {
           type: "object",
           properties: {
-            gorjeta: { type: "number", default: 0 },
+            gorjeta: { type: "number", default: 0, minimum: 0 },
             num_pessoas: { type: "integer", default: 0 },
           },
         },
@@ -739,6 +739,7 @@ export function registerOrderRoutes(app: App) {
           400: { type: "object", properties: { error: { type: "string" } } },
           401: { type: "object", properties: { error: { type: "string" } } },
           404: { type: "object", properties: { error: { type: "string" } } },
+          409: { type: "object", properties: { error: { type: "string" } } },
         },
       },
     },
@@ -782,8 +783,10 @@ export function registerOrderRoutes(app: App) {
         switch (resultado.tipo) {
           case "nao_encontrada":
             return reply.code(404).send({ error: "Comanda not found" });
+          case "tipo_nao_suportado":
+            return reply.code(409).send({ error: "Comandas de delivery não são fechadas por esta rota." });
           case "nao_aberta":
-            return reply.code(400).send({ error: "comanda não está aberta" });
+            return reply.code(409).send({ error: "comanda não está aberta" });
           case "pagamentos_pendentes":
             return reply.code(400).send({ error: "Existem pagamentos pendentes (ex: Pix aguardando confirmação). Confirme ou cancele antes de fechar." });
           case "pago_a_menos":
