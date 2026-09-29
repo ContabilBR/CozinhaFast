@@ -54,7 +54,10 @@ export default function FecharContaScreen() {
     fetchData();
   }, [id]);
 
-  const subtotal = pedidos.reduce((s: number, p: any) => s + parseFloat(p.precoUnitario || p.preco_unitario || "0") * (p.quantidade || 1), 0);
+  // Item cancelado não é venda: fica fora do subtotal (e da gorjeta calculada sobre ele)
+  const subtotal = pedidos
+    .filter((p: any) => p.status !== "cancelado")
+    .reduce((s: number, p: any) => s + parseFloat(p.precoUnitario || p.preco_unitario || "0") * (p.quantidade || 1), 0);
   const gorjetaValue = gorjetaMode === "10" ? subtotal * 0.1 : gorjetaMode === "custom" ? subtotal * (Math.max(0, parseFloat(gorjetaInput.replace(",", ".")) || 0) / 100) : 0;
   const totalFinal = subtotal + gorjetaValue;
   const restante = totalFinal - totalPago;
