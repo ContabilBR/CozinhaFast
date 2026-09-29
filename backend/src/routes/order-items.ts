@@ -2,8 +2,9 @@ import type { FastifyRequest, FastifyReply } from "fastify";
 import { eq, sql, desc, and } from "drizzle-orm";
 import * as schema from "../db/schema/schema.js";
 import type { App } from "../index.js";
-import { requireAuth as customRequireAuth, requireTenant } from "../utils/auth.js";
+import { requireAuth as customRequireAuth, requireTenant, requireRole } from "../utils/auth.js";
 import { realtimeHub } from "../realtime/hub.js";
+import { cancelarPedido, MOTIVOS_CANCELAMENTO, ROLES_ATENDIMENTO } from "../services/cancelamento-pedido.js";
 
 interface CreatePedidoBody {
   comanda_id?: string;
@@ -260,7 +261,7 @@ export function registerOrderItemRoutes(app: App) {
         // Update comanda total
         const subtotalResult = await app.db
           .select({
-            subtotal: sql<string>`COALESCE(SUM(quantidade * preco_unitario), 0)`,
+            subtotal: sql<string>`COALESCE(SUM(quantidade * preco_unitario) FILTER (WHERE status <> 'cancelado'), 0)`,
           })
           .from(schema.pedidos)
           .where(eq(schema.pedidos.comandaId, comandaId));
@@ -442,13 +443,27 @@ export function registerOrderItemRoutes(app: App) {
       try {
         app.logger.info({ pedidoId: request.params.id, status: request.body.status }, "Updating pedido status");
 
+        const restauranteIdAtual = requireTenant(session);
+        if (!restauranteIdAtual) {
+          return reply.code(404).send({ error: "Nenhum restaurante associado" });
+        }
+
+        // Cancelar tem rota própria (motivo obrigatório, permissões e registro de quem cancelou)
+        if (request.body.status === "cancelado") {
+          return reply.code(400).send({ error: "Para cancelar um item use PUT /api/pedidos/:id/cancelar (motivo obrigatório)." });
+        }
+
         const existing = await app.db
           .select()
           .from(schema.pedidos)
-          .where(eq(schema.pedidos.id, request.params.id));
+          .where(and(eq(schema.pedidos.id, request.params.id), eq(schema.pedidos.restauranteId, restauranteIdAtual)));
 
         if (!existing.length) {
           return reply.code(404).send({ error: "Pedido not found" });
+        }
+
+        if (existing[0].status === "cancelado") {
+          return reply.code(409).send({ error: "Item cancelado não pode mudar de status." });
         }
 
         const [updated] = await app.db
@@ -518,6 +533,105 @@ export function registerOrderItemRoutes(app: App) {
     }
   );
 
+  // PUT /api/pedidos/:id/cancelar - Cancela um item (item cancelado não é venda)
+  app.fastify.put<{ Params: { id: string }; Body: { motivo: string; detalhe?: string } }>(
+    "/api/pedidos/:id/cancelar",
+    {
+      schema: {
+        description:
+          "Cancela um item de uma comanda aberta. Item cancelado não conta como venda. Itens pendentes podem ser cancelados por garçom, gerente ou administrador; itens já em preparo ou prontos, só por gerente ou administrador (ficam marcados como perda). Item entregue não pode ser cancelado.",
+        tags: ["pedidos"],
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string", format: "uuid" } },
+        },
+        body: {
+          type: "object",
+          required: ["motivo"],
+          properties: {
+            motivo: { type: "string", enum: [...MOTIVOS_CANCELAMENTO] },
+            detalhe: { type: "string", maxLength: 300 },
+          },
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              id: { type: "string" },
+              comanda_id: { type: "string" },
+              status: { type: "string" },
+              cancelado_apos_inicio: { type: "boolean" },
+              subtotal_comanda: { type: "number" },
+              total_comanda: { type: "number" },
+            },
+          },
+          400: { type: "object", properties: { error: { type: "string" } } },
+          403: { type: "object", properties: { error: { type: "string" } } },
+          404: { type: "object", properties: { error: { type: "string" } } },
+          409: { type: "object", properties: { error: { type: "string" } } },
+        },
+      },
+    },
+    async (
+      request: FastifyRequest<{ Params: { id: string }; Body: { motivo: string; detalhe?: string } }>,
+      reply: FastifyReply
+    ) => {
+      const session = await customRequireAuth(app, request, reply);
+      if (!session) return;
+
+      // Cozinheiro não cancela item: só garçom e papéis gerenciais
+      if (!requireRole(session, ROLES_ATENDIMENTO, reply)) return;
+
+      try {
+        const restauranteId = requireTenant(session);
+        if (!restauranteId) {
+          return reply.code(404).send({ error: "Nenhum restaurante associado" });
+        }
+
+        const detalhe = request.body.detalhe?.trim() || null;
+        if (request.body.motivo === "outro" && !detalhe) {
+          return reply.code(400).send({ error: "Informe o detalhe do motivo quando o motivo for 'outro'." });
+        }
+
+        const resultado = await cancelarPedido(app, {
+          restauranteId,
+          pedidoId: request.params.id,
+          motivo: request.body.motivo as any,
+          detalhe,
+          canceladoPor: { id: session.id, nome: session.name, role: session.role },
+        });
+
+        switch (resultado.tipo) {
+          case "nao_encontrado":
+            return reply.code(404).send({ error: "Pedido not found" });
+          case "comanda_nao_aberta":
+            return reply.code(409).send({ error: "Só é possível cancelar itens de uma comanda aberta." });
+          case "ja_cancelado":
+            return reply.code(409).send({ error: "Item já está cancelado." });
+          case "ja_entregue":
+            return reply.code(409).send({ error: "Item já entregue não pode ser cancelado. Cortesia e estorno ainda não estão disponíveis." });
+          case "requer_gestor":
+            return reply.code(403).send({ error: "Só gerente ou administrador pode cancelar um item que já está em preparo ou pronto." });
+        }
+
+        return reply.code(200).send({
+          success: true,
+          id: resultado.pedidoId,
+          comanda_id: resultado.comandaId,
+          status: "cancelado",
+          cancelado_apos_inicio: resultado.canceladoAposInicio,
+          subtotal_comanda: resultado.subtotalComanda,
+          total_comanda: resultado.totalComanda,
+        });
+      } catch (error) {
+        app.logger.error({ err: error }, "Failed to cancel pedido");
+        return reply.code(500).send({ error: "Internal server error" });
+      }
+    }
+  );
+
   // PUT /api/pedidos/:id - Update a pedido
   app.fastify.put<{ Params: { id: string }; Body: { quantidade?: number; observacao?: string; status?: string } }>(
     "/api/pedidos/:id",
@@ -567,13 +681,27 @@ export function registerOrderItemRoutes(app: App) {
       try {
         app.logger.info({ pedidoId: request.params.id, body: request.body }, "Updating pedido");
 
+        const restauranteIdAtual = requireTenant(session);
+        if (!restauranteIdAtual) {
+          return reply.code(404).send({ error: "Nenhum restaurante associado" });
+        }
+
+        // Cancelar tem rota própria (motivo obrigatório, permissões e registro de quem cancelou)
+        if (request.body.status === "cancelado") {
+          return reply.code(400).send({ error: "Para cancelar um item use PUT /api/pedidos/:id/cancelar (motivo obrigatório)." });
+        }
+
         const existing = await app.db
           .select()
           .from(schema.pedidos)
-          .where(eq(schema.pedidos.id, request.params.id));
+          .where(and(eq(schema.pedidos.id, request.params.id), eq(schema.pedidos.restauranteId, restauranteIdAtual)));
 
         if (!existing.length) {
           return reply.code(404).send({ error: "Pedido not found" });
+        }
+
+        if (existing[0].status === "cancelado") {
+          return reply.code(409).send({ error: "Item cancelado não pode ser alterado." });
         }
 
         const pedido = existing[0];
@@ -598,7 +726,7 @@ export function registerOrderItemRoutes(app: App) {
         // Recalculate and update parent comanda's total
         const subtotalResult = await app.db
           .select({
-            subtotal: sql<string>`COALESCE(SUM(quantidade * preco_unitario), 0)`,
+            subtotal: sql<string>`COALESCE(SUM(quantidade * preco_unitario) FILTER (WHERE status <> 'cancelado'), 0)`,
           })
           .from(schema.pedidos)
           .where(eq(schema.pedidos.comandaId, pedido.comandaId));
@@ -692,11 +820,11 @@ export function registerOrderItemRoutes(app: App) {
 
         app.logger.info({ pedidoId: request.params.id, restauranteId }, "Deleting pedido");
 
-        // Step a: Fetch the pedido
+        // Step a: Fetch the pedido (somente do restaurante de quem chama)
         const existing = await app.db
           .select()
           .from(schema.pedidos)
-          .where(eq(schema.pedidos.id, request.params.id));
+          .where(and(eq(schema.pedidos.id, request.params.id), eq(schema.pedidos.restauranteId, restauranteId)));
 
         if (!existing.length) {
           return reply.code(404).send({ error: "Pedido not found" });
@@ -735,7 +863,7 @@ export function registerOrderItemRoutes(app: App) {
         // Step d: Recalculate and update parent comanda's total
         const subtotalResult = await app.db
           .select({
-            subtotal: sql<string>`COALESCE(SUM(quantidade * preco_unitario), 0)`,
+            subtotal: sql<string>`COALESCE(SUM(quantidade * preco_unitario) FILTER (WHERE status <> 'cancelado'), 0)`,
           })
           .from(schema.pedidos)
           .where(eq(schema.pedidos.comandaId, pedido.comandaId));
