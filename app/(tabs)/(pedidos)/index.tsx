@@ -19,6 +19,9 @@ import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { SkeletonLine } from "@/components/SkeletonLoader";
 import { apiGet, apiPut, apiDelete } from "@/utils/api";
 import { Plus, Minus } from "lucide-react-native";
+import { useAuth } from "@/contexts/AuthContext";
+import { CancelarItemModal } from "@/components/CancelarItemModal";
+import { cancelarItem, permissaoCancelarItem, type MotivoCancelamento } from "@/utils/cancelamento";
 
 // ─── API response types ───────────────────────────────────────────────────────
 
@@ -297,14 +300,14 @@ function formatDateTime(iso: string): string {
 
 function ItemRow({
   item,
-  onDelete,
+  role,
+  onCancel,
   onUpdate,
-  isDeleting,
 }: {
   item: GarcomPedidoItem;
-  onDelete: (id: string) => void;
+  role: string | null | undefined;
+  onCancel: (id: string, motivo: MotivoCancelamento, detalhe: string | null) => Promise<void>;
   onUpdate: (id: string, fields: { quantidade?: number; observacao?: string }) => void;
-  isDeleting?: boolean;
 }) {
   const COLORS = useColors();
   const cfg = getStatusConfig(item.status);
@@ -313,9 +316,12 @@ function ItemRow({
   const [obsFocused, setObsFocused] = useState(false);
   const [quantidade, setQuantidade] = useState(item.quantidade);
   const [saving, setSaving] = useState(false);
-  const trashDisabled = isDeleting || saving;
   const [saveError, setSaveError] = useState("");
-  const [confirmDeleteVisible, setConfirmDeleteVisible] = useState(false);
+  const [cancelarVisivel, setCancelarVisivel] = useState(false);
+  const permissao = permissaoCancelarItem(role, item.status);
+  const cancelado = item.status === "cancelado";
+  // Garçom diante de item já iniciado: mostra um cadeado explicando por que não pode cancelar
+  const bloqueadoPorPapel = !permissao.pode && permissao.aposInicio;
 
   // Debounce ref for observacao
   const obsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -385,32 +391,50 @@ function ItemRow({
     saveField({ quantidade: next });
   };
 
-  const handleDeletePress = () => {
-    console.log("[Pedidos] Trash icon pressed — pedido item:", item.id, "prato:", item.prato_nome);
-    setConfirmDeleteVisible(true);
+  const handleCancelarPress = () => {
+    console.log("[Pedidos] Cancelar item pressionado — pedido:", item.id, "prato:", item.prato_nome);
+    setCancelarVisivel(true);
   };
 
-  const handleDeleteConfirm = () => {
-    console.log("[Pedidos] Confirmado — DELETE /api/pedidos/" + item.id);
-    setConfirmDeleteVisible(false);
-    onDelete(item.id);
+  const handleBloqueadoPress = () => {
+    Alert.alert("Cancelamento não permitido", permissao.motivoNegado ?? "Você não pode cancelar este item.");
   };
 
-  const handleDeleteCancel = () => {
-    console.log("[Pedidos] Exclusão de item cancelada:", item.id);
-    setConfirmDeleteVisible(false);
-  };
+  // Item cancelado: só mostra o nome riscado e o selo "Cancelado" (sem quantidade nem observação editáveis)
+  if (cancelado) {
+    return (
+      <View style={{ paddingVertical: 10, opacity: 0.6 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+          <Text
+            style={{
+              fontFamily: "Outfit_500Medium",
+              fontSize: 14,
+              color: COLORS.textSecondary,
+              flex: 1,
+              marginRight: 8,
+              textDecorationLine: "line-through",
+            }}
+          >
+            {quantidade}x {item.prato_nome}
+          </Text>
+          <View style={{ backgroundColor: cfg.bg, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 }}>
+            <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 11, color: cfg.text }}>{cfg.label}</Text>
+          </View>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={{ paddingVertical: 10 }}>
-      <ConfirmDeleteModal
-        visible={confirmDeleteVisible}
-        title="Excluir item"
-        message="Tem certeza que deseja excluir este item do pedido?"
-        onCancel={handleDeleteCancel}
-        onConfirm={handleDeleteConfirm}
+      <CancelarItemModal
+        visible={cancelarVisivel}
+        pratoNome={item.prato_nome}
+        aposInicio={permissao.aposInicio}
+        onClose={() => setCancelarVisivel(false)}
+        onConfirm={(motivo, detalhe) => onCancel(item.id, motivo, detalhe)}
       />
-      {/* Top row: name + status badge + delete */}
+      {/* Top row: name + status badge + cancelar */}
       <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" }}>
         <Text
           style={{
@@ -439,19 +463,25 @@ function ItemRow({
             </Text>
           </View>
 
-          {/* Delete item button */}
-          <Pressable
-            onPress={handleDeletePress}
-            disabled={trashDisabled}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            style={({ pressed }) => ({ opacity: trashDisabled ? 0.4 : pressed ? 0.5 : 1, padding: 2 })}
-          >
-            {isDeleting ? (
-              <ActivityIndicator size="small" color="#EF4444" style={{ width: 17, height: 17 }} />
-            ) : (
-              <Ionicons name="trash-outline" size={17} color="#EF4444" />
-            )}
-          </Pressable>
+          {/* Cancelar item (garçom, gerente e administrador) */}
+          {permissao.pode ? (
+            <Pressable
+              onPress={handleCancelarPress}
+              disabled={saving}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={({ pressed }) => ({ opacity: saving ? 0.4 : pressed ? 0.5 : 1, padding: 2 })}
+            >
+              <Ionicons name="close-circle-outline" size={19} color="#EF4444" />
+            </Pressable>
+          ) : bloqueadoPorPapel ? (
+            <Pressable
+              onPress={handleBloqueadoPress}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={{ padding: 2 }}
+            >
+              <Ionicons name="lock-closed-outline" size={17} color={COLORS.textSecondary} />
+            </Pressable>
+          ) : null}
         </View>
       </View>
 
@@ -561,17 +591,17 @@ function ItemRow({
 function PedidoCard({
   pedido,
   index,
-  onDeleteItem,
+  onCancelItem,
   onDeleteComanda,
   onUpdateItem,
-  deletingId,
+  role,
 }: {
   pedido: GarcomPedido;
   index: number;
-  onDeleteItem: (comandaId: string, itemId: string) => void;
+  onCancelItem: (comandaId: string, itemId: string, motivo: MotivoCancelamento, detalhe: string | null) => Promise<void>;
   onDeleteComanda: (comandaId: string) => void;
   onUpdateItem: (comandaId: string, itemId: string, fields: { quantidade?: number; observacao?: string }) => void;
-  deletingId: string | null;
+  role: string | null | undefined;
 }) {
   const COLORS = useColors();
   const opacity = useRef(new Animated.Value(0)).current;
@@ -595,8 +625,14 @@ function PedidoCard({
   }, [index, opacity, translateY]);
 
   const dateStr = formatDateTime(pedido.created_at);
-  const itemCount = pedido.itens.length;
-  const itemCountLabel = `${itemCount} ${itemCount === 1 ? "item" : "itens"}`;
+  // Itens cancelados não contam como itens do pedido
+  const itemCount = pedido.itens.filter((it) => it.status !== "cancelado").length;
+  const canceladosCount = pedido.itens.length - itemCount;
+  const itemCountLabel =
+    itemCount === 0 && canceladosCount > 0
+      ? "Todos os itens foram cancelados"
+      : `${itemCount} ${itemCount === 1 ? "item" : "itens"}` +
+        (canceladosCount > 0 ? ` · ${canceladosCount} cancelado${canceladosCount > 1 ? "s" : ""}` : "");
   const pedidoLabel = `Pedido #${pedido.numero_sequencial}`;
   const mesaLabel = `Mesa ${pedido.mesa_numero}`;
 
@@ -726,9 +762,9 @@ function PedidoCard({
             <View key={item.id}>
               <ItemRow
                 item={item}
-                onDelete={(itemId) => onDeleteItem(pedido.comanda_id, itemId)}
+                role={role}
+                onCancel={(itemId, motivo, detalhe) => onCancelItem(pedido.comanda_id, itemId, motivo, detalhe)}
                 onUpdate={(itemId, fields) => onUpdateItem(pedido.comanda_id, itemId, fields)}
-                isDeleting={deletingId === item.id}
               />
               {i < pedido.itens.length - 1 && (
                 <View
@@ -880,12 +916,13 @@ export default function PedidosGarcomScreen() {
   const COLORS = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { user } = useAuth();
+  const role = user?.role;
 
   const [pedidos, setPedidos] = useState<GarcomPedido[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
-  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Toast state
   const [toastVisible, setToastVisible] = useState(false);
@@ -904,9 +941,6 @@ export default function PedidosGarcomScreen() {
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     };
   }, []);
-
-  // Track IDs already deleted to prevent double-delete
-  const deletedIdsRef = useRef<Set<string>>(new Set());
 
   const fetchPedidos = useCallback(async () => {
     console.log("[Pedidos Garçom] Fetching GET /api/pedidos");
@@ -953,64 +987,17 @@ export default function PedidosGarcomScreen() {
     router.back();
   };
 
-  const handleDeleteItem = useCallback(async (comandaId: string, itemId: string) => {
-    // Guard 1: block concurrent deletes
-    if (deletingId) {
-      console.log("[Pedidos] Delete already in progress, ignoring:", itemId);
-      return;
-    }
-    // Guard 2: block re-deleting an already-deleted id
-    if (deletedIdsRef.current.has(itemId)) {
-      console.log("[Pedidos] Item already deleted, ignoring duplicate:", itemId);
-      return;
-    }
-
-    console.log("[Pedidos] DELETE /api/pedidos/" + itemId + " (comanda:", comandaId + ")");
-
-    // Snapshot for rollback
-    const snapshot = pedidos;
-
-    // Mark as deleted immediately before the fetch
-    deletedIdsRef.current.add(itemId);
-    setDeletingId(itemId);
-
-    // Optimistic removal
-    setPedidos((prev) =>
-      prev
-        .map((p) =>
-          p.comanda_id === comandaId
-            ? { ...p, itens: p.itens.filter((it) => it.id !== itemId) }
-            : p
-        )
-        .filter((p) => p.itens.length > 0)
-    );
-
-    try {
-      const deleteRes = await apiDelete<{ success: boolean; comandaArchived?: boolean }>(`/api/pedidos/${itemId}`);
-      console.log("[Pedidos] DELETE /api/pedidos/" + itemId + " response:", JSON.stringify(deleteRes));
-
-      if (deleteRes?.comandaArchived === true) {
-        console.log("[Pedidos] Comanda arquivada automaticamente — removendo grupo comanda:", comandaId);
-        // Remove the entire comanda group from state
-        setPedidos((prev) => prev.filter((p) => p.comanda_id !== comandaId));
-        showToast("Comanda encerrada e arquivada");
-      } else {
-        console.log("[Pedidos] Item deletado com sucesso:", itemId);
-        showToast("Item excluído com sucesso");
-      }
-      // Server sync — re-fetch to get accurate totals/counts
+  // Cancela um item (não é venda). Erros sobem para o modal, que mostra a mensagem do servidor.
+  const handleCancelItem = useCallback(
+    async (comandaId: string, itemId: string, motivo: MotivoCancelamento, detalhe: string | null) => {
+      console.log("[Pedidos] PUT /api/pedidos/" + itemId + "/cancelar (comanda:", comandaId + ")", motivo);
+      const res = await cancelarItem(itemId, motivo, detalhe);
+      showToast(res.cancelado_apos_inicio ? "Item cancelado (registrado como perda)" : "Item cancelado");
+      // Re-fetch para atualizar itens e totais
       await fetchPedidos();
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error("[Pedidos] Erro ao deletar item:", msg);
-      // Error recovery — restore snapshot and remove from deleted set
-      deletedIdsRef.current.delete(itemId);
-      setPedidos(snapshot);
-      Alert.alert("Erro", "Não foi possível remover o prato. Tente novamente.");
-    } finally {
-      setDeletingId(null);
-    }
-  }, [deletingId, pedidos, fetchPedidos, showToast]);
+    },
+    [fetchPedidos, showToast]
+  );
 
   const handleDeleteComanda = useCallback(async (comandaId: string) => {
     console.log("[Pedidos] DELETE /api/comandas/" + comandaId);
@@ -1266,10 +1253,10 @@ export default function PedidosGarcomScreen() {
                 key={`${pedido.comanda_id}-${pedido.numero_sequencial}`}
                 pedido={pedido}
                 index={index}
-                onDeleteItem={handleDeleteItem}
+                onCancelItem={handleCancelItem}
                 onDeleteComanda={handleDeleteComanda}
                 onUpdateItem={handleUpdateItem}
-                deletingId={deletingId}
+                role={role}
               />
             ))
           )}
