@@ -37,6 +37,7 @@ export default function PerfilScreen() {
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
 
   useEffect(() => {
     Animated.parallel([
@@ -248,7 +249,7 @@ export default function PerfilScreen() {
 
         <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
           <AnimatedPressable
-            onPress={handleSignOut}
+            onPress={() => setShowSignOutConfirm(true)}
             style={{
               backgroundColor: "#EF4444",
               borderRadius: 14,
@@ -305,6 +306,17 @@ export default function PerfilScreen() {
         destructive
         onConfirm={handleDeleteAccount}
         onCancel={() => setShowDeleteConfirm(false)}
+      />
+
+      <ConfirmDialog
+        visible={showSignOutConfirm}
+        title="Sair do aplicativo"
+        message="Tem certeza que deseja sair?"
+        confirmLabel="Sair"
+        cancelLabel="Cancelar"
+        destructive
+        onConfirm={handleSignOut}
+        onCancel={() => setShowSignOutConfirm(false)}
       />
     </View>
   );
