@@ -302,6 +302,20 @@ export function createTestFile(filename = "test.txt", content = "test file conte
   return new File([content], filename, { type });
 }
 
+// PNG válido de 1x1 pixel. O endpoint de foto do prato confere os bytes do arquivo
+// (JPEG, PNG ou WebP), então texto com Content-Type "image/jpeg" é rejeitado.
+const PNG_1X1_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+/**
+ * Create a real 1x1 PNG image File for photo upload tests.
+ */
+export function createTestImage(filename = "test.png"): File {
+  return new File([Buffer.from(PNG_1X1_BASE64, "base64")], filename, { type: "image/png" });
+}
+
+export const PNG_1X1_DATA_URI = `data:image/png;base64,${PNG_1X1_BASE64}`;
+
 const WS_URL = BASE_URL.replace(/^http/, "ws");
 
 /**
