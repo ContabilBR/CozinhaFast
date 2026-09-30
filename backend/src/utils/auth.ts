@@ -73,52 +73,36 @@ export async function requireAuth(
             userRole = profilesList[0].role;
             const rid = profilesList[0].restauranteId ? String(profilesList[0].restauranteId) : null;
             if (rid) {
-              app.logger.debug({ userId: user.id, restauranteId: rid }, "User authenticated via Better Auth");
-              authContextOrNull = {
-                id: user.id,
-                email: user.email,
-                role: userRole,
-                name: user.name || "",
-                restauranteId: rid,
-              };
-            }
-          } else {
-            // Profile doesn't exist - get a default restaurante for auth
-            try {
-              const defaultRestaurante = await app.db
-                .select()
+              // Verificar que o restaurante referenciado existe
+              const restauranteCheck = await app.db
+                .select({ id: schema.restaurante.id })
                 .from(schema.restaurante)
+                .where(eq(schema.restaurante.id, rid))
                 .limit(1);
-
-              if (defaultRestaurante.length > 0) {
-                const restauranteId = String(defaultRestaurante[0].id);
-
-                // Try to create profile but don't fail auth if it doesn't work
-                try {
-                  await app.db.insert(schema.profiles).values({
-                    userId: user.id,
-                    restauranteId: restauranteId,
-                    role: userRole,
-                    name: user.name || "",
-                    createdAt: new Date(),
-                  });
-                  app.logger.info({ userId: user.id, restauranteId }, "Created profile during auth");
-                } catch (profileCreateErr) {
-                  app.logger.debug({ userId: user.id, err: profileCreateErr }, "Profile creation failed, but continuing with auth");
-                }
-
-                // Always set auth context if we have a restaurante
+              if (restauranteCheck.length > 0) {
+                app.logger.debug({ userId: user.id, restauranteId: rid }, "User authenticated via Better Auth");
                 authContextOrNull = {
                   id: user.id,
                   email: user.email,
                   role: userRole,
                   name: user.name || "",
-                  restauranteId: restauranteId,
+                  restauranteId: rid,
                 };
+              } else {
+                app.logger.warn({ userId: user.id, restauranteId: rid }, "Profile references non-existent restaurante");
+                reply.status(403).send({ error: "Usuário sem vínculo válido com um restaurante. Contate o administrador." });
+                return null;
               }
-            } catch (err) {
-              app.logger.debug({ err }, "Failed to get default restaurante during auth");
+            } else {
+              app.logger.warn({ userId: user.id }, "Profile exists but has no restauranteId");
+              reply.status(403).send({ error: "Usuário sem vínculo válido com um restaurante. Contate o administrador." });
+              return null;
             }
+          } else {
+            // Sessão válida mas sem perfil — recusar acesso sem criar vínculo automático
+            app.logger.warn({ userId: user.id }, "Better Auth user has no profile — denying access");
+            reply.status(403).send({ error: "Usuário sem vínculo com um restaurante. Contate o administrador." });
+            return null;
           }
         }
       }

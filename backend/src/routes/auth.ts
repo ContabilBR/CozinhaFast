@@ -122,8 +122,16 @@ export function registerAuthRoutes(app: App) {
         const now = new Date();
         const userRole = role || "garcom";
 
-        // Ensure a restaurante exists - get first or create default
-        app.logger.debug({}, "Looking for existing restaurante");
+        // LIMITAÇÃO CONHECIDA DO AMBIENTE DE TESTE:
+        // O campo restaurante_id em schema.usuarios é NOT NULL no banco, portanto
+        // não é possível criar um usuário de teste sem vínculo com um restaurante
+        // nesta tabela. Como workaround, buscamos o primeiro restaurante existente.
+        // Usuários criados por este endpoint (ALLOW_TEST_SIGNUP=true) NÃO passam
+        // pelo fluxo Better Auth — usam custom auth (usuariosSession) — portanto
+        // o requireAuth os autentica via schema.usuarios.restauranteId diretamente,
+        // sem passar pela verificação de profiles. Este comportamento é intencional
+        // para o ambiente de testes.
+        app.logger.debug({}, "TEST SIGNUP: looking for existing restaurante (NOT NULL constraint workaround)");
         let restaurantes: any = [];
         try {
           restaurantes = await app.db.select().from(schema.restaurante).limit(1);
@@ -136,33 +144,12 @@ export function registerAuthRoutes(app: App) {
 
         if (restaurantes && restaurantes.length > 0) {
           restauranteId = restaurantes[0].id;
-          app.logger.debug({ restauranteId }, "Using existing restaurante");
+          app.logger.debug({ restauranteId }, "TEST SIGNUP: using existing restaurante (NOT NULL workaround)");
         }
 
         if (!restauranteId) {
-          // No restaurante exists, create one
-          app.logger.debug({}, "Creating default restaurante");
-          try {
-            const inserted = await app.db
-              .insert(schema.restaurante)
-              .values({
-                nome: 'Default Restaurant',
-              })
-              .returning();
-
-            if (!inserted || inserted.length === 0) {
-              throw new Error('Failed to create restaurante - no ID returned');
-            }
-            restauranteId = inserted[0].id;
-            app.logger.debug({ restauranteId }, "Created default restaurante");
-          } catch (err) {
-            app.logger.error({ err }, "Failed to create restaurante");
-            throw err;
-          }
-        }
-
-        if (!restauranteId) {
-          throw new Error('No restaurante ID available');
+          app.logger.error({}, "TEST SIGNUP: no restaurante found and cannot create user without one (NOT NULL constraint)");
+          return reply.status(500).send({ error: "Nenhum restaurante disponível para usuário de teste. Crie um restaurante primeiro via /api/restaurantes/signup." });
         }
 
         // Hash password
