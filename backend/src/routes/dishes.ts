@@ -3,6 +3,7 @@ import { eq, and, sql, like } from "drizzle-orm";
 import * as schema from "../db/schema/schema.js";
 import type { App } from "../index.js";
 import { requireAuth as customRequireAuth, requireRole, requireTenant } from "../utils/auth.js";
+import { MAX_IMAGEM_BYTES, detectarImagem, chaveImagemPrato, resolverImagemUrlEntrada } from "../utils/imagem.js";
 
 interface FiscalFields {
   ncm?: string | null;
@@ -359,6 +360,11 @@ export function registerDishRoutes(app: App) {
           return reply.code(400).send({ error: validationError.message });
         }
 
+        const imagemCriacao = resolverImagemUrlEntrada(request.body.imagemUrl ?? request.body.imagem_url);
+        if (!imagemCriacao.ok) {
+          return reply.code(400).send({ error: imagemCriacao.erro });
+        }
+
         const normalizedPreco = normalizeDecimal(request.body.preco);
 
         const insertValues: any = {
@@ -366,7 +372,7 @@ export function registerDishRoutes(app: App) {
           descricao: request.body.descricao,
           preco: normalizedPreco.toString(),
           categoriaId: request.body.categoriaId ?? request.body.categoria_id,
-          imagemUrl: request.body.imagemUrl ?? request.body.imagem_url,
+          imagemUrl: imagemCriacao.valor,
           disponivel: request.body.disponivel !== false,
           tempoPreparoMinutos: request.body.tempoPreparoMinutos ?? null,
           restauranteId,
@@ -651,8 +657,14 @@ export function registerDishRoutes(app: App) {
         const categoriaId = request.body.categoriaId !== undefined ? request.body.categoriaId : request.body.categoria_id;
         if (categoriaId !== undefined) updates.categoriaId = categoriaId;
 
-        const imagemUrl = request.body.imagemUrl || request.body.imagem_url;
-        if (imagemUrl !== undefined) updates.imagemUrl = imagemUrl;
+        const imagemEdicao = resolverImagemUrlEntrada(
+          request.body.imagemUrl || request.body.imagem_url,
+          existing[0].imagemUrl
+        );
+        if (!imagemEdicao.ok) {
+          return reply.code(400).send({ error: imagemEdicao.erro });
+        }
+        if (imagemEdicao.valor !== undefined) updates.imagemUrl = imagemEdicao.valor;
 
         if (request.body.disponivel !== undefined) updates.disponivel = request.body.disponivel;
         if (request.body.tempoPreparoMinutos !== undefined) updates.tempoPreparoMinutos = request.body.tempoPreparoMinutos;
@@ -899,7 +911,6 @@ export function registerDishRoutes(app: App) {
         }
 
         let buffer: Buffer;
-        let mimeType: string;
 
         // Detect format by Content-Type header
         const contentType = request.headers["content-type"] || "";
@@ -908,7 +919,7 @@ export function registerDishRoutes(app: App) {
           // Format 1: Multipart file upload
           app.logger.debug({ pratoId: request.params.id }, "Processing multipart file upload");
 
-          const data = await request.file({ limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB limit
+          const data = await request.file({ limits: { fileSize: MAX_IMAGEM_BYTES } }); // 5MB limit
 
           if (!data) {
             app.logger.warn({ pratoId: request.params.id }, "No file provided in multipart upload");
@@ -921,8 +932,6 @@ export function registerDishRoutes(app: App) {
             app.logger.warn({ err: error, pratoId: request.params.id }, "File too large");
             return reply.code(413).send({ error: "Arquivo muito grande" });
           }
-
-          mimeType = data.mimetype || "application/octet-stream";
         } else if (contentType.includes("application/json")) {
           // Format 2: JSON with base64 data URI
           app.logger.debug({ pratoId: request.params.id }, "Processing JSON base64 upload");
@@ -935,11 +944,11 @@ export function registerDishRoutes(app: App) {
             return reply.code(400).send({ error: "Nenhuma imagem enviada" });
           }
 
-          // Extract MIME type from data URI prefix (e.g., "data:image/jpeg;base64,...")
-          const dataUriMatch = imagemBase64.match(/^data:([^;]+);base64,/);
-          mimeType = dataUriMatch ? dataUriMatch[1] : "application/octet-stream";
+          if (typeof imagemBase64 !== "string") {
+            return reply.code(400).send({ error: "Formato base64 inválido" });
+          }
 
-          // Strip the data URI prefix and decode base64
+          // Strip the data URI prefix and decode base64 (o tipo real é detectado pelos bytes)
           const base64String = imagemBase64.replace(/^data:[^;]+;base64,/, "");
           try {
             buffer = Buffer.from(base64String, "base64");
@@ -957,14 +966,21 @@ export function registerDishRoutes(app: App) {
           return reply.code(400).send({ error: "Content-Type deve ser multipart/form-data ou application/json" });
         }
 
-        // Determine file extension from MIME type
-        const ext = mimeType.startsWith("image/")
-          ? mimeType.replace("image/", ".")
-          : mimeType === "application/octet-stream"
-          ? ".bin"
-          : "." + mimeType.split("/")[1];
+        if (buffer.length > MAX_IMAGEM_BYTES) {
+          return reply.code(413).send({ error: "Imagem muito grande (máximo 5 MB)" });
+        }
+        if (buffer.length === 0) {
+          return reply.code(400).send({ error: "Nenhuma imagem enviada" });
+        }
 
-        const filename = `pratos/${request.params.id}-${Date.now()}${ext}`;
+        // Tipo e extensão vêm dos bytes do arquivo, nunca do que o cliente declarou
+        const tipo = detectarImagem(buffer);
+        if (!tipo) {
+          app.logger.warn({ pratoId: request.params.id }, "Prato photo rejected: not a JPEG/PNG/WebP image");
+          return reply.code(400).send({ error: "Formato de imagem não suportado. Envie JPEG, PNG ou WebP." });
+        }
+
+        const filename = chaveImagemPrato(restauranteId, request.params.id, tipo.ext);
 
         // Upload to storage
         const uploadedKey = await app.storage.upload(filename, buffer);
@@ -976,10 +992,10 @@ export function registerDishRoutes(app: App) {
         const [updated] = await app.db
           .update(schema.pratos)
           .set({ imagemUrl: url })
-          .where(eq(schema.pratos.id, request.params.id))
+          .where(and(eq(schema.pratos.id, request.params.id), eq(schema.pratos.restauranteId, restauranteId)))
           .returning();
 
-        app.logger.info({ pratoId: request.params.id, url }, "Prato photo uploaded successfully");
+        app.logger.info({ pratoId: request.params.id, chave: uploadedKey }, "Prato photo uploaded successfully");
 
         return reply.code(200).send({
           id: updated.id,

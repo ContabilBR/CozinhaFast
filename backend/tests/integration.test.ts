@@ -1,5 +1,5 @@
 import { describe, test, expect, afterAll } from "bun:test";
-import { api, authenticatedApi, signUpTestUser, expectStatus, createTestFile, connectAuthenticatedWebSocket, waitForMessage } from "./helpers";
+import { api, authenticatedApi, signUpTestUser, expectStatus, createTestFile, createTestImage, connectAuthenticatedWebSocket, waitForMessage } from "./helpers";
 
 afterAll(async () => {
   // Cleanup is handled automatically by signUpTestUser
@@ -698,7 +698,7 @@ describe("API Integration Tests", () => {
     const pratoData = await createRes.json();
 
     const form = new FormData();
-    form.append("file", createTestFile("dish.jpg", "test image", "image/jpeg"));
+    form.append("file", createTestImage("dish.png"));
 
     const res = await authenticatedApi(`/api/pratos/${pratoData.prato.id}/foto`, adminToken, {
       method: "POST",
@@ -1815,37 +1815,25 @@ describe("API Integration Tests", () => {
   });
 
   // ==================== Upload ====================
-  test("Upload image file returns 200 or 400 or 413", async () => {
-    const form = new FormData();
-    form.append("file", createTestFile("image.jpg", "test image", "image/jpeg"));
-
-    const res = await authenticatedApi("/api/upload/imagem", authToken, {
-      method: "POST",
-      body: form,
-    });
-    await expectStatus(res, 200, 400, 413);
+  // Os endpoints genéricos /api/upload e /api/upload/imagem foram removidos: aceitavam qualquer
+  // tipo de arquivo de qualquer usuário logado, sem separar por restaurante, e o app não os usa.
+  // A foto do prato é enviada por POST /api/pratos/:id/foto (testes em upload-imagem.test.ts).
+  test("Generic upload endpoints no longer exist", async () => {
+    for (const path of ["/api/upload/imagem", "/api/upload"]) {
+      const form = new FormData();
+      form.append("file", createTestImage("image.png"));
+      const res = await authenticatedApi(path, authToken, { method: "POST", body: form });
+      await expectStatus(res, 404);
+    }
   });
 
-  test("Upload image without authentication returns 401", async () => {
-    const form = new FormData();
-    form.append("file", createTestFile("image.jpg", "test", "image/jpeg"));
-
-    const res = await api("/api/upload/imagem", {
-      method: "POST",
-      body: form,
-    });
-    await expectStatus(res, 401);
-  });
-
-  test("Upload generic file returns 200 or 400 or 413", async () => {
-    const form = new FormData();
-    form.append("file", createTestFile("doc.txt", "content", "text/plain"));
-
-    const res = await authenticatedApi("/api/upload", authToken, {
-      method: "POST",
-      body: form,
-    });
-    await expectStatus(res, 200, 400, 413);
+  test("Generic upload endpoints without authentication return 401 or 404", async () => {
+    for (const path of ["/api/upload/imagem", "/api/upload"]) {
+      const form = new FormData();
+      form.append("file", createTestImage("image.png"));
+      const res = await api(path, { method: "POST", body: form });
+      await expectStatus(res, 401, 404);
+    }
   });
 
   // ==================== Subscription ====================

@@ -56,7 +56,8 @@ export default function PerfilScreen() {
   const canAdmin = isAdmin(role);
 
   const handleSignOut = async () => {
-    console.log("[Perfil] Sign out button pressed");
+    setShowLogoutConfirm(false);
+    console.log("[Perfil] Sign out confirmed");
     try {
       await signOut();
       console.log("[Perfil] Sign out successful");

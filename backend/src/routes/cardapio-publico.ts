@@ -4,6 +4,18 @@ import type { App } from "../index.js";
 import * as schema from "../db/schema/schema.js";
 import { checkRateLimit } from "../utils/rate-limit.js";
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Escape para texto colocado dentro de HTML (título e cabeçalho da página do cardápio)
+function escHtml(s: string): string {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 export function registerCardapioPublicoRoutes(app: App) {
   const db = app.db as any;
 
@@ -31,8 +43,11 @@ export function registerCardapioPublicoRoutes(app: App) {
   app.fastify.get("/cardapio", async (request: FastifyRequest, reply: FastifyReply) => {
     if (!checkRateLimit(request, reply, { routeKey: "cardapio-html", max: 60, windowMs: 60_000 })) return;
     const q = request.query as any;
-    const r = q.r || "";
-    const m = q.m || "0";
+    // r e m entram dentro do JavaScript da página: só aceitamos UUID e número inteiro curto
+    const rBruto = typeof q.r === "string" ? q.r : "";
+    const mBruto = typeof q.m === "string" ? q.m : "";
+    const r = UUID_RE.test(rBruto) ? rBruto : "";
+    const m = /^\d{1,6}$/.test(mBruto) ? mBruto : "0";
     let restNome = "Restaurante";
     if (r) {
       try {
@@ -41,12 +56,13 @@ export function registerCardapioPublicoRoutes(app: App) {
       } catch (_) { /* invalid uuid, keep default name */ }
     }
     const mesaLabel = m !== "0" ? `Mesa ${m}` : "Cardápio Digital";
+    const restNomeHtml = escHtml(restNome);
     const html = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${restNome}</title>
+<title>${restNomeHtml}</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,system-ui,sans-serif;background:#FAF7F4;color:#1a1a1a;max-width:480px;margin:0 auto;padding-bottom:80px}
@@ -75,7 +91,7 @@ body{font-family:-apple-system,system-ui,sans-serif;background:#FAF7F4;color:#1a
 </style>
 </head>
 <body>
-<div class="hd"><h1>${restNome}</h1><p>${mesaLabel}</p></div>
+<div class="hd"><h1>${restNomeHtml}</h1><p>${mesaLabel}</p></div>
 <div id="cd"><div style="text-align:center;padding:60px;color:#888">Carregando...</div></div>
 <div class="cr" id="cr" onclick="oc()">
   <div style="display:flex;justify-content:space-between;align-items:center">
@@ -91,6 +107,7 @@ body{font-family:-apple-system,system-ui,sans-serif;background:#FAF7F4;color:#1a
 var R="${r}",M=${m},D=[],C=[];
 function fmt(v){return"R$ "+v.toFixed(2).replace(".",",")}
 function esc(s){var d=document.createElement("div");d.textContent=s;return d.innerHTML}
+function su(u){try{u=encodeURI(String(u||""))}catch(e){return""}return u.slice(0,8).toLowerCase()==="https://"?u:""}
 function init(){
   if(!R){document.getElementById("cd").innerHTML='<div style="text-align:center;padding:60px;color:#c00"><h2>QR Code inválido</h2><p style="margin-top:8px;color:#888">Escaneie o QR Code da mesa para acessar o cardápio.</p></div>';return}
   fetch("/api/public/cardapio/"+R)
@@ -107,7 +124,7 @@ function ren(){
       h+='<div style="flex:1;min-width:0"><div style="font-size:15px;font-weight:500">'+esc(p.nome)+'</div>';
       if(p.descricao)h+='<div style="font-size:12px;color:#888;margin-top:2px">'+esc(p.descricao)+'</div>';
       h+='</div>';
-      if(p.imagemUrl)h+='<img class="img-prato" src="'+p.imagemUrl+'" alt="">';
+      var iu=su(p.imagemUrl);if(iu)h+='<img class="img-prato" src="'+iu+'" alt="">';
       h+='<div class="pr">'+fmt(p.preco)+'</div></div>';
     })
   });

@@ -401,7 +401,8 @@ export default function AuthScreen() {
           </Animated.View>
         )}
 
-        {/* Demo credentials */}
+        {/* Demo credentials (somente em modo de teste) */}
+        {TEST_MODE && (
         <Animated.View style={{ marginTop: 28, opacity: fadeAnim }}>
           <Text
             style={{
@@ -454,6 +455,7 @@ export default function AuthScreen() {
             ))}
           </View>
         </Animated.View>
+        )}
       </ScrollView>
     </KeyboardAvoidingView>
   );
