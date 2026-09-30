@@ -191,6 +191,9 @@ export const profiles = pgTable("profiles", {
 // Usuarios (App-level user management, separate from auth users)
 export const usuarios = pgTable("usuarios", {
   id: text("id").primaryKey(),
+  // Explicit one-to-one link; legacy/custom-only accounts remain null until reviewed.
+  betterAuthUserId: text("better_auth_user_id").unique("usuarios_better_auth_user_id_unique")
+    .references(() => user.id, { onDelete: "set null" }),
   nome: text("nome").notNull(),
   email: text("email").notNull().unique(),
   senhaHash: text("senha_hash"),

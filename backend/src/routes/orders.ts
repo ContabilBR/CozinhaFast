@@ -103,8 +103,8 @@ export function registerOrderRoutes(app: App) {
             COUNT(p.id) FILTER (WHERE p.status <> 'cancelado')::integer AS item_count,
             COALESCE(SUM(p.quantidade * p.preco_unitario) FILTER (WHERE p.status <> 'cancelado'), 0) as total
           FROM comandas c
-          LEFT JOIN mesas m ON m.id = c.mesa_id
-          LEFT JOIN pedidos p ON p.comanda_id = c.id
+          LEFT JOIN mesas m ON m.id = c.mesa_id AND m.restaurante_id = c.restaurante_id
+          LEFT JOIN pedidos p ON p.comanda_id = c.id AND p.restaurante_id = c.restaurante_id
         `;
 
         const restauranteId = requireTenant(authUser);
@@ -224,7 +224,7 @@ export function registerOrderRoutes(app: App) {
         const mesaRecords = await app.db
           .select()
           .from(schema.mesas)
-          .where(eq(schema.mesas.id, mesaId))
+          .where(and(eq(schema.mesas.id, mesaId), eq(schema.mesas.restauranteId, restauranteId)))
           .limit(1);
 
         if (!mesaRecords.length) {
@@ -245,6 +245,16 @@ export function registerOrderRoutes(app: App) {
           },
           "Creating comanda with auth user id as garcom_id"
         );
+
+        // Every referenced dish must belong to the authenticated restaurant.
+        const pratoIds = [...new Set((request.body.itens ?? []).map((item) => item.prato_id))];
+        if (pratoIds.length > 0) {
+          const pratos = await app.db.select({ id: schema.pratos.id }).from(schema.pratos)
+            .where(and(inArray(schema.pratos.id, pratoIds), eq(schema.pratos.restauranteId, restauranteId)));
+          if (pratos.length !== pratoIds.length) {
+            return reply.code(404).send({ error: "Prato não encontrado" });
+          }
+        }
 
         // Calculate total from items before insertion
         let initialTotal = "0";
@@ -293,15 +303,15 @@ export function registerOrderRoutes(app: App) {
             // Update comanda total to ensure consistency with pedidos
             await tx
               .execute(sql`UPDATE comandas SET total = (
-                SELECT COALESCE(SUM(quantidade * preco_unitario) FILTER (WHERE status <> 'cancelado'), 0) FROM pedidos WHERE comanda_id = ${newComanda.id}
-              ) WHERE id = ${newComanda.id}`);
+                SELECT COALESCE(SUM(quantidade * preco_unitario) FILTER (WHERE status <> 'cancelado'), 0) FROM pedidos WHERE comanda_id = ${newComanda.id} AND restaurante_id = ${restauranteId}
+              ) WHERE id = ${newComanda.id} AND restaurante_id = ${restauranteId}`);
           }
 
           // Update mesa status to ocupada
           await tx
             .update(schema.mesas)
             .set({ status: "ocupada" })
-            .where(eq(schema.mesas.id, mesaId));
+            .where(and(eq(schema.mesas.id, mesaId), eq(schema.mesas.restauranteId, restauranteId)));
 
           return newComanda;
         });
@@ -416,7 +426,7 @@ export function registerOrderRoutes(app: App) {
             createdAt: schema.comandas.createdAt,
           })
           .from(schema.comandas)
-          .leftJoin(schema.mesas, eq(schema.mesas.id, schema.comandas.mesaId))
+          .leftJoin(schema.mesas, and(eq(schema.mesas.id, schema.comandas.mesaId), eq(schema.mesas.restauranteId, restauranteId)))
           .where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)));
 
         if (!comandas.length) {
@@ -439,8 +449,8 @@ export function registerOrderRoutes(app: App) {
             createdAt: schema.pedidos.createdAt,
           })
           .from(schema.pedidos)
-          .leftJoin(schema.pratos, eq(schema.pedidos.pratoId, schema.pratos.id))
-          .where(eq(schema.pedidos.comandaId, request.params.id));
+          .leftJoin(schema.pratos, and(eq(schema.pedidos.pratoId, schema.pratos.id), eq(schema.pratos.restauranteId, restauranteId)))
+          .where(and(eq(schema.pedidos.comandaId, request.params.id), eq(schema.pedidos.restauranteId, restauranteId)));
 
         app.logger.info({ comandaId: request.params.id, itemsCount: pedidos_data.length }, "Comanda retrieved successfully");
 
@@ -542,6 +552,7 @@ export function registerOrderRoutes(app: App) {
     ) => {
       const authUser = await customRequireAuth(app, request, reply);
       if (!authUser) return;
+      const restauranteId = requireTenant(authUser);
 
       try {
         const comandaId = request.params.id;
@@ -554,7 +565,7 @@ export function registerOrderRoutes(app: App) {
         const comandas = await app.db
           .select()
           .from(schema.comandas)
-          .where(eq(schema.comandas.id, comandaId))
+          .where(and(eq(schema.comandas.id, comandaId), eq(schema.comandas.restauranteId, restauranteId)))
           .limit(1);
 
         if (!comandas.length) {
@@ -579,7 +590,7 @@ export function registerOrderRoutes(app: App) {
         const pratos = await app.db
           .select({ id: schema.pratos.id })
           .from(schema.pratos)
-          .where(inArray(schema.pratos.id, uniquePratoIds));
+          .where(and(inArray(schema.pratos.id, uniquePratoIds), eq(schema.pratos.restauranteId, restauranteId)));
 
         if (pratos.length !== uniquePratoIds.length) {
           return reply.code(404).send({ error: "One or more pratos not found" });
@@ -609,7 +620,7 @@ export function registerOrderRoutes(app: App) {
             subtotal: sql<string>`COALESCE(SUM(quantidade * preco_unitario) FILTER (WHERE status <> 'cancelado'), 0)`,
           })
           .from(schema.pedidos)
-          .where(eq(schema.pedidos.comandaId, comandaId));
+          .where(and(eq(schema.pedidos.comandaId, comandaId), eq(schema.pedidos.restauranteId, restauranteId)));
 
         const subtotalValue = subtotalResult[0]?.subtotal || "0";
         const subtotal = parseFloat(String(subtotalValue));
@@ -617,7 +628,7 @@ export function registerOrderRoutes(app: App) {
         const gorjetaResult = await app.db
           .select({ gorjeta: schema.comandas.gorjeta })
           .from(schema.comandas)
-          .where(eq(schema.comandas.id, comandaId));
+          .where(and(eq(schema.comandas.id, comandaId), eq(schema.comandas.restauranteId, restauranteId)));
 
         const gorjetaValue = gorjetaResult[0]?.gorjeta || "0";
         const gorjeta = parseFloat(String(gorjetaValue));
@@ -627,7 +638,7 @@ export function registerOrderRoutes(app: App) {
         await app.db
           .update(schema.comandas)
           .set({ subtotal: subtotal.toString(), total })
-          .where(eq(schema.comandas.id, comandaId));
+          .where(and(eq(schema.comandas.id, comandaId), eq(schema.comandas.restauranteId, restauranteId)));
 
         app.logger.info(
           { comandaId, insertedCount: insertedPedidos.length, newTotal: total },
@@ -636,7 +647,6 @@ export function registerOrderRoutes(app: App) {
 
         // Publish realtime event for each pedido created
         try {
-          const restauranteId = requireTenant(authUser);
           for (const pedido of insertedPedidos) {
             realtimeHub.publish(restauranteId, {
               type: "pedido.created",
@@ -682,7 +692,7 @@ export function registerOrderRoutes(app: App) {
         const gorjeta = Math.max(0, (request.body as any)?.gorjeta || 0);
         const subtotal = parseFloat(comanda[0].subtotal ?? "0");
         const novoTotal = subtotal + gorjeta;
-        await app.db.update(schema.comandas).set({ total: novoTotal.toString(), gorjeta: gorjeta.toString() }).where(eq(schema.comandas.id, request.params.id));
+        await app.db.update(schema.comandas).set({ total: novoTotal.toString(), gorjeta: gorjeta.toString() }).where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)));
         return reply.code(200).send({ subtotal, gorjeta, total: novoTotal });
       } catch (err) {
         return reply.code(500).send({ error: "Erro interno" });
@@ -836,6 +846,7 @@ export function registerOrderRoutes(app: App) {
     async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
       const session = await customRequireAuth(app, request, reply);
       if (!session) return;
+      const restauranteId = requireTenant(session);
 
       try {
         app.logger.info({ comandaId: request.params.id }, "Canceling comanda");
@@ -843,7 +854,7 @@ export function registerOrderRoutes(app: App) {
         const existing = await app.db
           .select()
           .from(schema.comandas)
-          .where(eq(schema.comandas.id, request.params.id));
+          .where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)));
 
         if (!existing.length) {
           return reply.code(404).send({ error: "Comanda not found" });
@@ -855,12 +866,12 @@ export function registerOrderRoutes(app: App) {
             status: "cancelada",
             closedAt: new Date(),
           })
-          .where(eq(schema.comandas.id, request.params.id))
+          .where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)))
           .returning();
 
         // Check if mesa still has open comandas
         const remainingComandasResult = await (app.db as any).execute(
-          sql`SELECT COUNT(*) as count FROM comandas WHERE mesa_id = ${updated.mesaId} AND status = 'aberta'`
+          sql`SELECT COUNT(*) as count FROM comandas WHERE mesa_id = ${updated.mesaId} AND restaurante_id = ${restauranteId} AND status = 'aberta'`
         ) as any[];
 
         const remainingCount = remainingComandasResult[0]?.count || 0;
@@ -870,14 +881,13 @@ export function registerOrderRoutes(app: App) {
           await app.db
             .update(schema.mesas)
             .set({ status: "disponivel" })
-            .where(eq(schema.mesas.id, updated.mesaId));
+            .where(and(eq(schema.mesas.id, updated.mesaId), eq(schema.mesas.restauranteId, restauranteId)));
         }
 
         app.logger.info({ comandaId: updated.id }, "Comanda cancelled successfully");
 
         // Publish realtime event
         try {
-          const restauranteId = requireTenant(session);
           realtimeHub.publish(restauranteId, {
             type: "comanda.cancelled",
             entityId: updated.id,
@@ -926,6 +936,7 @@ export function registerOrderRoutes(app: App) {
     async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
       const session = await customRequireAuth(app, request, reply);
       if (!session) return;
+      const restauranteId = requireTenant(session);
 
       try {
         app.logger.info({ comandaId: request.params.id }, "Deleting comanda");
@@ -933,7 +944,7 @@ export function registerOrderRoutes(app: App) {
         const existing = await app.db
           .select()
           .from(schema.comandas)
-          .where(eq(schema.comandas.id, request.params.id));
+          .where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)));
 
         if (!existing.length) {
           app.logger.warn({ comandaId: request.params.id }, "Comanda not found");
@@ -946,18 +957,18 @@ export function registerOrderRoutes(app: App) {
         app.logger.debug({ comandaId: request.params.id }, "Deleting pedidos for comanda");
         await app.db
           .delete(schema.pedidos)
-          .where(eq(schema.pedidos.comandaId, request.params.id));
+          .where(and(eq(schema.pedidos.comandaId, request.params.id), eq(schema.pedidos.restauranteId, restauranteId)));
 
         // Delete the comanda
         await app.db
           .delete(schema.comandas)
-          .where(eq(schema.comandas.id, request.params.id));
+          .where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)));
 
         // Update mesa status back to disponivel
         await app.db
           .update(schema.mesas)
           .set({ status: "disponivel" })
-          .where(eq(schema.mesas.id, comanda.mesaId));
+          .where(and(eq(schema.mesas.id, comanda.mesaId), eq(schema.mesas.restauranteId, restauranteId)));
 
         app.logger.info({ comandaId: request.params.id }, "Comanda deleted successfully");
 
@@ -1018,6 +1029,7 @@ export function registerOrderRoutes(app: App) {
     ) => {
       const session = await customRequireAuth(app, request, reply);
       if (!session) return;
+      const restauranteId = requireTenant(session);
 
       try {
         app.logger.info({ pedidoId: request.params.id }, "Updating pedido observacao");
@@ -1025,7 +1037,7 @@ export function registerOrderRoutes(app: App) {
         const existing = await app.db
           .select()
           .from(schema.pedidos)
-          .where(eq(schema.pedidos.id, request.params.id));
+          .where(and(eq(schema.pedidos.id, request.params.id), eq(schema.pedidos.restauranteId, restauranteId)));
 
         if (!existing.length) {
           app.logger.warn({ pedidoId: request.params.id }, "Pedido not found");
@@ -1037,7 +1049,7 @@ export function registerOrderRoutes(app: App) {
           .set({
             observacao: request.body.observacao,
           })
-          .where(eq(schema.pedidos.id, request.params.id))
+          .where(and(eq(schema.pedidos.id, request.params.id), eq(schema.pedidos.restauranteId, restauranteId)))
           .returning();
 
         app.logger.info({ pedidoId: updated.id }, "Pedido observacao updated successfully");
@@ -1117,6 +1129,7 @@ export function registerOrderRoutes(app: App) {
     async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
       const session = await customRequireAuth(app, request, reply);
       if (!session) return;
+      const restauranteId = requireTenant(session);
 
       try {
         const mesaId = request.params.id;
@@ -1126,7 +1139,7 @@ export function registerOrderRoutes(app: App) {
         const mesaExists = await app.db
           .select({ id: schema.mesas.id })
           .from(schema.mesas)
-          .where(eq(schema.mesas.id, mesaId as any));
+          .where(and(eq(schema.mesas.id, mesaId), eq(schema.mesas.restauranteId, restauranteId)));
 
         if (!mesaExists.length) {
           app.logger.warn({ mesaId }, "Mesa not found");
@@ -1146,10 +1159,12 @@ export function registerOrderRoutes(app: App) {
             COALESCE(u.email, us.email) AS garcom_email,
             COALESCE(SUM(p.quantidade * p.preco_unitario) FILTER (WHERE p.status <> 'cancelado'), 0)::float as total
           FROM comandas c
-          LEFT JOIN "user" u ON u.id = c.garcom_id
-          LEFT JOIN usuarios us ON us.id::text = c.garcom_id
-          LEFT JOIN pedidos p ON p.comanda_id = c.id
-          WHERE c.mesa_id = ${mesaId} AND c.status = 'aberta'
+          LEFT JOIN "user" u ON u.id = c.garcom_id AND EXISTS (
+            SELECT 1 FROM profiles pf WHERE pf.user_id = u.id AND pf.restaurante_id = c.restaurante_id
+          )
+          LEFT JOIN usuarios us ON us.id::text = c.garcom_id AND us.restaurante_id = c.restaurante_id
+          LEFT JOIN pedidos p ON p.comanda_id = c.id AND p.restaurante_id = ${restauranteId}
+          WHERE c.mesa_id = ${mesaId} AND c.restaurante_id = ${restauranteId} AND c.status = 'aberta'
           GROUP BY c.id, c.mesa_id, c.mesa_numero, c.garcom_id, c.status, c.created_at, u.name, u.email, us.nome, us.email
           ORDER BY c.created_at DESC
           LIMIT 1
@@ -1178,8 +1193,8 @@ export function registerOrderRoutes(app: App) {
             pr.descricao AS prato_descricao,
             pr.imagem_url AS prato_imagem
           FROM pedidos p
-          LEFT JOIN pratos pr ON p.prato_id = pr.id
-          WHERE p.comanda_id = ${comandaRow.comanda_id}
+          LEFT JOIN pratos pr ON p.prato_id = pr.id AND pr.restaurante_id = ${restauranteId}
+          WHERE p.comanda_id = ${comandaRow.comanda_id} AND p.restaurante_id = ${restauranteId}
           ORDER BY p.created_at ASC
         `;
 
@@ -1315,7 +1330,7 @@ export function registerOrderRoutes(app: App) {
         const mesaResult = await app.db
           .select()
           .from(schema.mesas)
-          .where(eq(schema.mesas.id, mesaId))
+          .where(and(eq(schema.mesas.id, mesaId), eq(schema.mesas.restauranteId, restauranteId)))
           .limit(1);
 
         if (!mesaResult.length) {

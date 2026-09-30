@@ -124,9 +124,9 @@ export function registerOrderItemRoutes(app: App) {
             garcomId: schema.comandas.garcomId,
           })
           .from(schema.pedidos)
-          .innerJoin(schema.comandas, eq(schema.pedidos.comandaId, schema.comandas.id))
+          .innerJoin(schema.comandas, and(eq(schema.pedidos.comandaId, schema.comandas.id), eq(schema.comandas.restauranteId, schema.pedidos.restauranteId)))
           .leftJoin(schema.mesas, eq(schema.mesas.id, schema.comandas.mesaId))
-          .leftJoin(schema.pratos, eq(schema.pedidos.pratoId, schema.pratos.id))
+          .leftJoin(schema.pratos, and(eq(schema.pedidos.pratoId, schema.pratos.id), eq(schema.pratos.restauranteId, schema.pedidos.restauranteId)))
           .where(whereCondition)
           .orderBy(desc(schema.pedidos.createdAt));
 
@@ -223,7 +223,7 @@ export function registerOrderItemRoutes(app: App) {
         const prato = await app.db
           .select()
           .from(schema.pratos)
-          .where(eq(schema.pratos.id, pratoId))
+          .where(and(eq(schema.pratos.id, pratoId), eq(schema.pratos.restauranteId, restauranteId)))
           .limit(1);
 
         if (!prato.length) {
@@ -234,7 +234,7 @@ export function registerOrderItemRoutes(app: App) {
         const comanda = await app.db
           .select()
           .from(schema.comandas)
-          .where(eq(schema.comandas.id, comandaId))
+          .where(and(eq(schema.comandas.id, comandaId), eq(schema.comandas.restauranteId, restauranteId)))
           .limit(1);
 
         if (!comanda.length) {
@@ -264,7 +264,7 @@ export function registerOrderItemRoutes(app: App) {
             subtotal: sql<string>`COALESCE(SUM(quantidade * preco_unitario) FILTER (WHERE status <> 'cancelado'), 0)`,
           })
           .from(schema.pedidos)
-          .where(eq(schema.pedidos.comandaId, comandaId));
+          .where(and(eq(schema.pedidos.comandaId, comandaId), eq(schema.pedidos.restauranteId, restauranteId)));
 
         const subtotalValue = subtotalResult[0]?.subtotal || "0";
         const subtotal = parseFloat(String(subtotalValue));
@@ -272,7 +272,7 @@ export function registerOrderItemRoutes(app: App) {
         const comandaData = await app.db
           .select({ gorjeta: schema.comandas.gorjeta })
           .from(schema.comandas)
-          .where(eq(schema.comandas.id, comandaId));
+          .where(and(eq(schema.comandas.id, comandaId), eq(schema.comandas.restauranteId, restauranteId)));
 
         const gorjetaValue = comandaData[0]?.gorjeta || "0";
         const gorjeta = parseFloat(String(gorjetaValue));
@@ -281,7 +281,7 @@ export function registerOrderItemRoutes(app: App) {
         await app.db
           .update(schema.comandas)
           .set({ subtotal: subtotal.toString(), total: newTotal })
-          .where(eq(schema.comandas.id, comandaId));
+          .where(and(eq(schema.comandas.id, comandaId), eq(schema.comandas.restauranteId, restauranteId)));
 
         app.logger.info({ pedidoId: pedido.id }, "Pedido created successfully");
 
@@ -350,6 +350,7 @@ export function registerOrderItemRoutes(app: App) {
     async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
       const session = await customRequireAuth(app, request, reply);
       if (!session) return;
+      const restauranteId = requireTenant(session);
 
       try {
         app.logger.info({ pedidoId: request.params.id }, "Getting pedido");
@@ -368,9 +369,9 @@ export function registerOrderItemRoutes(app: App) {
             mesaNumero: schema.comandas.mesaNumero,
           })
           .from(schema.pedidos)
-          .leftJoin(schema.pratos, eq(schema.pedidos.pratoId, schema.pratos.id))
-          .leftJoin(schema.comandas, eq(schema.pedidos.comandaId, schema.comandas.id))
-          .where(eq(schema.pedidos.id, request.params.id));
+          .leftJoin(schema.pratos, and(eq(schema.pedidos.pratoId, schema.pratos.id), eq(schema.pratos.restauranteId, restauranteId)))
+          .leftJoin(schema.comandas, and(eq(schema.pedidos.comandaId, schema.comandas.id), eq(schema.comandas.restauranteId, restauranteId)))
+          .where(and(eq(schema.pedidos.id, request.params.id), eq(schema.pedidos.restauranteId, restauranteId)));
 
         if (!pedidos.length) {
           return reply.code(404).send({ error: "Pedido not found" });
@@ -469,7 +470,7 @@ export function registerOrderItemRoutes(app: App) {
         const [updated] = await app.db
           .update(schema.pedidos)
           .set({ status: request.body.status as any })
-          .where(eq(schema.pedidos.id, request.params.id))
+          .where(and(eq(schema.pedidos.id, request.params.id), eq(schema.pedidos.restauranteId, restauranteIdAtual)))
           .returning();
 
         app.logger.info({ pedidoId: updated.id }, "Pedido status updated successfully");
@@ -489,9 +490,9 @@ export function registerOrderItemRoutes(app: App) {
                 pratoNome: schema.pratos.nome,
               })
               .from(schema.pedidos)
-              .innerJoin(schema.comandas, eq(schema.pedidos.comandaId, schema.comandas.id))
-              .leftJoin(schema.pratos, eq(schema.pedidos.pratoId, schema.pratos.id))
-              .where(eq(schema.pedidos.id, updated.id))
+              .innerJoin(schema.comandas, and(eq(schema.pedidos.comandaId, schema.comandas.id), eq(schema.comandas.restauranteId, schema.pedidos.restauranteId)))
+              .leftJoin(schema.pratos, and(eq(schema.pedidos.pratoId, schema.pratos.id), eq(schema.pratos.restauranteId, schema.pedidos.restauranteId)))
+              .where(and(eq(schema.pedidos.id, updated.id), eq(schema.pedidos.restauranteId, restauranteIdAtual)))
               .limit(1);
             if (enriched) {
               mesaNumero = enriched.mesaNumero;
@@ -720,7 +721,7 @@ export function registerOrderItemRoutes(app: App) {
         const [updated] = await app.db
           .update(schema.pedidos)
           .set(updates)
-          .where(eq(schema.pedidos.id, request.params.id))
+          .where(and(eq(schema.pedidos.id, request.params.id), eq(schema.pedidos.restauranteId, restauranteIdAtual)))
           .returning();
 
         // Recalculate and update parent comanda's total
@@ -729,7 +730,7 @@ export function registerOrderItemRoutes(app: App) {
             subtotal: sql<string>`COALESCE(SUM(quantidade * preco_unitario) FILTER (WHERE status <> 'cancelado'), 0)`,
           })
           .from(schema.pedidos)
-          .where(eq(schema.pedidos.comandaId, pedido.comandaId));
+          .where(and(eq(schema.pedidos.comandaId, pedido.comandaId), eq(schema.pedidos.restauranteId, restauranteIdAtual)));
 
         const subtotalValue = subtotalResult[0]?.subtotal || "0";
         const subtotal = parseFloat(String(subtotalValue));
@@ -737,7 +738,7 @@ export function registerOrderItemRoutes(app: App) {
         const gorjetaResult = await app.db
           .select({ gorjeta: schema.comandas.gorjeta })
           .from(schema.comandas)
-          .where(eq(schema.comandas.id, pedido.comandaId));
+          .where(and(eq(schema.comandas.id, pedido.comandaId), eq(schema.comandas.restauranteId, restauranteIdAtual)));
 
         const gorjetaValue = gorjetaResult[0]?.gorjeta || "0";
         const gorjeta = parseFloat(String(gorjetaValue));
@@ -746,7 +747,7 @@ export function registerOrderItemRoutes(app: App) {
         await app.db
           .update(schema.comandas)
           .set({ subtotal: subtotal.toString(), total: newTotal })
-          .where(eq(schema.comandas.id, pedido.comandaId));
+          .where(and(eq(schema.comandas.id, pedido.comandaId), eq(schema.comandas.restauranteId, restauranteIdAtual)));
 
         app.logger.info({ pedidoId: updated.id }, "Pedido updated successfully");
 
@@ -838,7 +839,7 @@ export function registerOrderItemRoutes(app: App) {
           const pratoResult = await app.db
             .select({ nome: schema.pratos.nome })
             .from(schema.pratos)
-            .where(eq(schema.pratos.id, pedido.pratoId));
+            .where(and(eq(schema.pratos.id, pedido.pratoId), eq(schema.pratos.restauranteId, restauranteId)));
 
           if (pratoResult.length) {
             pratoNome = pratoResult[0].nome;
@@ -846,7 +847,7 @@ export function registerOrderItemRoutes(app: App) {
         }
 
         // Step c: Delete the pedido
-        await app.db.delete(schema.pedidos).where(eq(schema.pedidos.id, request.params.id));
+        await app.db.delete(schema.pedidos).where(and(eq(schema.pedidos.id, request.params.id), eq(schema.pedidos.restauranteId, restauranteId)));
 
         // Publish realtime event for pedido.deleted
         try {
@@ -866,7 +867,7 @@ export function registerOrderItemRoutes(app: App) {
             subtotal: sql<string>`COALESCE(SUM(quantidade * preco_unitario) FILTER (WHERE status <> 'cancelado'), 0)`,
           })
           .from(schema.pedidos)
-          .where(eq(schema.pedidos.comandaId, pedido.comandaId));
+          .where(and(eq(schema.pedidos.comandaId, pedido.comandaId), eq(schema.pedidos.restauranteId, restauranteId)));
 
         const subtotalValue = subtotalResult[0]?.subtotal || "0";
         const subtotal = parseFloat(String(subtotalValue));
@@ -874,7 +875,7 @@ export function registerOrderItemRoutes(app: App) {
         const gorjetaResult = await app.db
           .select({ gorjeta: schema.comandas.gorjeta })
           .from(schema.comandas)
-          .where(eq(schema.comandas.id, pedido.comandaId));
+          .where(and(eq(schema.comandas.id, pedido.comandaId), eq(schema.comandas.restauranteId, restauranteId)));
 
         const gorjetaValue = gorjetaResult[0]?.gorjeta || "0";
         const gorjeta = parseFloat(String(gorjetaValue));
@@ -883,13 +884,13 @@ export function registerOrderItemRoutes(app: App) {
         await app.db
           .update(schema.comandas)
           .set({ subtotal: subtotal.toString(), total: newTotal })
-          .where(eq(schema.comandas.id, pedido.comandaId));
+          .where(and(eq(schema.comandas.id, pedido.comandaId), eq(schema.comandas.restauranteId, restauranteId)));
 
         // Step e: Check remaining pedidos count
         const remainingPedidos = await app.db
           .select()
           .from(schema.pedidos)
-          .where(eq(schema.pedidos.comandaId, pedido.comandaId));
+          .where(and(eq(schema.pedidos.comandaId, pedido.comandaId), eq(schema.pedidos.restauranteId, restauranteId)));
 
         const remainingCount = remainingPedidos.length;
 
@@ -908,7 +909,7 @@ export function registerOrderItemRoutes(app: App) {
               mesaNumero: schema.comandas.mesaNumero,
             })
             .from(schema.comandas)
-            .where(eq(schema.comandas.id, pedido.comandaId));
+            .where(and(eq(schema.comandas.id, pedido.comandaId), eq(schema.comandas.restauranteId, restauranteId)));
 
           if (comandaInfo.length) {
             const comanda = comandaInfo[0];
@@ -941,12 +942,12 @@ export function registerOrderItemRoutes(app: App) {
               restauranteId,
             });
 
-            await app.db.delete(schema.comandas).where(eq(schema.comandas.id, pedido.comandaId));
+            await app.db.delete(schema.comandas).where(and(eq(schema.comandas.id, pedido.comandaId), eq(schema.comandas.restauranteId, restauranteId)));
 
             await app.db
               .update(schema.mesas)
               .set({ status: "disponivel" })
-              .where(eq(schema.mesas.id, comanda.mesaId));
+              .where(and(eq(schema.mesas.id, comanda.mesaId), eq(schema.mesas.restauranteId, restauranteId)));
 
             app.logger.info(
               { pedidoId: request.params.id, comandaId: pedido.comandaId },
