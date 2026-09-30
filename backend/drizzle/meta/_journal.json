@@ -316,6 +316,13 @@
       "when": 1790704778409,
       "tag": "20260929175938_cancelamento_pedido",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1790719200000,
+      "tag": "20260929220000_link_garcom_identity",
+      "breakpoints": true
     }
   ]
 }

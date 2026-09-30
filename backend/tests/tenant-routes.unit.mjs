@@ -41,8 +41,8 @@ function fixtures() {
                    { id: x.admin, name: "Admin " + k, email: "admin-" + k + "@example.com", role: "administrador", active: true, createdAt: date });
     data.profiles.push({ id: id(k === "A" ? 30 : 31), userId: x.garcom, restauranteId, role: "garcom" },
                        { id: id(k === "A" ? 32 : 33), userId: x.admin, restauranteId, role: "administrador" });
-    data.account.push({ id: id(k === "A" ? 40 : 41), userId: x.garcom, password: "unchanged-" + k });
-    data.usuarios.push({ id: x.usuario, restauranteId, nome: "Garçom " + k, email: "garcom-" + k + "@example.com", role: "garcom", ativo: true, senhaHash: "unchanged-" + k });
+    data.account.push({ id: id(k === "A" ? 40 : 41), userId: x.garcom, providerId: "credential", password: "unchanged-" + k });
+    data.usuarios.push({ id: x.usuario, betterAuthUserId: x.garcom, restauranteId, nome: "Garçom " + k, email: "garcom-" + k + "@example.com", role: "garcom", ativo: true, senhaHash: "unchanged-" + k });
     data.usuariosSession.push({ token: "test-session-" + k, userId: x.usuario });
     data.insumos.push({ id: x.insumo, restauranteId, nome: "Insumo " + k, estoqueAtual: "10", unidade: "kg" });
     data.pratoInsumos.push({ id: x.vinculo, restauranteId, pratoId: x.prato, insumoId: x.insumo, quantidadeUsada: "1" });
@@ -93,6 +93,7 @@ class Query {
     });
     contexts = contexts.filter(row => matches(this.predicate, row)).slice(0, this.limitN);
     if (this.op === "update") {
+      if (this.db.failUpdateTable === this.table) throw Error("Simulated update failure");
       const selected = contexts.map(c => c[this.table]);
       selected.forEach(r => Object.assign(r, this.updates)); return selected;
     }
@@ -140,11 +141,12 @@ function register(source, app) {
     bcrypt: { hash: async password => "test-hash:" + password } };
   new Function(...Object.keys(bindings), js + "\nreturn " + functionName + ";")(...Object.values(bindings))(app);
 }
-async function request(version, method, path, actor, body = {}, params = {}, query = {}) {
+async function request(version, method, path, actor, body = {}, params = {}, query = {}, configure = noop) {
   const routes = new Map(), errors = [];
   const app = { actor, db: new DB(fixtures()), logger: { info: noop, debug: noop, warn: noop, error: (...args) => errors.push(args) }, fastify: {} };
   for (const m of ["get", "post", "put", "patch", "delete"]) app.fastify[m] = (p, ...args) => routes.set(m.toUpperCase() + " " + p, args.at(-1));
   for (const source of Object.values(sources[version])) register(source, app);
+  configure(app.db);
   const before = structuredClone(app.db.data);
   const reply = { statusCode: 200, payload: undefined, code(n) { this.statusCode = n; return this; }, status(n) { return this.code(n); }, send(p) { this.payload = p; return this; } };
   const handler = routes.get(method + " " + path); assert(handler, method + " " + path);
@@ -250,6 +252,52 @@ add("Stock link creation ignores restaurant supplied by client", async version =
   const r = await request(version, "POST", "/api/pratos/:pratoId/insumos", actor("A"),
     { insumo_id: ids.A.insumo, quantidade: "1", restaurante_id: R.B, restauranteId: R.B }, { pratoId: ids.A.prato });
   assert.equal(r.statusCode, 201); assert.equal(r.payload.restauranteId, R.A);
+});
+add("Linked identity survives an email mismatch and a decoy legacy email", async version => {
+  const r = await request(version, "PUT", "/api/garcons/:id", actor("A"),
+    { email: "changed-A@example.com", password: "new-test-password" }, { id: ids.A.garcom }, {}, db => {
+      db.data.usuarios.find(u => u.id === ids.A.usuario).email = "legacy-A@example.com";
+      db.data.usuarios.push({ id: id(990), restauranteId: R.A, role: "garcom",
+        email: "garcom-A@example.com", nome: "Unrelated", senhaHash: "decoy" });
+    });
+  assert.equal(r.statusCode, 200, JSON.stringify(r.errors));
+  const linked = r.data.usuarios.find(u => u.id === ids.A.usuario);
+  assert.equal(linked.email, "changed-A@example.com");
+  assert.equal(linked.senhaHash, "test-hash:new-test-password");
+  assert.equal(r.data.usuarios.find(u => u.id === id(990)).senhaHash, "decoy");
+});
+for (const method of ["PUT", "DELETE"]) for (const condition of ["missing", "foreign", "wrong-role"]) {
+  add(method + " rejects " + condition + " stable identity link without writes", async version => {
+    const r = await request(version, method, "/api/garcons/:id", actor("A"),
+      { name: "Must not change", password: "Must not change" }, { id: ids.A.garcom }, {}, db => {
+        const u = db.data.usuarios.find(u => u.id === ids.A.usuario);
+        if (condition === "missing") u.betterAuthUserId = null;
+        if (condition === "foreign") u.restauranteId = R.B;
+        if (condition === "wrong-role") u.role = "administrador";
+      });
+    assert.equal(r.statusCode, 409, JSON.stringify(r.errors));
+    assert.deepEqual(r.data, r.before);
+  });
+}
+add("Missing credential prevents a partial password update", async version => {
+  const r = await request(version, "PUT", "/api/garcons/:id", actor("A"),
+    { name: "Must not change", password: "Must not change" }, { id: ids.A.garcom }, {}, db => {
+      db.data.account = [];
+    });
+  assert.equal(r.statusCode, 409); assert.deepEqual(r.data, r.before);
+});
+add("Credential write failure rolls back user, profile and custom identity", async version => {
+  const r = await request(version, "PUT", "/api/garcons/:id", actor("A"),
+    { name: "Must roll back", email: "rollback@example.com", password: "Must roll back" },
+    { id: ids.A.garcom }, {}, db => { db.failUpdateTable = "account"; });
+  assert.equal(r.statusCode, 500); assert.deepEqual(r.data, r.before);
+});
+add("New waiter has a stable custom identity link", async version => {
+  const r = await request(version, "POST", "/api/garcons", actor("A"),
+    { name: "New waiter", email: "new-linked@example.com", password: "Test only" });
+  assert.equal(r.statusCode, 201);
+  const u = r.data.usuarios.find(u => u.email === "new-linked@example.com");
+  assert.equal(u.betterAuthUserId, r.payload.id); assert.equal(u.restauranteId, R.A);
 });
 const failures = [];
 for (const { name, run } of checks) {

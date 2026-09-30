@@ -263,6 +263,7 @@ export function registerGarconRoutes(app: App) {
           // Also insert into usuarios table for compatibility
           await tx.insert(schema.usuarios).values({
             id: randomUUID(),
+            betterAuthUserId: userId,
             nome: request.body.name,
             email: request.body.email,
             senhaHash: hashedPassword,
@@ -326,6 +327,7 @@ export function registerGarconRoutes(app: App) {
           401: { type: "object", properties: { error: { type: "string" } } },
           403: { type: "object", properties: { error: { type: "string" } } },
           404: { type: "object", properties: { error: { type: "string" } } },
+          409: { type: "object", properties: { error: { type: "string" } } },
         },
       },
     },
@@ -345,16 +347,23 @@ export function registerGarconRoutes(app: App) {
         const hashedPassword = request.body.password?.trim()
           ? await bcrypt.hash(request.body.password, 10) : null;
 
-        const updated = await (app.db as any).transaction(async (tx: any) => {
+        const outcome = await (app.db as any).transaction(async (tx: any) => {
           const [existing] = await tx.select().from(userTable)
             .where(garconDoRestaurante(tx, restauranteId, request.params.id))
             .for("update");
           if (!existing) return null;
 
-          // Resolve the legacy custom-auth identity only inside the same restaurant.
+          // Resolve the paired identity by an immutable ID, never by email.
           const [usuario] = await tx.select({ id: schema.usuarios.id }).from(schema.usuarios)
-            .where(and(eq(schema.usuarios.email, existing.email),
-              eq(schema.usuarios.restauranteId, restauranteId), eq(schema.usuarios.role, "garcom")));
+            .where(and(eq(schema.usuarios.betterAuthUserId, request.params.id),
+              eq(schema.usuarios.restauranteId, restauranteId), eq(schema.usuarios.role, "garcom"))).for("update");
+
+          if (!usuario) return { error: "identity_link_missing" as const };
+          if (hashedPassword) {
+            const [credential] = await tx.select({ id: accountTable.id }).from(accountTable)
+              .where(and(eq(accountTable.userId, request.params.id), eq(accountTable.providerId, "credential"))).for("update");
+            if (!credential) return { error: "identity_link_missing" as const };
+          }
 
           const updates: any = { updatedAt: new Date() };
           if (request.body.name !== undefined) updates.name = request.body.name;
@@ -371,7 +380,7 @@ export function registerGarconRoutes(app: App) {
           }
           if (hashedPassword) {
             await tx.update(accountTable).set({ password: hashedPassword })
-              .where(and(eq(accountTable.userId, request.params.id),
+              .where(and(eq(accountTable.userId, request.params.id), eq(accountTable.providerId, "credential"),
                 inArray(accountTable.userId, tx.select({ id: userTable.id }).from(userTable)
                   .where(garconDoRestaurante(tx, restauranteId, request.params.id)))));
           }
@@ -383,13 +392,15 @@ export function registerGarconRoutes(app: App) {
             if (hashedPassword) customUpdates.senhaHash = hashedPassword;
             if (Object.keys(customUpdates).length > 0) {
               await tx.update(schema.usuarios).set(customUpdates)
-                .where(and(eq(schema.usuarios.id, usuario.id),
+                .where(and(eq(schema.usuarios.id, usuario.id), eq(schema.usuarios.betterAuthUserId, request.params.id),
                   eq(schema.usuarios.restauranteId, restauranteId), eq(schema.usuarios.role, "garcom")));
             }
           }
-          return result;
+          return { user: result };
         });
-        if (!updated) return reply.code(404).send({ error: "Garcon not found" });
+        if (!outcome) return reply.code(404).send({ error: "Garcon not found" });
+        if ("error" in outcome) return reply.code(409).send({ error: "Vínculo de identidade pendente de revisão" });
+        const updated = outcome.user;
 
         app.logger.info({ userId: updated.id }, "Garcon updated successfully");
 
@@ -425,6 +436,7 @@ export function registerGarconRoutes(app: App) {
           401: { type: "object", properties: { error: { type: "string" } } },
           403: { type: "object", properties: { error: { type: "string" } } },
           404: { type: "object", properties: { error: { type: "string" } } },
+          409: { type: "object", properties: { error: { type: "string" } } },
         },
       },
     },
@@ -441,21 +453,23 @@ export function registerGarconRoutes(app: App) {
         const deleted = await (app.db as any).transaction(async (tx: any) => {
           const [existing] = await tx.select().from(userTable)
             .where(garconDoRestaurante(tx, restauranteId, request.params.id)).for("update");
-          if (!existing) return false;
+          if (!existing) return "not_found";
 
           const [usuario] = await tx.select({ id: schema.usuarios.id }).from(schema.usuarios)
-            .where(and(eq(schema.usuarios.email, existing.email),
-              eq(schema.usuarios.restauranteId, restauranteId), eq(schema.usuarios.role, "garcom")));
-          if (usuario) {
+            .where(and(eq(schema.usuarios.betterAuthUserId, request.params.id),
+              eq(schema.usuarios.restauranteId, restauranteId), eq(schema.usuarios.role, "garcom"))).for("update");
+          if (!usuario) return "identity_link_missing";
+          {
             await tx.delete(schema.usuariosSession).where(eq(schema.usuariosSession.userId, usuario.id));
-            await tx.delete(schema.usuarios).where(and(eq(schema.usuarios.id, usuario.id),
+            await tx.delete(schema.usuarios).where(and(eq(schema.usuarios.id, usuario.id), eq(schema.usuarios.betterAuthUserId, request.params.id),
               eq(schema.usuarios.restauranteId, restauranteId), eq(schema.usuarios.role, "garcom")));
           }
           // account/session/profile rows are removed by their user foreign keys.
           await tx.delete(userTable).where(garconDoRestaurante(tx, restauranteId, request.params.id));
-          return true;
+          return "deleted";
         });
-        if (!deleted) return reply.code(404).send({ error: "Garcon not found" });
+        if (deleted === "not_found") return reply.code(404).send({ error: "Garcon not found" });
+        if (deleted === "identity_link_missing") return reply.code(409).send({ error: "Vínculo de identidade pendente de revisão" });
 
         app.logger.info({ userId: request.params.id }, "Garcon deleted successfully");
 
@@ -518,7 +532,7 @@ export function registerGarconRoutes(app: App) {
         const usuarioRecords = await app.db
           .select()
           .from(schema.usuarios)
-          .where(and(eq(schema.usuarios.email, authUserEmail), eq(schema.usuarios.restauranteId, restauranteId)))
+          .where(and(or(eq(schema.usuarios.id, authUserId), eq(schema.usuarios.betterAuthUserId, authUserId)), eq(schema.usuarios.restauranteId, restauranteId)))
           .limit(1);
 
         const usuarioId = usuarioRecords.length > 0 ? usuarioRecords[0].id : null;

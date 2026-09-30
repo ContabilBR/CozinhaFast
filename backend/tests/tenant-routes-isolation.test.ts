@@ -129,10 +129,19 @@ suite("Rotas: isolamento entre restaurantes", () => {
     expect((await response.json() as any[]).some(v => v.id === a.vinculo)).toBe(true);
   });
 
-  test("edição legítima de garçom preserva acesso e sincroniza autenticação própria", async () => {
-    await expectStatus(await call(a.token, "PUT", "/api/garcons/" + a.garcom, { name: "Nome atualizado" }), 200);
+  test("edição legítima mantém o vínculo após trocar e-mail e senha", async () => {
+    const updatedEmail = "updated-" + crypto.randomUUID() + "@example.com";
+    await expectStatus(await call(a.token, "PUT", "/api/garcons/" + a.garcom,
+      { name: "Nome atualizado", email: updatedEmail, password: "Updated-Password123!" }), 200);
     const response = await call(a.token, "GET", "/api/usuarios/garcons");
     await expectStatus(response, 200);
-    expect((await response.json() as any[]).find(u => u.email === a.garcomEmail)?.nome).toBe("Nome atualizado");
+    expect((await response.json() as any[]).find(u => u.email === updatedEmail)?.nome).toBe("Nome atualizado");
+    const login = await api("/api/login", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: updatedEmail, senha: "Updated-Password123!" }) });
+    await expectStatus(login, 200);
+    await expectStatus(await call(a.token, "PUT", "/api/garcons/" + a.garcom, { name: "Após troca de e-mail" }), 200);
+    const after = await call(a.token, "GET", "/api/usuarios/garcons");
+    await expectStatus(after, 200);
+    expect((await after.json() as any[]).find(u => u.email === updatedEmail)?.nome).toBe("Após troca de e-mail");
   });
 });
