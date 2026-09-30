@@ -1,5 +1,5 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
-import { eq, or, sql } from "drizzle-orm";
+import { eq, or, sql, and, inArray } from "drizzle-orm";
 import { user as userTable, account as accountTable } from "../db/schema/auth-schema.js";
 import * as schema from "../db/schema/schema.js";
 import type { App } from "../index.js";
@@ -22,6 +22,14 @@ interface UpdateGarconBody {
 }
 
 export function registerGarconRoutes(app: App) {
+  // Better Auth stores the restaurant membership in profiles, not in user.
+  const garconDoRestaurante = (executor: any, restauranteId: string, id?: string) => and(
+    eq(userTable.role, "garcom"),
+    inArray(userTable.id, executor.select({ userId: schema.profiles.userId }).from(schema.profiles)
+      .where(and(eq(schema.profiles.restauranteId, restauranteId), eq(schema.profiles.role, "garcom")))),
+    id === undefined ? undefined : eq(userTable.id, id),
+  );
+
   // GET /api/garcons - List all garcons
   app.fastify.get(
     "/api/garcons",
@@ -51,6 +59,7 @@ export function registerGarconRoutes(app: App) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const session = await customRequireAuth(app, request, reply);
       if (!session) return;
+      const restauranteId = requireTenant(session);
 
       try {
         app.logger.info({}, "Listing all garcons");
@@ -58,7 +67,7 @@ export function registerGarconRoutes(app: App) {
         const garcons = await app.db
           .select()
           .from(userTable)
-          .where(eq(userTable.role, "garcom"));
+          .where(garconDoRestaurante(app.db, restauranteId));
 
         return reply.code(200).send(
           garcons.map((u) => ({
@@ -112,6 +121,7 @@ export function registerGarconRoutes(app: App) {
     async (request: FastifyRequest<{ Querystring: { email?: string } }>, reply: FastifyReply) => {
       const authUser = await customRequireAuth(app, request, reply);
       if (!authUser) return;
+      const restauranteId = requireTenant(authUser);
 
       const { email } = request.query as { email?: string };
 
@@ -129,7 +139,7 @@ export function registerGarconRoutes(app: App) {
             nome: schema.usuarios.nome,
           })
           .from(schema.usuarios)
-          .where(sql`LOWER(${schema.usuarios.email}) = LOWER(${email})`)
+          .where(and(sql`LOWER(${schema.usuarios.email}) = LOWER(${email})`, eq(schema.usuarios.restauranteId, restauranteId)))
           .limit(1);
 
         if (usuario.length > 0) {
@@ -223,37 +233,43 @@ export function registerGarconRoutes(app: App) {
         const now = new Date();
         const hashedPassword = await bcrypt.hash(request.body.password, 10);
 
-        await app.db.insert(userTable).values({
-          id: userId,
-          name: request.body.name,
-          email: request.body.email,
-          emailVerified: false,
-          role: "garcom",
-          active: true,
-          createdAt: now,
-          updatedAt: now,
-        });
+        await (app.db as any).transaction(async (tx: any) => {
+          await tx.insert(userTable).values({
+            id: userId,
+            name: request.body.name,
+            email: request.body.email,
+            emailVerified: false,
+            role: "garcom",
+            active: true,
+            createdAt: now,
+            updatedAt: now,
+          });
 
-        // Create account record
-        await app.db.insert(accountTable).values({
-          id: randomUUID(),
-          accountId: userId,
-          providerId: "credential",
-          userId: userId,
-          password: hashedPassword,
-          createdAt: now,
-          updatedAt: now,
-        });
+          await tx.insert(schema.profiles).values({
+            userId, restauranteId, role: "garcom", name: request.body.name,
+          });
 
-        // Also insert into usuarios table for compatibility
-        await app.db.insert(schema.usuarios).values({
-          id: randomUUID(),
-          nome: request.body.name,
-          email: request.body.email,
-          senhaHash: hashedPassword,
-          role: "garcom",
-          restauranteId,
-          createdAt: now,
+          // Create account record
+          await tx.insert(accountTable).values({
+            id: randomUUID(),
+            accountId: userId,
+            providerId: "credential",
+            userId: userId,
+            password: hashedPassword,
+            createdAt: now,
+            updatedAt: now,
+          });
+
+          // Also insert into usuarios table for compatibility
+          await tx.insert(schema.usuarios).values({
+            id: randomUUID(),
+            nome: request.body.name,
+            email: request.body.email,
+            senhaHash: hashedPassword,
+            role: "garcom",
+            restauranteId,
+            createdAt: now,
+          });
         });
 
         app.logger.info({ userId, email: request.body.email }, "Garcon created successfully");
@@ -267,7 +283,7 @@ export function registerGarconRoutes(app: App) {
           created_at: now.toISOString(),
         });
       } catch (error) {
-        app.logger.error({ err: error, body: request.body }, "Failed to create garcon");
+        app.logger.error({ err: error }, "Failed to create garcon");
         return reply.code(500).send({ error: "Internal server error" });
       }
     }
@@ -325,47 +341,55 @@ export function registerGarconRoutes(app: App) {
       if (!requireRole(authUser, ["administrador", "gerente", "admin", "manager", "superadmin", "super_admin"], reply)) return;
 
       try {
-        app.logger.info({ userId: request.params.id }, "Updating garcon");
+        const restauranteId = requireTenant(authUser);
+        const hashedPassword = request.body.password?.trim()
+          ? await bcrypt.hash(request.body.password, 10) : null;
 
-        const existing = await app.db
-          .select()
-          .from(userTable)
-          .where(eq(userTable.id, request.params.id));
+        const updated = await (app.db as any).transaction(async (tx: any) => {
+          const [existing] = await tx.select().from(userTable)
+            .where(garconDoRestaurante(tx, restauranteId, request.params.id))
+            .for("update");
+          if (!existing) return null;
 
-        if (!existing.length) {
-          return reply.code(404).send({ error: "Garcon not found" });
-        }
+          // Resolve the legacy custom-auth identity only inside the same restaurant.
+          const [usuario] = await tx.select({ id: schema.usuarios.id }).from(schema.usuarios)
+            .where(and(eq(schema.usuarios.email, existing.email),
+              eq(schema.usuarios.restauranteId, restauranteId), eq(schema.usuarios.role, "garcom")));
 
-        const updates: any = {};
-        if (request.body.name !== undefined) updates.name = request.body.name;
-        if (request.body.email !== undefined) updates.email = request.body.email;
-        if (request.body.active !== undefined) updates.active = request.body.active;
-        updates.updatedAt = new Date();
+          const updates: any = { updatedAt: new Date() };
+          if (request.body.name !== undefined) updates.name = request.body.name;
+          if (request.body.email !== undefined) updates.email = request.body.email;
+          if (request.body.active !== undefined) updates.active = request.body.active;
+          const [result] = await tx.update(userTable).set(updates)
+            .where(garconDoRestaurante(tx, restauranteId, request.params.id)).returning();
+          if (!result) return null;
 
-        const [updated] = await app.db
-          .update(userTable)
-          .set(updates)
-          .where(eq(userTable.id, request.params.id))
-          .returning();
-
-        // If password is provided, update it in account table and usuarios table
-        if (request.body.password && request.body.password.trim() !== "") {
-          const hashedPassword = await bcrypt.hash(request.body.password, 10);
-
-          // Update account table (Better Auth)
-          await app.db
-            .update(accountTable)
-            .set({ password: hashedPassword })
-            .where(eq(accountTable.userId, request.params.id));
-
-          // Update usuarios table (for compatibility)
-          await app.db
-            .update(schema.usuarios)
-            .set({ senhaHash: hashedPassword })
-            .where(eq(schema.usuarios.email, updated.email));
-
-          app.logger.debug({ userId: updated.id }, "Password updated in both account and usuarios tables");
-        }
+          if (request.body.name !== undefined) {
+            await tx.update(schema.profiles).set({ name: request.body.name })
+              .where(and(eq(schema.profiles.userId, request.params.id),
+                eq(schema.profiles.restauranteId, restauranteId)));
+          }
+          if (hashedPassword) {
+            await tx.update(accountTable).set({ password: hashedPassword })
+              .where(and(eq(accountTable.userId, request.params.id),
+                inArray(accountTable.userId, tx.select({ id: userTable.id }).from(userTable)
+                  .where(garconDoRestaurante(tx, restauranteId, request.params.id)))));
+          }
+          if (usuario) {
+            const customUpdates: any = {};
+            if (request.body.name !== undefined) customUpdates.nome = request.body.name;
+            if (request.body.email !== undefined) customUpdates.email = request.body.email;
+            if (request.body.active !== undefined) customUpdates.ativo = request.body.active;
+            if (hashedPassword) customUpdates.senhaHash = hashedPassword;
+            if (Object.keys(customUpdates).length > 0) {
+              await tx.update(schema.usuarios).set(customUpdates)
+                .where(and(eq(schema.usuarios.id, usuario.id),
+                  eq(schema.usuarios.restauranteId, restauranteId), eq(schema.usuarios.role, "garcom")));
+            }
+          }
+          return result;
+        });
+        if (!updated) return reply.code(404).send({ error: "Garcon not found" });
 
         app.logger.info({ userId: updated.id }, "Garcon updated successfully");
 
@@ -413,18 +437,25 @@ export function registerGarconRoutes(app: App) {
       if (!requireRole(authUser, ["administrador", "gerente", "admin", "manager", "superadmin", "super_admin"], reply)) return;
 
       try {
-        app.logger.info({ userId: request.params.id }, "Deleting garcon");
+        const restauranteId = requireTenant(authUser);
+        const deleted = await (app.db as any).transaction(async (tx: any) => {
+          const [existing] = await tx.select().from(userTable)
+            .where(garconDoRestaurante(tx, restauranteId, request.params.id)).for("update");
+          if (!existing) return false;
 
-        const existing = await app.db
-          .select()
-          .from(userTable)
-          .where(eq(userTable.id, request.params.id));
-
-        if (!existing.length) {
-          return reply.code(404).send({ error: "Garcon not found" });
-        }
-
-        await app.db.delete(userTable).where(eq(userTable.id, request.params.id));
+          const [usuario] = await tx.select({ id: schema.usuarios.id }).from(schema.usuarios)
+            .where(and(eq(schema.usuarios.email, existing.email),
+              eq(schema.usuarios.restauranteId, restauranteId), eq(schema.usuarios.role, "garcom")));
+          if (usuario) {
+            await tx.delete(schema.usuariosSession).where(eq(schema.usuariosSession.userId, usuario.id));
+            await tx.delete(schema.usuarios).where(and(eq(schema.usuarios.id, usuario.id),
+              eq(schema.usuarios.restauranteId, restauranteId), eq(schema.usuarios.role, "garcom")));
+          }
+          // account/session/profile rows are removed by their user foreign keys.
+          await tx.delete(userTable).where(garconDoRestaurante(tx, restauranteId, request.params.id));
+          return true;
+        });
+        if (!deleted) return reply.code(404).send({ error: "Garcon not found" });
 
         app.logger.info({ userId: request.params.id }, "Garcon deleted successfully");
 
@@ -477,6 +508,7 @@ export function registerGarconRoutes(app: App) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const authUser = await customRequireAuth(app, request, reply);
       if (!authUser) return;
+      const restauranteId = requireTenant(authUser);
 
       const authUserId = authUser.id;
       const authUserEmail = authUser.email;
@@ -486,7 +518,7 @@ export function registerGarconRoutes(app: App) {
         const usuarioRecords = await app.db
           .select()
           .from(schema.usuarios)
-          .where(eq(schema.usuarios.email, authUserEmail))
+          .where(and(eq(schema.usuarios.email, authUserEmail), eq(schema.usuarios.restauranteId, restauranteId)))
           .limit(1);
 
         const usuarioId = usuarioRecords.length > 0 ? usuarioRecords[0].id : null;
@@ -531,8 +563,8 @@ export function registerGarconRoutes(app: App) {
           .from(schema.pedidos)
           .innerJoin(schema.comandas, eq(schema.pedidos.comandaId, schema.comandas.id))
           .innerJoin(schema.mesas, eq(schema.comandas.mesaId, schema.mesas.id))
-          .leftJoin(schema.pratos, eq(schema.pedidos.pratoId, schema.pratos.id))
-          .where(whereClause)
+          .leftJoin(schema.pratos, and(eq(schema.pedidos.pratoId, schema.pratos.id), eq(schema.pratos.restauranteId, restauranteId)))
+          .where(and(whereClause, eq(schema.comandas.restauranteId, restauranteId), eq(schema.pedidos.restauranteId, restauranteId), eq(schema.mesas.restauranteId, restauranteId)))
           .orderBy(schema.pedidos.createdAt);
 
         app.logger.info(

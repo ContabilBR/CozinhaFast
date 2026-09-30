@@ -16,6 +16,7 @@ export function registerEstoqueRoutes(app: App) {
     async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const session = await customRequireAuth(app, request, reply);
+      if (!session) return;
       const restauranteId = requireTenant(session);
       const insumos = await db.select().from(schema.insumos)
         .where(eq(schema.insumos.restauranteId, restauranteId))
@@ -34,6 +35,7 @@ export function registerEstoqueRoutes(app: App) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const session = await customRequireAuth(app, request, reply);
+        if (!session) return;
         const restauranteId = requireTenant(session);
         const alertas = await db.select().from(schema.insumos)
           .where(and(
@@ -57,6 +59,7 @@ export function registerEstoqueRoutes(app: App) {
     async (request: FastifyRequest<{ Body: { nome: string; descricao?: string; unidade: string; estoqueAtual?: string; estoqueMinimo?: string; custoUnitario?: string } }>, reply: FastifyReply) => {
     try {
       const session = await customRequireAuth(app, request, reply);
+      if (!session) return;
       const restauranteId = requireTenant(session);
       const { nome, descricao, unidade, estoqueAtual, estoqueMinimo, custoUnitario } = request.body;
       if (!nome || !unidade) return reply.code(400).send({ error: "nome e unidade são obrigatórios" });
@@ -84,6 +87,7 @@ export function registerEstoqueRoutes(app: App) {
     async (request: FastifyRequest<{ Params: { id: string }; Body: { nome?: string; descricao?: string; unidade?: string; estoqueMinimo?: string; custoUnitario?: string; ativo?: boolean } }>, reply: FastifyReply) => {
     try {
       const session = await customRequireAuth(app, request, reply);
+      if (!session) return;
       const restauranteId = requireTenant(session);
       const { id } = request.params;
       const body = request.body;
@@ -99,7 +103,7 @@ export function registerEstoqueRoutes(app: App) {
       if (body.custoUnitario !== undefined) updates.custoUnitario = body.custoUnitario;
       if (body.ativo !== undefined) updates.ativo = body.ativo;
 
-      const [updated] = await db.update(schema.insumos).set(updates).where(eq(schema.insumos.id, id)).returning();
+      const [updated] = await db.update(schema.insumos).set(updates).where(and(eq(schema.insumos.id, id), eq(schema.insumos.restauranteId, restauranteId))).returning();
       return reply.code(200).send(updated);
     } catch (err: any) {
       if (err.statusCode) return reply.code(err.statusCode).send({ error: err.message });
@@ -115,13 +119,14 @@ export function registerEstoqueRoutes(app: App) {
     async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
     try {
       const session = await customRequireAuth(app, request, reply);
+      if (!session) return;
       const restauranteId = requireTenant(session);
       const { id } = request.params;
 
       const [existing] = await db.select().from(schema.insumos).where(and(eq(schema.insumos.id, id), eq(schema.insumos.restauranteId, restauranteId)));
       if (!existing) return reply.code(404).send({ error: "Insumo não encontrado" });
 
-      await db.update(schema.insumos).set({ ativo: false, updatedAt: new Date() }).where(eq(schema.insumos.id, id));
+      await db.update(schema.insumos).set({ ativo: false, updatedAt: new Date() }).where(and(eq(schema.insumos.id, id), eq(schema.insumos.restauranteId, restauranteId)));
       return reply.code(200).send({ success: true });
     } catch (err: any) {
       if (err.statusCode) return reply.code(err.statusCode).send({ error: err.message });
@@ -138,6 +143,7 @@ export function registerEstoqueRoutes(app: App) {
     async (request: FastifyRequest<{ Body: { insumoId: string; tipo: string; quantidade: string; motivo?: string } }>, reply: FastifyReply) => {
     try {
       const session = await customRequireAuth(app, request, reply);
+      if (!session) return;
       const restauranteId = requireTenant(session);
       const { insumoId, tipo, quantidade, motivo } = request.body;
 
@@ -164,7 +170,7 @@ export function registerEstoqueRoutes(app: App) {
           estoqueNovo = qty;
         }
 
-        await tx.update(schema.insumos).set({ estoqueAtual: estoqueNovo.toString(), updatedAt: new Date() }).where(eq(schema.insumos.id, insumoId));
+        await tx.update(schema.insumos).set({ estoqueAtual: estoqueNovo.toString(), updatedAt: new Date() }).where(and(eq(schema.insumos.id, insumoId), eq(schema.insumos.restauranteId, restauranteId)));
 
         const [mov] = await tx.insert(schema.movimentacoesEstoque).values({
           insumoId, tipo, quantidade: qty.toString(),
@@ -194,6 +200,7 @@ export function registerEstoqueRoutes(app: App) {
     async (request: FastifyRequest<{ Params: { insumoId: string } }>, reply: FastifyReply) => {
     try {
       const session = await customRequireAuth(app, request, reply);
+      if (!session) return;
       const restauranteId = requireTenant(session);
       const { insumoId } = request.params;
 
@@ -218,8 +225,12 @@ export function registerEstoqueRoutes(app: App) {
     async (request: FastifyRequest<{ Params: { pratoId: string } }>, reply: FastifyReply) => {
     try {
       const session = await customRequireAuth(app, request, reply);
+      if (!session) return;
       const restauranteId = requireTenant(session);
       const { pratoId } = request.params;
+      const [prato] = await db.select({ id: schema.pratos.id }).from(schema.pratos)
+        .where(and(eq(schema.pratos.id, pratoId), eq(schema.pratos.restauranteId, restauranteId)));
+      if (!prato) return reply.code(404).send({ error: "Prato não encontrado" });
 
       const items = await db.select({
         id: schema.pratoInsumos.id,
@@ -228,7 +239,7 @@ export function registerEstoqueRoutes(app: App) {
         insumoNome: schema.insumos.nome,
         insumoUnidade: schema.insumos.unidade,
       }).from(schema.pratoInsumos)
-        .leftJoin(schema.insumos, eq(schema.pratoInsumos.insumoId, schema.insumos.id))
+        .leftJoin(schema.insumos, and(eq(schema.pratoInsumos.insumoId, schema.insumos.id), eq(schema.insumos.restauranteId, restauranteId)))
         .where(and(eq(schema.pratoInsumos.pratoId, pratoId), eq(schema.pratoInsumos.restauranteId, restauranteId)));
 
       return reply.code(200).send(items);
@@ -246,6 +257,7 @@ export function registerEstoqueRoutes(app: App) {
     async (request: FastifyRequest<{ Params: { pratoId: string }; Body: { insumo_id: string; quantidade: string } }>, reply: FastifyReply) => {
     try {
       const session = await customRequireAuth(app, request, reply);
+      if (!session) return;
       const restauranteId = requireTenant(session);
       const { pratoId } = request.params;
       const { insumo_id, quantidade } = request.body;
@@ -253,8 +265,12 @@ export function registerEstoqueRoutes(app: App) {
       if (!insumo_id || !quantidade) return reply.code(400).send({ error: "insumo_id e quantidade são obrigatórios" });
 
       // Check if prato exists
-      const [prato] = await db.select().from(schema.pratos).where(eq(schema.pratos.id, pratoId));
+      const [prato] = await db.select().from(schema.pratos).where(and(eq(schema.pratos.id, pratoId), eq(schema.pratos.restauranteId, restauranteId)));
       if (!prato) return reply.code(404).send({ error: "Prato não encontrado" });
+
+      const [insumo] = await db.select({ id: schema.insumos.id }).from(schema.insumos)
+        .where(and(eq(schema.insumos.id, insumo_id), eq(schema.insumos.restauranteId, restauranteId)));
+      if (!insumo) return reply.code(404).send({ error: "Insumo não encontrado" });
 
       const [item] = await db.insert(schema.pratoInsumos).values({
         pratoId, insumoId: insumo_id, quantidadeUsada: quantidade, restauranteId,
@@ -275,13 +291,14 @@ export function registerEstoqueRoutes(app: App) {
     async (request: FastifyRequest<{ Params: { pratoId: string; id: string } }>, reply: FastifyReply) => {
     try {
       const session = await customRequireAuth(app, request, reply);
+      if (!session) return;
       const restauranteId = requireTenant(session);
       const { id } = request.params;
 
-      const [existing] = await db.select().from(schema.pratoInsumos).where(and(eq(schema.pratoInsumos.id, id), eq(schema.pratoInsumos.restauranteId, restauranteId)));
+      const [existing] = await db.select().from(schema.pratoInsumos).where(and(eq(schema.pratoInsumos.id, id), eq(schema.pratoInsumos.pratoId, request.params.pratoId), eq(schema.pratoInsumos.restauranteId, restauranteId)));
       if (!existing) return reply.code(404).send({ error: "Vínculo não encontrado" });
 
-      await db.delete(schema.pratoInsumos).where(eq(schema.pratoInsumos.id, id));
+      await db.delete(schema.pratoInsumos).where(and(eq(schema.pratoInsumos.id, id), eq(schema.pratoInsumos.pratoId, request.params.pratoId), eq(schema.pratoInsumos.restauranteId, restauranteId)));
       return reply.code(200).send({ success: true });
     } catch (err: any) {
       if (err.statusCode) return reply.code(err.statusCode).send({ error: err.message });
