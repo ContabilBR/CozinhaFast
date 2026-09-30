@@ -37,6 +37,7 @@ export default function PerfilScreen() {
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   useEffect(() => {
     Animated.parallel([
@@ -55,7 +56,8 @@ export default function PerfilScreen() {
   const canAdmin = isAdmin(role);
 
   const handleSignOut = async () => {
-    console.log("[Perfil] Sign out button pressed");
+    setShowLogoutConfirm(false);
+    console.log("[Perfil] Sign out confirmed");
     try {
       await signOut();
       console.log("[Perfil] Sign out successful");
@@ -248,7 +250,7 @@ export default function PerfilScreen() {
 
         <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
           <AnimatedPressable
-            onPress={handleSignOut}
+            onPress={() => setShowLogoutConfirm(true)}
             style={{
               backgroundColor: "#EF4444",
               borderRadius: 14,
@@ -305,6 +307,17 @@ export default function PerfilScreen() {
         destructive
         onConfirm={handleDeleteAccount}
         onCancel={() => setShowDeleteConfirm(false)}
+      />
+
+      <ConfirmDialog
+        visible={showLogoutConfirm}
+        title="Sair da conta"
+        message="Deseja realmente sair da sua conta?"
+        confirmLabel="Sair"
+        cancelLabel="Cancelar"
+        destructive
+        onConfirm={handleSignOut}
+        onCancel={() => setShowLogoutConfirm(false)}
       />
     </View>
   );
