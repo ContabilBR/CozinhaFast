@@ -144,8 +144,8 @@ export default function AuthScreen() {
     >
       <ScrollView
         contentContainerStyle={{
-          flexGrow: 1,
-          paddingTop: insets.top + 40,
+          flexGrow: 0,
+          paddingTop: insets.top + 20,
           paddingBottom: insets.bottom + 32,
           paddingHorizontal: 24,
         }}
@@ -156,20 +156,20 @@ export default function AuthScreen() {
         <Animated.View
           style={{
             alignItems: "center",
-            marginBottom: 40,
+            marginBottom: 24,
             opacity: fadeAnim,
             transform: [{ translateY: slideAnim }],
           }}
         >
           <View
             style={{
-              width: 84,
-              height: 84,
-              borderRadius: 26,
+              width: 72,
+              height: 72,
+              borderRadius: 22,
               backgroundColor: PRIMARY,
               alignItems: "center",
               justifyContent: "center",
-              marginBottom: 18,
+              marginBottom: 12,
               shadowColor: PRIMARY,
               shadowOffset: { width: 0, height: 8 },
               shadowOpacity: 0.4,
@@ -182,7 +182,7 @@ export default function AuthScreen() {
           <Text
             style={{
               fontFamily: "Outfit_700Bold",
-              fontSize: 34,
+              fontSize: 28,
               color: TEXT,
               letterSpacing: -0.5,
             }}
@@ -402,7 +402,7 @@ export default function AuthScreen() {
         )}
 
         {/* Demo credentials */}
-        <Animated.View style={{ marginTop: 28, opacity: fadeAnim }}>
+        <Animated.View style={{ marginTop: 16, opacity: fadeAnim }}>
           <Text
             style={{
               fontFamily: "Outfit_600SemiBold",
