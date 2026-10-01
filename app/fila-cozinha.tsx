@@ -15,9 +15,10 @@ import { apiGet } from "@/utils/api";
 import { formatElapsed } from "@/utils/helpers";
 import { useRealtime, type RealtimeStatus } from "@/hooks/useRealtime";
 import { Ionicons } from "@expo/vector-icons";
-import { Flame, Clock, RefreshCw, ChefHat, User } from "lucide-react-native";
+import { Flame, Clock, RefreshCw, ChefHat, User, Bike, ShoppingBag } from "lucide-react-native";
 import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { CardSkeleton } from "@/components/SkeletonLoader";
+import { isDelivery, isBalcao, tituloCartao, calcPrazoDelivery } from "@/utils/cozinhaDelivery";
 
 const DEFAULT_TEMPO_PREPARO_MIN = 15;
 
@@ -39,6 +40,12 @@ interface Comanda {
   garcom_nome: string;
   total_itens: number;
   status: string;
+  tipo: string;
+  entrega_cliente_nome: string | null;
+  entrega_bairro: string | null;
+  entrega_observacao: string | null;
+  entrega_tempo_estimado: number | null;
+  entrega_horario_limite: string | null;
   pedidos: ComandaPedido[];
 }
 
@@ -125,8 +132,11 @@ export default function FilaCozinhaScreen() {
     prevStatusRef.current = realtimeStatus;
   }, [realtimeStatus, fetchComandas]);
 
+  // Exclude cancelled comandas from counts and display
+  const comandasAtivas = comandas.filter(c => c.status !== "cancelada" && c.status !== "cancelado");
+
   // Flatten all active pedidos for counters
-  const allPedidos = comandas.flatMap((c) =>
+  const allPedidos = comandasAtivas.flatMap((c) =>
     (Array.isArray(c.pedidos) ? c.pedidos : []).filter((p) => ACTIVE_STATUSES.includes(p.status))
   );
   const aguardandoCount = allPedidos.filter((p) => p.status === "pendente").length;
@@ -134,8 +144,8 @@ export default function FilaCozinhaScreen() {
   const prontoCount = allPedidos.filter((p) => p.status === "pronto").length;
   const atrasadosCount = allPedidos.filter(isAtrasado).length;
 
-  // Build display list: filter + sort (atrasados first, then oldest first)
-  const displayComandas = comandas
+  // Build display list: filter + sort (delivery atrasado first, then atrasados, then oldest first)
+  const displayComandas = comandasAtivas
     .map((c) => {
       const pedidos = (Array.isArray(c.pedidos) ? c.pedidos : []).filter((p) => {
         if (!ACTIVE_STATUSES.includes(p.status)) return false;
@@ -148,7 +158,12 @@ export default function FilaCozinhaScreen() {
     })
     .filter((c) => c.pedidos.length > 0)
     .sort((a, b) => {
-      // Comandas with delayed items first
+      const prazoA = calcPrazoDelivery(a.entrega_horario_limite);
+      const prazoB = calcPrazoDelivery(b.entrega_horario_limite);
+      const atrasadoDeliveryA = prazoA?.atrasado ? 1 : 0;
+      const atrasadoDeliveryB = prazoB?.atrasado ? 1 : 0;
+      if (atrasadoDeliveryB !== atrasadoDeliveryA) return atrasadoDeliveryB - atrasadoDeliveryA;
+      // Then items with delayed pedidos
       const aHasAtrasado = a.pedidos.some(isAtrasado);
       const bHasAtrasado = b.pedidos.some(isAtrasado);
       if (aHasAtrasado && !bHasAtrasado) return -1;
@@ -243,23 +258,23 @@ export default function FilaCozinhaScreen() {
             { label: "Em preparo", count: emPreparoCount, color: "#F59E0B" },
             { label: "Prontos",    count: prontoCount,    color: "#22C55E" },
             { label: "Atrasados",  count: atrasadosCount, color: "#EF4444" },
-          ].map((item) => (
+          ].map((counterItem) => (
             <View
-              key={item.label}
+              key={counterItem.label}
               style={{
                 flex: 1,
-                backgroundColor: item.color + "15",
+                backgroundColor: counterItem.color + "15",
                 borderRadius: 10,
                 padding: 8,
                 alignItems: "center",
                 gap: 2,
               }}
             >
-              <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 18, color: item.color }}>
-                {item.count}
+              <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 18, color: counterItem.color }}>
+                {counterItem.count}
               </Text>
-              <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 9, color: item.color, textAlign: "center" }}>
-                {item.label}
+              <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 9, color: counterItem.color, textAlign: "center" }}>
+                {counterItem.label}
               </Text>
             </View>
           ))}
@@ -357,6 +372,14 @@ export default function FilaCozinhaScreen() {
           renderItem={({ item }) => {
             const comandaCode = item.id.slice(-6).toUpperCase();
             const hasAtrasado = item.pedidos.some(isAtrasado);
+            const deliveryItem = isDelivery(item);
+            const balcaoItem = isBalcao(item);
+            const prazo = calcPrazoDelivery(item.entrega_horario_limite);
+            const cardTitle = tituloCartao(item);
+            const temAtivo = item.pedidos.some(p => p.status === "pendente" || p.status === "em_preparo");
+            const prazoTexto = prazo ? prazo.texto : "";
+            const prazoAtrasadoText = prazo ? "Delivery atrasado há " + Math.abs(prazo.minutosRestantes) + " min — URGENTE" : "";
+
             return (
               <View
                 style={{
@@ -369,6 +392,25 @@ export default function FilaCozinhaScreen() {
                   overflow: "hidden",
                 }}
               >
+                {/* Delivery / Balcão top stripe */}
+                {deliveryItem && (
+                  <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#EDE9FE", borderTopLeftRadius: 12, borderTopRightRadius: 12, paddingHorizontal: 12, paddingVertical: 6 }}>
+                    <Bike size={14} color="#7C3AED" />
+                    <Text style={{ color: "#7C3AED", fontWeight: "700", fontSize: 12, marginLeft: 4 }}>DELIVERY</Text>
+                    {prazo && (
+                      <Text style={{ color: prazo.atrasado ? "#EF4444" : prazo.minutosRestantes <= 5 ? "#F59E0B" : "#7C3AED", fontSize: 11, marginLeft: "auto" }}>
+                        {prazoTexto}
+                      </Text>
+                    )}
+                  </View>
+                )}
+                {balcaoItem && (
+                  <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#DBEAFE", borderTopLeftRadius: 12, borderTopRightRadius: 12, paddingHorizontal: 12, paddingVertical: 6 }}>
+                    <ShoppingBag size={14} color="#2563EB" />
+                    <Text style={{ color: "#2563EB", fontWeight: "700", fontSize: 12, marginLeft: 4 }}>BALCÃO</Text>
+                  </View>
+                )}
+
                 {/* Urgency banner */}
                 {hasAtrasado && (
                   <View style={{ backgroundColor: "#EF444415", paddingHorizontal: 16, paddingVertical: 6 }}>
@@ -380,32 +422,55 @@ export default function FilaCozinhaScreen() {
 
                 {/* Card header */}
                 <View style={{ padding: 14, flexDirection: "row", alignItems: "center", gap: 14 }}>
-                  <View
-                    style={{
-                      width: 48,
-                      height: 48,
-                      borderRadius: 24,
-                      backgroundColor: COLORS.primaryMuted,
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 18, color: COLORS.primary }}>
-                      {item.mesa_numero}
-                    </Text>
-                  </View>
+                  {/* Icon / Mesa circle */}
+                  {deliveryItem ? (
+                    <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: "#EDE9FE", alignItems: "center", justifyContent: "center" }}>
+                      <Bike size={20} color="#7C3AED" />
+                    </View>
+                  ) : balcaoItem ? (
+                    <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: "#DBEAFE", alignItems: "center", justifyContent: "center" }}>
+                      <ShoppingBag size={20} color="#2563EB" />
+                    </View>
+                  ) : (
+                    <View
+                      style={{
+                        width: 48,
+                        height: 48,
+                        borderRadius: 24,
+                        backgroundColor: COLORS.primaryMuted,
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 18, color: COLORS.primary }}>
+                        {item.mesa_numero}
+                      </Text>
+                    </View>
+                  )}
+
                   <View style={{ flex: 1, gap: 2 }}>
                     <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 15, color: COLORS.text }}>
-                      Mesa {item.mesa_numero}
+                      {cardTitle}
                     </Text>
-                    <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 11, color: COLORS.textSecondary }}>
-                      #{comandaCode}
-                    </Text>
+                    <View style={{ flexDirection: "row", alignItems: "center" }}>
+                      <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 11, color: COLORS.textSecondary }}>
+                        #{comandaCode}
+                      </Text>
+                      {deliveryItem && item.entrega_bairro ? (
+                        <Text style={{ color: COLORS.textSecondary, fontSize: 11 }}> · {item.entrega_bairro}</Text>
+                      ) : null}
+                    </View>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
                       <User size={11} color={COLORS.textSecondary} />
-                      <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 11, color: COLORS.textSecondary }}>
-                        {item.garcom_nome}
-                      </Text>
+                      {deliveryItem ? (
+                        <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 11, color: COLORS.textSecondary }}>
+                          {item.entrega_cliente_nome}{item.entrega_bairro ? ` · ${item.entrega_bairro}` : ""}
+                        </Text>
+                      ) : (
+                        <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 11, color: COLORS.textSecondary }}>
+                          {item.garcom_nome}
+                        </Text>
+                      )}
                     </View>
                   </View>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
@@ -415,6 +480,33 @@ export default function FilaCozinhaScreen() {
                     </Text>
                   </View>
                 </View>
+
+                {/* Delivery observation box */}
+                {deliveryItem && item.entrega_observacao ? (
+                  <View style={{ backgroundColor: "#F3E8FF", borderRadius: 8, padding: 10, marginHorizontal: 14, marginBottom: 8, borderLeftWidth: 3, borderLeftColor: "#8B5CF6" }}>
+                    <Text style={{ color: "#6D28D9", fontSize: 12, fontWeight: "700", marginBottom: 2 }}>Observação do pedido</Text>
+                    <Text style={{ color: "#6D28D9", fontSize: 13 }}>{item.entrega_observacao}</Text>
+                  </View>
+                ) : null}
+
+                {/* Delivery urgency by deadline */}
+                {deliveryItem && temAtivo && prazo ? (
+                  prazo.atrasado ? (
+                    <View style={{ backgroundColor: "#FEE2E2", borderRadius: 8, padding: 8, marginHorizontal: 14, marginBottom: 8, flexDirection: "row", alignItems: "center" }}>
+                      <Bike size={14} color="#EF4444" />
+                      <Text style={{ color: "#EF4444", fontWeight: "700", fontSize: 12, marginLeft: 6 }}>
+                        {prazoAtrasadoText}
+                      </Text>
+                    </View>
+                  ) : prazo.minutosRestantes <= 5 ? (
+                    <View style={{ backgroundColor: "#FEF3C7", borderRadius: 8, padding: 8, marginHorizontal: 14, marginBottom: 8, flexDirection: "row", alignItems: "center" }}>
+                      <Bike size={14} color="#F59E0B" />
+                      <Text style={{ color: "#F59E0B", fontWeight: "700", fontSize: 12, marginLeft: 6 }}>
+                        {prazoTexto}
+                      </Text>
+                    </View>
+                  ) : null
+                ) : null}
 
                 {/* Pedidos list */}
                 <View

@@ -31,9 +31,12 @@ import {
   ChevronUp,
   Check,
   Play,
+  Bike,
+  ShoppingBag,
 } from "lucide-react-native";
 import { useRealtime, type RealtimeStatus, type RealtimeEvent } from "@/hooks/useRealtime";
 import { useKeepAwake } from "expo-keep-awake";
+import { isDelivery, isBalcao, tituloCartao, calcPrazoDelivery, textoAvisoCancelamento } from "@/utils/cozinhaDelivery";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -57,6 +60,12 @@ interface Comanda {
   garcom_nome: string;
   total_itens: number;
   status: string;
+  tipo: string;
+  entrega_cliente_nome: string | null;
+  entrega_bairro: string | null;
+  entrega_observacao: string | null;
+  entrega_tempo_estimado: number | null;
+  entrega_horario_limite: string | null;
   pedidos: ComandaPedido[];
 }
 
@@ -157,10 +166,8 @@ function KitchenTicketCard({
     : 0;
   const elapsed = formatElapsed(oldestCreatedAt ?? undefined);
 
-  const mesaNum = String(item.mesa_numero);
   const comandaCode = item.id.slice(-6).toUpperCase();
   const comandaLabel = "#" + comandaCode;
-  const garcomNome = item.garcom_nome;
 
   const pendentesCount = activePedidos.filter((p) => p.status === "pendente").length;
   const emPreparoCount = activePedidos.filter((p) => p.status === "em_preparo").length;
@@ -168,13 +175,18 @@ function KitchenTicketCard({
 
   const urgentBannerText = "Aguardando há " + diffMin + " min — URGENTE";
 
+  const cardTitle = tituloCartao(item);
+
+  const prazo = calcPrazoDelivery(item.entrega_horario_limite);
+
+  const temAtivo = activePedidos.some(p => p.status === "pendente" || p.status === "em_preparo");
+
   const handlePedidoAction = async (pedidoId: string, newStatus: string, isFinalize: boolean) => {
     console.log("[Cozinha] KitchenTicketCard action:", pedidoId, "->", newStatus, "isFinalize:", isFinalize);
     setUpdatingId(pedidoId);
     try {
       await onAction(pedidoId, newStatus);
       if (isFinalize) {
-        // Clear any existing toast timer
         if (undoToast) clearTimeout(undoToast.timer);
         const timer = setTimeout(() => setUndoToast(null), 5000);
         setUndoToast({ pedidoId, timer });
@@ -197,6 +209,12 @@ function KitchenTicketCard({
     }
   };
 
+  const deliveryItem = isDelivery(item);
+  const balcaoItem = isBalcao(item);
+
+  const prazoAtrasadoText = prazo ? "Delivery atrasado há " + Math.abs(prazo.minutosRestantes) + " min — URGENTE" : "";
+  const prazoTexto = prazo ? prazo.texto : "";
+
   return (
     <Animated.View style={{ opacity, transform: [{ translateY }] }}>
       <View
@@ -210,6 +228,25 @@ function KitchenTicketCard({
           overflow: "hidden",
         }}
       >
+        {/* Delivery / Balcão top stripe */}
+        {deliveryItem && (
+          <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#EDE9FE", borderTopLeftRadius: 12, borderTopRightRadius: 12, paddingHorizontal: 12, paddingVertical: 6 }}>
+            <Bike size={14} color="#7C3AED" />
+            <Text style={{ color: "#7C3AED", fontWeight: "700", fontSize: 12, marginLeft: 4 }}>DELIVERY</Text>
+            {prazo && (
+              <Text style={{ color: prazo.atrasado ? "#EF4444" : prazo.minutosRestantes <= 5 ? "#F59E0B" : "#7C3AED", fontSize: 11, marginLeft: "auto" }}>
+                {prazoTexto}
+              </Text>
+            )}
+          </View>
+        )}
+        {balcaoItem && (
+          <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#DBEAFE", borderTopLeftRadius: 12, borderTopRightRadius: 12, paddingHorizontal: 12, paddingVertical: 6 }}>
+            <ShoppingBag size={14} color="#2563EB" />
+            <Text style={{ color: "#2563EB", fontWeight: "700", fontSize: 12, marginLeft: 4 }}>BALCÃO</Text>
+          </View>
+        )}
+
         {/* Urgency banner */}
         {isUrgent && (
           <View style={{ backgroundColor: "#EF444415", paddingHorizontal: 16, paddingVertical: 6 }}>
@@ -221,36 +258,57 @@ function KitchenTicketCard({
 
         {/* Header */}
         <View style={{ padding: 14, flexDirection: "row", alignItems: "center", gap: 14 }}>
-          {/* Mesa circle */}
-          <View
-            style={{
-              width: 52,
-              height: 52,
-              borderRadius: 26,
-              backgroundColor: COLORS.primaryMuted,
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-            }}
-          >
-            <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 20, color: COLORS.primary }}>
-              {mesaNum}
-            </Text>
-          </View>
+          {/* Icon / Mesa circle */}
+          {deliveryItem ? (
+            <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: "#EDE9FE", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <Bike size={22} color="#7C3AED" />
+            </View>
+          ) : balcaoItem ? (
+            <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: "#DBEAFE", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <ShoppingBag size={22} color="#2563EB" />
+            </View>
+          ) : (
+            <View
+              style={{
+                width: 52,
+                height: 52,
+                borderRadius: 26,
+                backgroundColor: COLORS.primaryMuted,
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 20, color: COLORS.primary }}>
+                {String(item.mesa_numero)}
+              </Text>
+            </View>
+          )}
 
           {/* Center info */}
           <View style={{ flex: 1, gap: 2 }}>
             <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 16, color: COLORS.text }}>
-              Mesa {mesaNum}
+              {cardTitle}
             </Text>
-            <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 12, color: COLORS.textSecondary }}>
-              {comandaLabel}
-            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 12, color: COLORS.textSecondary }}>
+                {comandaLabel}
+              </Text>
+              {deliveryItem && item.entrega_bairro ? (
+                <Text style={{ color: COLORS.textSecondary, fontSize: 11 }}> · {item.entrega_bairro}</Text>
+              ) : null}
+            </View>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
               <User size={12} color={COLORS.textSecondary} />
-              <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 12, color: COLORS.textSecondary }}>
-                {garcomNome}
-              </Text>
+              {deliveryItem ? (
+                <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 12, color: COLORS.textSecondary }}>
+                  {item.entrega_cliente_nome}{item.entrega_bairro ? ` · ${item.entrega_bairro}` : ""}
+                </Text>
+              ) : (
+                <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 12, color: COLORS.textSecondary }}>
+                  {item.garcom_nome}
+                </Text>
+              )}
             </View>
           </View>
 
@@ -281,6 +339,33 @@ function KitchenTicketCard({
           </View>
         </View>
 
+        {/* Delivery observation box */}
+        {deliveryItem && item.entrega_observacao ? (
+          <View style={{ backgroundColor: "#F3E8FF", borderRadius: 8, padding: 10, marginHorizontal: 14, marginBottom: 8, borderLeftWidth: 3, borderLeftColor: "#8B5CF6" }}>
+            <Text style={{ color: "#6D28D9", fontSize: 12, fontWeight: "700", marginBottom: 2 }}>Observação do pedido</Text>
+            <Text style={{ color: "#6D28D9", fontSize: 13 }}>{item.entrega_observacao}</Text>
+          </View>
+        ) : null}
+
+        {/* Delivery urgency by deadline */}
+        {deliveryItem && temAtivo && prazo ? (
+          prazo.atrasado ? (
+            <View style={{ backgroundColor: "#FEE2E2", borderRadius: 8, padding: 8, marginHorizontal: 14, marginBottom: 8, flexDirection: "row", alignItems: "center" }}>
+              <Bike size={14} color="#EF4444" />
+              <Text style={{ color: "#EF4444", fontWeight: "700", fontSize: 12, marginLeft: 6 }}>
+                {prazoAtrasadoText}
+              </Text>
+            </View>
+          ) : prazo.minutosRestantes <= 5 ? (
+            <View style={{ backgroundColor: "#FEF3C7", borderRadius: 8, padding: 8, marginHorizontal: 14, marginBottom: 8, flexDirection: "row", alignItems: "center" }}>
+              <Bike size={14} color="#F59E0B" />
+              <Text style={{ color: "#F59E0B", fontWeight: "700", fontSize: 12, marginLeft: 6 }}>
+                {prazoTexto}
+              </Text>
+            </View>
+          ) : null
+        ) : null}
+
         {/* Pedidos list */}
         <View
           style={{
@@ -299,7 +384,6 @@ function KitchenTicketCard({
             const isUpdating = updatingId === pedido.id;
             const pedidoUrgencia = getPedidoUrgencia(pedido);
 
-            // Status badge config
             const badgeColor = isPronto ? "#22C55E" : isEmPreparo ? "#F59E0B" : "#94A3B8";
             const badgeLabel = isPronto
               ? "Pronto"
@@ -527,14 +611,19 @@ function ComandaCard({ item, index }: { item: Comanda; index: number }) {
   const minutes = String(createdDate.getMinutes()).padStart(2, "0");
   const timeLabel = hours + ":" + minutes;
 
-  const mesaNum = String(item.mesa_numero);
-  const garcomNome = item.garcom_nome;
   const totalItens = String(item.total_itens);
 
   const comandaStatusColor = COMANDA_STATUS_COLORS[item.status] || "#94A3B8";
   const comandaStatusLabel = COMANDA_STATUS_LABELS[item.status] || item.status;
 
   const pedidos: ComandaPedido[] = Array.isArray(item.pedidos) ? item.pedidos : [];
+
+  const deliveryItem = isDelivery(item);
+  const balcaoItem = isBalcao(item);
+
+  const garcomOrCliente = deliveryItem
+    ? (item.entrega_cliente_nome ?? "") + (item.entrega_bairro ? ` · ${item.entrega_bairro}` : "")
+    : item.garcom_nome;
 
   return (
     <Animated.View style={{ opacity, transform: [{ translateY }] }}>
@@ -551,27 +640,50 @@ function ComandaCard({ item, index }: { item: Comanda; index: number }) {
       >
         <TouchableOpacity activeOpacity={0.7} onPress={handleToggle}>
           <View style={{ padding: 14, flexDirection: "row", alignItems: "center", gap: 14 }}>
-            <View
-              style={{
-                width: 52,
-                height: 52,
-                borderRadius: 26,
-                backgroundColor: COLORS.primaryMuted,
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-              }}
-            >
-              <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 20, color: COLORS.primary }}>
-                {mesaNum}
-              </Text>
-            </View>
+            {/* Icon / Mesa circle */}
+            {deliveryItem ? (
+              <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: "#EDE9FE", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <Bike size={22} color="#7C3AED" />
+              </View>
+            ) : balcaoItem ? (
+              <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: "#DBEAFE", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <ShoppingBag size={22} color="#2563EB" />
+              </View>
+            ) : (
+              <View
+                style={{
+                  width: 52,
+                  height: 52,
+                  borderRadius: 26,
+                  backgroundColor: COLORS.primaryMuted,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 20, color: COLORS.primary }}>
+                  {String(item.mesa_numero)}
+                </Text>
+              </View>
+            )}
 
             <View style={{ flex: 1, gap: 2 }}>
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 16, color: COLORS.text }}>
-                  {comandaLabel}
-                </Text>
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 16, color: COLORS.text }}>
+                    {comandaLabel}
+                  </Text>
+                  {deliveryItem && (
+                    <View style={{ backgroundColor: "#EDE9FE", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2, marginLeft: 6 }}>
+                      <Text style={{ color: "#7C3AED", fontSize: 10, fontWeight: "700" }}>DELIVERY</Text>
+                    </View>
+                  )}
+                  {balcaoItem && (
+                    <View style={{ backgroundColor: "#DBEAFE", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2, marginLeft: 6 }}>
+                      <Text style={{ color: "#2563EB", fontSize: 10, fontWeight: "700" }}>BALCÃO</Text>
+                    </View>
+                  )}
+                </View>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                   <View
                     style={{
@@ -596,7 +708,7 @@ function ComandaCard({ item, index }: { item: Comanda; index: number }) {
               <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
                 <User size={12} color={COLORS.textSecondary} />
                 <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 12, color: COLORS.textSecondary }}>
-                  {garcomNome}
+                  {garcomOrCliente}
                 </Text>
               </View>
 
@@ -703,8 +815,6 @@ function ComandaCard({ item, index }: { item: Comanda; index: number }) {
 }
 
 export default function CozinhaScreen() {
-  // Mantém a tela sempre acesa enquanto o painel da cozinha estiver aberto.
-  // Desliga automaticamente quando o usuário sai desta tela.
   useKeepAwake();
 
   const COLORS = useColors();
@@ -712,12 +822,12 @@ export default function CozinhaScreen() {
 
   const [activeTab, setActiveTab] = useState<"fila" | "comandas">("fila");
 
-  // Shared comandas state (used by both Fila and Comandas tabs)
   const [comandas, setComandas] = useState<Comanda[]>([]);
   const [comandasLoading, setComandasLoading] = useState(true);
   const [comandasRefreshing, setComandasRefreshing] = useState(false);
   const [comandasError, setComandasError] = useState("");
   const [comandaFilter, setComandaFilter] = useState<ComandaFilter>("todas");
+  const [filtroTipo, setFiltroTipo] = useState<"todos" | "mesas" | "delivery">("todos");
 
   const fetchComandas = useCallback(async () => {
     console.log("[Cozinha] Fetching comandas from /api/cozinha/comandas");
@@ -736,27 +846,47 @@ export default function CozinhaScreen() {
     }
   }, []);
 
-  // Aviso de item cancelado (o item some da fila sozinho; o aviso diz à cozinha para parar o preparo)
+  // Aviso de item cancelado
   const [avisoCancelamento, setAvisoCancelamento] = useState<{ texto: string; aposInicio: boolean } | null>(null);
   const avisoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Debounce ref for grouping rapid realtime events
-  const realtimeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleRealtimeEvent = useCallback((event?: RealtimeEvent) => {
     if (event?.type === "pedido.status_changed" && event.payload?.status === "cancelado") {
-      const mesa = event.payload.mesa_numero ?? "?";
-      const prato = event.payload.prato_nome ?? "item";
+      const msg = textoAvisoCancelamento(
+        event.payload?.comanda_tipo,
+        event.payload?.entrega_cliente_nome,
+        event.payload?.mesa_numero,
+        event.payload?.prato_nome
+      );
       const aposInicio = event.payload.cancelado_apos_inicio === true;
       setAvisoCancelamento({
-        texto: `Mesa ${mesa}: ${prato} foi cancelado.${aposInicio ? " Pare o preparo." : ""}`,
+        texto: msg + (aposInicio ? " Pare o preparo." : ""),
         aposInicio,
       });
       if (avisoTimerRef.current) clearTimeout(avisoTimerRef.current);
       avisoTimerRef.current = setTimeout(() => setAvisoCancelamento(null), 15000);
     }
-    if (realtimeDebounceRef.current) clearTimeout(realtimeDebounceRef.current);
-    realtimeDebounceRef.current = setTimeout(() => {
+
+    if (event?.type === "delivery.cancelado") {
+      const nome = event.payload?.cliente_nome ?? "";
+      setAvisoCancelamento({ visible: true, message: `Delivery (${nome}) foi cancelado. Pare o preparo.` } as any);
+      // Use the same avisoCancelamento state
+      setAvisoCancelamento({ texto: `Delivery (${nome}) foi cancelado. Pare o preparo.`, aposInicio: true });
+      if (avisoTimerRef.current) clearTimeout(avisoTimerRef.current);
+      avisoTimerRef.current = setTimeout(() => setAvisoCancelamento(null), 15000);
+      setTimeout(() => fetchComandas(), 300);
+      return;
+    }
+
+    if (event?.type === "delivery.criado" || event?.type === "delivery.status_changed") {
+      setTimeout(() => fetchComandas(), 300);
+      return;
+    }
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
       console.log("[Cozinha] Realtime event — refreshing comandas");
       fetchComandas();
     }, 300);
@@ -766,12 +896,10 @@ export default function CozinhaScreen() {
     onEvent: handleRealtimeEvent,
   });
 
-  // Initial fetch
   useEffect(() => {
     fetchComandas();
   }, [fetchComandas]);
 
-  // Fallback polling — only when realtime is disconnected
   useEffect(() => {
     if (realtimeStatus === "connected") return;
     const interval = setInterval(() => {
@@ -781,7 +909,6 @@ export default function CozinhaScreen() {
     return () => clearInterval(interval);
   }, [realtimeStatus, fetchComandas]);
 
-  // Refetch when reconnecting (events may have been missed)
   const prevStatusRef = useRef<RealtimeStatus>(realtimeStatus);
   useEffect(() => {
     if (prevStatusRef.current !== "connected" && realtimeStatus === "connected") {
@@ -818,8 +945,6 @@ export default function CozinhaScreen() {
     setComandaFilter(filter);
   };
 
-  // Retorna o horário do pedido ativo (pendente/em_preparo) mais antigo da comanda.
-  // Usado para ordenar a Fila do mais antigo para o mais novo (FIFO).
   const getOldestActivePedidoTime = (c: Comanda): number => {
     const active = (Array.isArray(c.pedidos) ? c.pedidos : []).filter(
       (p) => p.status === "pendente" || p.status === "em_preparo"
@@ -831,21 +956,24 @@ export default function CozinhaScreen() {
     );
   };
 
-  // Fila: comandas com ao menos um pedido pendente ou em_preparo,
-  // ordenadas do pedido mais antigo para o mais novo (o cozinheiro vê
-  // primeiro o que foi enviado primeiro).
-  const filaComandas = comandas
+  // Comandas ativas (não canceladas) para contagens e fila
+  const comandasAtivas = comandas.filter(c => c.status !== "cancelada" && c.status !== "cancelado");
+
+  const deliveryCount = comandasAtivas.filter(c => isDelivery(c)).length;
+
+  const filaComandas = comandasAtivas
     .filter((c) =>
       (Array.isArray(c.pedidos) ? c.pedidos : []).some(
         (p) => p.status === "pendente" || p.status === "em_preparo"
       )
     )
+    .filter(c => {
+      if (filtroTipo === "mesas") return !isDelivery(c) && !isBalcao(c);
+      if (filtroTipo === "delivery") return isDelivery(c);
+      return true;
+    })
     .sort((a, b) => getOldestActivePedidoTime(a) - getOldestActivePedidoTime(b));
 
-  // Comandas: mesmo filtro de status de antes, mas agora também ordenadas
-  // da mais antiga para a mais nova (mesa/pedido feito primeiro no topo),
-  // igual à Fila — o backend retorna em ORDER BY created_at DESC, então
-  // sem isso a lista aparecia com a mesa mais recente no topo.
   const filteredComandas = comandas
     .filter((c) => {
       const targetStatus = COMANDA_FILTER_STATUS[comandaFilter];
@@ -854,8 +982,8 @@ export default function CozinhaScreen() {
     })
     .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
-  // Header subtitle counts across all active comandas
-  const allActivePedidos = comandas.flatMap((c) =>
+  // Header subtitle counts across all active (non-cancelled) comandas
+  const allActivePedidos = comandasAtivas.flatMap((c) =>
     (Array.isArray(c.pedidos) ? c.pedidos : []).filter((p) =>
       p.status === "pendente" || p.status === "em_preparo"
     )
@@ -865,6 +993,8 @@ export default function CozinhaScreen() {
 
   const pendingCountStr = String(pendingCount);
   const inProgressCountStr = String(inProgressCount);
+
+  const deliveryLabel = deliveryCount > 0 ? ` · ${deliveryCount} delivery` : "";
 
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.background }}>
@@ -888,9 +1018,16 @@ export default function CozinhaScreen() {
               </Text>
             </View>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 13, color: COLORS.textSecondary }}>
-                {pendingCountStr} pendentes · {inProgressCountStr} em preparo
-              </Text>
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 13, color: COLORS.textSecondary }}>
+                  {pendingCountStr} pendentes · {inProgressCountStr} em preparo
+                </Text>
+                {deliveryCount > 0 && (
+                  <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 13, color: "#8B5CF6", fontWeight: "600" }}>
+                    {deliveryLabel}
+                  </Text>
+                )}
+              </View>
               {realtimeStatus === "connected" ? (
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
                   <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#22C55E" }} />
@@ -977,6 +1114,37 @@ export default function CozinhaScreen() {
             </Text>
           </AnimatedPressable>
         </View>
+
+        {/* Fila: tipo filter pills */}
+        {activeTab === "fila" && (
+          <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
+            {(["todos", "mesas", "delivery"] as const).map(key => {
+              const isActive = filtroTipo === key;
+              const label = key === "todos" ? "Todos" : key === "mesas" ? "Mesas" : `Delivery${deliveryCount > 0 ? ` (${deliveryCount})` : ""}`;
+              return (
+                <Pressable
+                  key={key}
+                  onPress={() => {
+                    console.log("[Cozinha] Filtro tipo changed to:", key);
+                    setFiltroTipo(key);
+                  }}
+                  style={{
+                    paddingHorizontal: 12,
+                    paddingVertical: 6,
+                    borderRadius: 20,
+                    backgroundColor: isActive ? COLORS.primary : COLORS.surfaceSecondary,
+                    borderWidth: 1,
+                    borderColor: isActive ? COLORS.primary : COLORS.border,
+                  }}
+                >
+                  <Text style={{ color: isActive ? "#fff" : COLORS.text, fontSize: 13, fontWeight: "600" }}>
+                    {label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
 
         {/* Comanda status filter pills */}
         {activeTab === "comandas" && (
