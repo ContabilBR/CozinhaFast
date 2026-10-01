@@ -393,7 +393,7 @@ export default function AuthScreen() {
         )}
 
         {/* Demo credentials */}
-        <Animated.View style={{ marginTop: 24, opacity: fadeAnim }}>
+        <Animated.View style={{ marginTop: 32, opacity: fadeAnim }}>
           <Text
             style={{
               fontFamily: "Outfit_600SemiBold",
