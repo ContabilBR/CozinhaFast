@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { View, Text, ScrollView, Pressable, Alert, ActivityIndicator, TextInput } from "react-native";
+import { View, Text, ScrollView, Pressable, Alert, ActivityIndicator, TextInput, Modal } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -12,6 +12,17 @@ const STATUS_LABELS: Record<string, string> = { pendente: "Pendente", preparando
 const STATUS_ICONS: Record<string, string> = { pendente: "time-outline", preparando: "flame-outline", saiu_entrega: "bicycle-outline", entregue: "checkmark-circle-outline", cancelada: "close-circle-outline" };
 const STATUS_COLORS: Record<string, string> = { pendente: "#EF4444", preparando: "#F59E0B", saiu_entrega: "#3B82F6", entregue: "#22C55E", cancelada: "#6B7280" };
 
+const MOTIVO_LABELS: Record<string, string> = {
+  erro_lancamento: "Erro de lançamento",
+  cliente_desistiu: "Cliente desistiu",
+  item_em_falta: "Item em falta",
+  demora: "Demora",
+  qualidade: "Problema de qualidade",
+  outro: "Outro",
+  cliente_nao_atendeu: "Cliente não atendeu na entrega",
+  endereco_fora_area: "Endereço fora da área de entrega",
+};
+
 export default function DeliveryDetalhes() {
   const COLORS = useColors();
   const router = useRouter();
@@ -23,6 +34,10 @@ export default function DeliveryDetalhes() {
   const [showDespacharForm, setShowDespacharForm] = useState(false);
   const [entregadorNome, setEntregadorNome] = useState("");
   const [entregadorTelefone, setEntregadorTelefone] = useState("");
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelMotivo, setCancelMotivo] = useState("");
+  const [cancelDetalhe, setCancelDetalhe] = useState("");
+  const [cancelando, setCancelando] = useState(false);
 
   const fetch = useCallback(async () => {
     console.log("[DeliveryDetalhes] Fetching delivery order:", id);
@@ -78,24 +93,31 @@ export default function DeliveryDetalhes() {
 
   const cancelar = () => {
     console.log("[DeliveryDetalhes] Cancel button pressed for order:", id);
-    Alert.alert("Cancelar pedido", "Tem certeza?", [
-      { text: "Não", style: "cancel" },
-      { text: "Sim, cancelar", style: "destructive", onPress: async () => {
-        console.log("[DeliveryDetalhes] Confirming cancellation for order:", id);
-        setUpdating(true);
-        try {
-          await apiPut("/api/delivery/pedidos/" + id + "/status", { status: "cancelada" });
-          console.log("[DeliveryDetalhes] Order cancelled successfully:", id);
-          await fetch();
-        }
-        catch (err: any) {
-          console.error("[DeliveryDetalhes] Error cancelling order:", err);
-          const msg = err?.body?.error || err?.message || "Erro ao cancelar";
-          Alert.alert("Erro", msg);
-        }
-        finally { setUpdating(false); }
-      }},
-    ]);
+    setShowCancelModal(true);
+  };
+
+  const confirmarCancelamento = async () => {
+    if (!cancelMotivo) return;
+    if (cancelMotivo === "outro" && !cancelDetalhe.trim()) return;
+    console.log("[DeliveryDetalhes] Confirming cancellation for order:", id, "motivo:", cancelMotivo);
+    setCancelando(true);
+    try {
+      await apiPut("/api/delivery/pedidos/" + id + "/cancelar", {
+        motivo: cancelMotivo,
+        detalhe: cancelDetalhe.trim() || undefined,
+      });
+      console.log("[DeliveryDetalhes] Order cancelled successfully:", id);
+      setShowCancelModal(false);
+      setCancelMotivo("");
+      setCancelDetalhe("");
+      await fetch();
+    } catch (err: any) {
+      console.error("[DeliveryDetalhes] Error cancelling order:", err);
+      const msg = err?.body?.error || err?.message || "Erro ao cancelar";
+      Alert.alert("Erro", msg);
+    } finally {
+      setCancelando(false);
+    }
   };
 
   if (loading) return <View style={{ flex: 1, backgroundColor: COLORS.background, justifyContent: "center", alignItems: "center" }}><ActivityIndicator size="large" color={COLORS.primary} /></View>;
@@ -198,6 +220,32 @@ export default function DeliveryDetalhes() {
           </View>
         </View>
 
+        {/* Bloco de cancelamento */}
+        {e.status === "cancelada" && e.cancelamento_info && (
+          <View style={{ backgroundColor: "#FEF2F2", borderRadius: 12, padding: 14, borderWidth: 0.5, borderColor: "#FECACA", marginBottom: 12 }}>
+            <Text style={{ fontSize: 12, fontWeight: "600", color: "#EF4444", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>Pedido cancelado</Text>
+            <Text style={{ fontSize: 13, color: "#7F1D1D" }}>
+              Cancelado por: {e.cancelamento_info.cancelado_por_nome || "Desconhecido"} ({e.cancelamento_info.cancelado_por_role || ""})
+            </Text>
+            {e.cancelamento_info.cancelado_em && (
+              <Text style={{ fontSize: 12, color: "#991B1B", marginTop: 2 }}>
+                Em: {new Date(e.cancelamento_info.cancelado_em).toLocaleString("pt-BR")}
+              </Text>
+            )}
+            <Text style={{ fontSize: 13, color: "#7F1D1D", marginTop: 4 }}>
+              Motivo: {MOTIVO_LABELS[e.cancelamento_info.motivo_cancelamento] || e.cancelamento_info.motivo_cancelamento || "Não informado"}
+            </Text>
+            {e.cancelamento_info.motivo_cancelamento_detalhe && (
+              <Text style={{ fontSize: 12, color: "#991B1B", marginTop: 2 }}>{e.cancelamento_info.motivo_cancelamento_detalhe}</Text>
+            )}
+            {e.cancelamento_info.houve_perda && (
+              <View style={{ backgroundColor: "#FEE2E2", borderRadius: 6, padding: 8, marginTop: 8 }}>
+                <Text style={{ fontSize: 12, fontWeight: "600", color: "#EF4444" }}>⚠ Houve perda de comida registrada</Text>
+              </View>
+            )}
+          </View>
+        )}
+
         {/* Ações */}
         {e.status !== "entregue" && e.status !== "cancelada" && (
           <View style={{ gap: 10 }}>
@@ -283,12 +331,115 @@ export default function DeliveryDetalhes() {
             )}
 
             {/* Cancelar */}
-            <Pressable onPress={cancelar} style={{ borderWidth: 1, borderColor: "#EF4444", borderRadius: 12, padding: 14, alignItems: "center" }}>
-              <Text style={{ color: "#EF4444", fontSize: 14, fontWeight: "500" }}>Cancelar pedido</Text>
-            </Pressable>
+            {(() => {
+              const podeCancelar = data?.pode_cancelar;
+              const motivoNaoPode = data?.motivo_nao_pode_cancelar;
+              if (!podeCancelar && motivoNaoPode) {
+                return (
+                  <View style={{ borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, padding: 14, alignItems: "center" }}>
+                    <Text style={{ color: COLORS.textSecondary, fontSize: 13, textAlign: "center" }}>{motivoNaoPode}</Text>
+                  </View>
+                );
+              }
+              return (
+                <Pressable onPress={cancelar} style={{ borderWidth: 1, borderColor: "#EF4444", borderRadius: 12, padding: 14, alignItems: "center" }}>
+                  <Text style={{ color: "#EF4444", fontSize: 14, fontWeight: "500" }}>Cancelar pedido</Text>
+                </Pressable>
+              );
+            })()}
           </View>
         )}
       </ScrollView>
+
+      {/* Modal de cancelamento */}
+      <Modal
+        visible={showCancelModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCancelModal(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" }}>
+          <View style={{ backgroundColor: COLORS.background, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 40 }}>
+            <Text style={{ fontSize: 18, fontWeight: "700", color: COLORS.text, marginBottom: 16 }}>Cancelar pedido</Text>
+
+            {/* Aviso de consequências */}
+            {(() => {
+              if (!data) return null;
+              const itensAtivos = (data.itens || []).filter((i: any) => i.status !== "cancelado");
+              const itensIniciados = itensAtivos.filter((i: any) => i.status === "em_preparo" || i.status === "pronto");
+              const entregaSaiu = data.entrega?.status === "saiu_entrega";
+              if (entregaSaiu) {
+                return (
+                  <View style={{ backgroundColor: "#FEE2E2", borderRadius: 8, padding: 10, marginBottom: 12 }}>
+                    <Text style={{ color: "#EF4444", fontSize: 13, fontWeight: "600" }}>⚠ O pedido já saiu para entrega. Todos os itens serão registrados como perda.</Text>
+                  </View>
+                );
+              }
+              if (itensIniciados.length > 0) {
+                const qtd = itensIniciados.length;
+                const singular = qtd === 1;
+                const avisoText = singular
+                  ? `⚠ ${qtd} item já está em preparo ou pronto e será registrado como perda.`
+                  : `⚠ ${qtd} itens já estão em preparo ou prontos e serão registrados como perda.`;
+                return (
+                  <View style={{ backgroundColor: "#FEF3C7", borderRadius: 8, padding: 10, marginBottom: 12 }}>
+                    <Text style={{ color: "#92400E", fontSize: 13, fontWeight: "600" }}>{avisoText}</Text>
+                  </View>
+                );
+              }
+              return null;
+            })()}
+
+            {/* Lista de motivos */}
+            <Text style={{ fontSize: 14, fontWeight: "600", color: COLORS.text, marginBottom: 8 }}>Motivo *</Text>
+            <ScrollView style={{ maxHeight: 220 }} showsVerticalScrollIndicator={false}>
+              {Object.entries(MOTIVO_LABELS).map(([key, label]) => (
+                <Pressable
+                  key={key}
+                  onPress={() => { console.log("[DeliveryDetalhes] Cancel motivo selected:", key); setCancelMotivo(key); }}
+                  style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: COLORS.border }}
+                >
+                  <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: cancelMotivo === key ? COLORS.primary : COLORS.border, backgroundColor: cancelMotivo === key ? COLORS.primary : "transparent", marginRight: 10 }} />
+                  <Text style={{ fontSize: 14, color: COLORS.text }}>{label}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+
+            {/* Detalhe (obrigatório quando motivo='outro') */}
+            {cancelMotivo === "outro" && (
+              <View style={{ marginTop: 12 }}>
+                <Text style={{ fontSize: 14, fontWeight: "600", color: COLORS.text, marginBottom: 6 }}>Detalhe *</Text>
+                <TextInput
+                  value={cancelDetalhe}
+                  onChangeText={setCancelDetalhe}
+                  placeholder="Descreva o motivo (obrigatório)"
+                  placeholderTextColor={COLORS.textTertiary}
+                  multiline
+                  maxLength={300}
+                  style={{ borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, padding: 10, color: COLORS.text, fontSize: 14, minHeight: 80, textAlignVertical: "top" }}
+                />
+              </View>
+            )}
+
+            {/* Botões */}
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
+              <Pressable
+                onPress={() => { console.log("[DeliveryDetalhes] Cancel modal dismissed"); setShowCancelModal(false); setCancelMotivo(""); setCancelDetalhe(""); }}
+                style={{ flex: 1, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, padding: 14, alignItems: "center" }}
+              >
+                <Text style={{ color: COLORS.text, fontWeight: "500" }}>Voltar</Text>
+              </Pressable>
+              <Pressable
+                onPress={confirmarCancelamento}
+                disabled={cancelando || !cancelMotivo || (cancelMotivo === "outro" && !cancelDetalhe.trim())}
+                style={{ flex: 2, backgroundColor: cancelando || !cancelMotivo || (cancelMotivo === "outro" && !cancelDetalhe.trim()) ? COLORS.textTertiary : "#EF4444", borderRadius: 10, padding: 14, alignItems: "center" }}
+              >
+                {cancelando ? <ActivityIndicator color="white" size="small" /> : <Text style={{ color: "white", fontWeight: "600" }}>Confirmar cancelamento</Text>}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

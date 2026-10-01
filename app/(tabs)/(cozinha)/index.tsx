@@ -876,11 +876,19 @@ export default function CozinhaScreen() {
 
     if (event?.type === "delivery.cancelado") {
       const nome = event.payload?.cliente_nome ?? "";
-      setAvisoCancelamento({ visible: true, message: `Delivery (${nome}) foi cancelado. Pare o preparo.` } as any);
-      // Use the same avisoCancelamento state
-      setAvisoCancelamento({ texto: `Delivery (${nome}) foi cancelado. Pare o preparo.`, aposInicio: true });
-      if (avisoTimerRef.current) clearTimeout(avisoTimerRef.current);
-      avisoTimerRef.current = setTimeout(() => setAvisoCancelamento(null), 15000);
+      const houveItemIniciado = event.payload?.houve_item_iniciado === true;
+      console.log("[Cozinha] delivery.cancelado event — cliente:", nome, "houveItemIniciado:", houveItemIniciado);
+      if (houveItemIniciado) {
+        // Alerta vermelho — pare o preparo
+        setAvisoCancelamento({ texto: `Delivery (${nome}) foi cancelado. Pare o preparo.`, aposInicio: true });
+        if (avisoTimerRef.current) clearTimeout(avisoTimerRef.current);
+        avisoTimerRef.current = setTimeout(() => setAvisoCancelamento(null), 15000);
+      } else {
+        // Alerta âmbar — sem ordem de parar
+        setAvisoCancelamento({ texto: `Delivery (${nome}) foi cancelado.`, aposInicio: false });
+        if (avisoTimerRef.current) clearTimeout(avisoTimerRef.current);
+        avisoTimerRef.current = setTimeout(() => setAvisoCancelamento(null), 10000);
+      }
       setTimeout(() => fetchComandas(), 300);
       return;
     }
