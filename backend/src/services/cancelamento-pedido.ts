@@ -13,7 +13,7 @@
  * Ordem de trava: primeiro a linha da comanda, depois a do pedido (a mesma do fechamento,
  * para não haver deadlock entre cancelar e fechar).
  */
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import * as schema from "../db/schema/schema.js";
 import type { App } from "../index.js";
 import { realtimeHub } from "../realtime/hub.js";
@@ -84,6 +84,7 @@ export async function cancelarPedido(
         status: schema.comandas.status,
         gorjeta: schema.comandas.gorjeta,
         mesaNumero: schema.comandas.mesaNumero,
+        tipo: schema.comandas.tipo,
       })
       .from(schema.comandas)
       .where(and(eq(schema.comandas.id, comandaId), eq(schema.comandas.restauranteId, restauranteId)))
@@ -150,6 +151,18 @@ export async function cancelarPedido(
       pratoNome = pratos.length ? pratos[0].nome : null;
     }
 
+    // Nome do cliente, só para delivery
+    let clienteNome: string | null = null;
+    if (comanda.tipo === "delivery") {
+      const entregas = await tx
+        .select({ clienteNome: schema.entregas.clienteNome })
+        .from(schema.entregas)
+        .where(eq(schema.entregas.comandaId, comandaId))
+        .orderBy(sql`created_at DESC`)
+        .limit(1);
+      clienteNome = entregas.length ? entregas[0].clienteNome : null;
+    }
+
     return {
       resultado: {
         tipo: "cancelado",
@@ -159,7 +172,7 @@ export async function cancelarPedido(
         subtotalComanda: subtotal,
         totalComanda: total,
       } as ResultadoCancelamento,
-      evento: { comandaId, mesaNumero: comanda.mesaNumero ?? null, pratoNome, aposInicio },
+      evento: { comandaId, mesaNumero: comanda.mesaNumero ?? null, pratoNome, aposInicio, tipo: comanda.tipo, clienteNome },
     };
   });
 
@@ -179,6 +192,8 @@ export async function cancelarPedido(
           prato_nome: dados.evento.pratoNome,
           cancelado_apos_inicio: dados.evento.aposInicio,
           motivo,
+          comanda_tipo: dados.evento.tipo || "mesa",
+          entrega_cliente_nome: dados.evento.clienteNome || null,
         },
       });
     } catch (err) {

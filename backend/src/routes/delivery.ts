@@ -3,6 +3,7 @@ import type { FastifyRequest, FastifyReply } from "fastify";
 import type { App } from "../index.js";
 import { requireAuth as customRequireAuth, requireTenant } from "../utils/auth.js";
 import * as schema from "../db/schema/schema.js";
+import { realtimeHub } from "../realtime/hub.js";
 
 interface DeliveryBody {
   cliente_nome: string;
@@ -163,6 +164,23 @@ export function registerDeliveryRoutes(app: App) {
         });
 
         if (result.error) return reply.code(400).send({ error: result.error });
+
+        // Publicar evento realtime para a cozinha
+        try {
+          realtimeHub.publish(restauranteId, {
+            type: "delivery.criado",
+            entityId: result.comanda.id,
+            occurredAt: new Date().toISOString(),
+            payload: {
+              comanda_id: result.comanda.id,
+              tipo: "delivery",
+              status: result.entrega.status,
+              cliente_nome: result.entrega.clienteNome,
+            },
+          });
+        } catch (pubErr) {
+          app.logger.error({ err: pubErr }, "Failed to publish delivery.criado event");
+        }
 
         return reply.code(201).send({ comanda: result.comanda, entrega: result.entrega });
       } catch (err) {
@@ -361,6 +379,25 @@ export function registerDeliveryRoutes(app: App) {
         await db.update(schema.entregas).set(updateData).where(eq(schema.entregas.id, request.params.id));
 
         const [entregaAtualizada] = await db.select().from(schema.entregas).where(eq(schema.entregas.id, request.params.id));
+
+        // Publicar evento realtime para a cozinha
+        try {
+          const eventType = status === "cancelada" ? "delivery.cancelado" : "delivery.status_changed";
+          realtimeHub.publish(restauranteId, {
+            type: eventType,
+            entityId: entrega.comandaId,
+            occurredAt: new Date().toISOString(),
+            payload: {
+              comanda_id: entrega.comandaId,
+              tipo: "delivery",
+              status,
+              cliente_nome: entrega.clienteNome,
+            },
+          });
+        } catch (pubErr) {
+          app.logger.error({ err: pubErr }, "Failed to publish delivery event");
+        }
+
         return reply.code(200).send({ entrega: entregaAtualizada });
       } catch (err) {
         app.logger.error({ error: (err as any).message }, "Erro ao atualizar status delivery");

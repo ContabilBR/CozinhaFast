@@ -1559,6 +1559,12 @@ export function registerOrderRoutes(app: App) {
                     status: { type: "string" },
                     total: { type: "string" },
                     total_itens: { type: "number" },
+                    tipo: { type: "string" },
+                    entrega_cliente_nome: { type: ["string", "null"] },
+                    entrega_bairro: { type: ["string", "null"] },
+                    entrega_observacao: { type: ["string", "null"] },
+                    entrega_tempo_estimado: { type: ["number", "null"] },
+                    entrega_horario_limite: { type: ["string", "null"] },
                     pedidos: {
                       type: "array",
                       items: {
@@ -1601,9 +1607,23 @@ export function registerOrderRoutes(app: App) {
             c.status,
             c.total,
             c.created_at,
-            COALESCE(u.nome, 'Não informado') as garcom_nome
+            c.tipo,
+            COALESCE(u.nome, 'Não informado') as garcom_nome,
+            e.cliente_nome   as entrega_cliente_nome,
+            e.bairro         as entrega_bairro,
+            e.observacao     as entrega_observacao,
+            e.tempo_estimado as entrega_tempo_estimado,
+            e.created_at     as entrega_created_at
           FROM comandas c
           LEFT JOIN usuarios u ON u.id::text = c.garcom_id
+          LEFT JOIN LATERAL (
+            SELECT cliente_nome, bairro, observacao, tempo_estimado, created_at
+            FROM entregas
+            WHERE comanda_id = c.id
+              AND restaurante_id = c.restaurante_id
+            ORDER BY created_at DESC
+            LIMIT 1
+          ) e ON true
           WHERE c.restaurante_id = ${tenantId}::uuid
           ORDER BY c.created_at DESC
         `;
@@ -1663,6 +1683,14 @@ export function registerOrderRoutes(app: App) {
             status: row.status,
             total: row.total,
             total_itens: totalItens,
+            tipo: row.tipo || "mesa",
+            entrega_cliente_nome: row.entrega_cliente_nome || null,
+            entrega_bairro: row.entrega_bairro || null,
+            entrega_observacao: row.entrega_observacao || null,
+            entrega_tempo_estimado: row.entrega_tempo_estimado !== null && row.entrega_tempo_estimado !== undefined ? Number(row.entrega_tempo_estimado) : null,
+            entrega_horario_limite: (row.entrega_created_at && row.entrega_tempo_estimado)
+              ? new Date(new Date(row.entrega_created_at).getTime() + Number(row.entrega_tempo_estimado) * 60000).toISOString()
+              : null,
             pedidos: comandaPedidos.map((p: any) => ({
               id: p.id,
               prato_nome: p.prato_nome || "Prato",

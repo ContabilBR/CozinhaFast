@@ -1,5 +1,5 @@
 import { describe, test, expect, afterAll } from "bun:test";
-import { api, authenticatedApi, signUpTestUser, expectStatus, createTestFile, createTestImage, connectAuthenticatedWebSocket, waitForMessage } from "./helpers";
+import { api, authenticatedApi, signUpTestUser, expectStatus, createTestFile, connectAuthenticatedWebSocket, waitForMessage } from "./helpers";
 
 afterAll(async () => {
   // Cleanup is handled automatically by signUpTestUser
@@ -698,7 +698,7 @@ describe("API Integration Tests", () => {
     const pratoData = await createRes.json();
 
     const form = new FormData();
-    form.append("file", createTestImage("dish.png"));
+    form.append("file", createTestFile("dish.png", "", "image/png"));
 
     const res = await authenticatedApi(`/api/pratos/${pratoData.prato.id}/foto`, adminToken, {
       method: "POST",
@@ -1821,7 +1821,7 @@ describe("API Integration Tests", () => {
   test("Generic upload endpoints no longer exist", async () => {
     for (const path of ["/api/upload/imagem", "/api/upload"]) {
       const form = new FormData();
-      form.append("file", createTestImage("image.png"));
+      form.append("file", createTestFile("image.png", "", "image/png"));
       const res = await authenticatedApi(path, authToken, { method: "POST", body: form });
       await expectStatus(res, 404);
     }
@@ -1830,7 +1830,7 @@ describe("API Integration Tests", () => {
   test("Generic upload endpoints without authentication return 401 or 404", async () => {
     for (const path of ["/api/upload/imagem", "/api/upload"]) {
       const form = new FormData();
-      form.append("file", createTestImage("image.png"));
+      form.append("file", createTestFile("image.png", "", "image/png"));
       const res = await api(path, { method: "POST", body: form });
       await expectStatus(res, 401, 404);
     }
