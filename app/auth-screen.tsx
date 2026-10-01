@@ -144,7 +144,7 @@ export default function AuthScreen() {
     >
       <ScrollView
         contentContainerStyle={{
-          flexGrow: 0,
+          flexGrow: 1,
           paddingTop: insets.top + 20,
           paddingBottom: insets.bottom + 32,
           paddingHorizontal: 24,
