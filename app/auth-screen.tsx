@@ -6,6 +6,7 @@ import {
   Animated,
   ActivityIndicator,
   TouchableOpacity,
+  ScrollView,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuth } from "@/contexts/AuthContext";
@@ -136,13 +137,11 @@ export default function AuthScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: BG }}>
-      <View
-        style={{
-          flex: 1,
-          paddingTop: insets.top + 20,
-          paddingBottom: insets.bottom + 24,
-          paddingHorizontal: 24,
-        }}
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingTop: insets.top + 20, paddingBottom: insets.bottom + 40, paddingHorizontal: 24 }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
         {/* Hero */}
         <Animated.View
@@ -192,60 +191,6 @@ export default function AuthScreen() {
           >
             Gestão inteligente para seu restaurante
           </Text>
-        </Animated.View>
-
-        {/* Demo credentials */}
-        <Animated.View style={{ marginTop: 0, marginBottom: 12, opacity: fadeAnim }}>
-          <Text
-            style={{
-              fontFamily: "Outfit_600SemiBold",
-              fontSize: 12,
-              color: TEXT_SECONDARY,
-              textAlign: "center",
-              marginBottom: 12,
-              textTransform: "uppercase",
-              letterSpacing: 1,
-            }}
-          >
-            Credenciais de demonstração
-          </Text>
-          <View
-            style={{
-              backgroundColor: CARD,
-              borderRadius: 16,
-              borderWidth: 1,
-              borderColor: BORDER,
-              overflow: "hidden",
-            }}
-          >
-            {DEMO_CREDENTIALS.map((cred, i) => (
-              <AnimatedPressable
-                key={cred.role}
-                onPress={() => fillDemo(cred)}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  paddingHorizontal: 16,
-                  paddingVertical: 13,
-                  borderBottomWidth: i < DEMO_CREDENTIALS.length - 1 ? 1 : 0,
-                  borderBottomColor: BORDER,
-                }}
-              >
-                <View style={{ gap: 2 }}>
-                  <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 14, color: TEXT }}>
-                    {cred.role}
-                  </Text>
-                  <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 12, color: TEXT_SECONDARY }}>
-                    {cred.email}
-                  </Text>
-                </View>
-                <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 13, color: PRIMARY }}>
-                  Usar
-                </Text>
-              </AnimatedPressable>
-            ))}
-          </View>
         </Animated.View>
 
         {/* Form */}
@@ -446,7 +391,61 @@ export default function AuthScreen() {
             </AnimatedPressable>
           </Animated.View>
         )}
-      </View>
+
+        {/* Demo credentials */}
+        <Animated.View style={{ marginTop: 24, opacity: fadeAnim }}>
+          <Text
+            style={{
+              fontFamily: "Outfit_600SemiBold",
+              fontSize: 12,
+              color: TEXT_SECONDARY,
+              textAlign: "center",
+              marginBottom: 12,
+              textTransform: "uppercase",
+              letterSpacing: 1,
+            }}
+          >
+            Credenciais de demonstração
+          </Text>
+          <View
+            style={{
+              backgroundColor: CARD,
+              borderRadius: 16,
+              borderWidth: 1,
+              borderColor: BORDER,
+              overflow: "hidden",
+            }}
+          >
+            {DEMO_CREDENTIALS.map((cred, i) => (
+              <AnimatedPressable
+                key={cred.role}
+                onPress={() => fillDemo(cred)}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  paddingHorizontal: 16,
+                  paddingVertical: 13,
+                  borderBottomWidth: i < DEMO_CREDENTIALS.length - 1 ? 1 : 0,
+                  borderBottomColor: BORDER,
+                }}
+              >
+                <View style={{ gap: 2 }}>
+                  <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 14, color: TEXT }}>
+                    {cred.role}
+                  </Text>
+                  <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 12, color: TEXT_SECONDARY }}>
+                    {cred.email}
+                  </Text>
+                </View>
+                <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 13, color: PRIMARY }}>
+                  Usar
+                </Text>
+              </AnimatedPressable>
+            ))}
+          </View>
+        </Animated.View>
+      </ScrollView>
     </View>
   );
 }
