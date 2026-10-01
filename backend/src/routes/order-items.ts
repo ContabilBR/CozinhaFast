@@ -51,11 +51,11 @@ export function registerOrderItemRoutes(app: App) {
                   properties: {
                     id: { type: "string", format: "uuid" },
                     comanda_id: { type: "string", format: "uuid" },
-                    prato_id: { type: "string", format: "uuid", nullable: true },
-                    prato_nome: { type: "string", nullable: true },
+                    prato_id: { type: "string", format: "uuid" },
+                    prato_nome: { type: "string" },
                     quantidade: { type: "number" },
                     preco_unitario: { type: "string" },
-                    observacao: { type: "string", nullable: true },
+                    observacao: { type: "string" },
                     status: { type: "string" },
                     created_at: { type: "string", format: "date-time" },
                     mesa_numero: { type: "number" },
@@ -173,7 +173,7 @@ export function registerOrderItemRoutes(app: App) {
             prato_id: { type: "string", format: "uuid" },
             pratoId: { type: "string", format: "uuid" },
             quantidade: { type: "number" },
-            observacao: { type: "string", nullable: true },
+            observacao: { type: "string" },
           },
         },
         response: {
@@ -188,7 +188,7 @@ export function registerOrderItemRoutes(app: App) {
                   prato_id: { type: "string" },
                   quantidade: { type: "number" },
                   preco_unitario: { type: "string" },
-                  observacao: { type: "string", nullable: true },
+                  observacao: { type: "string" },
                   status: { type: "string" },
                   created_at: { type: "string" },
                 },
@@ -333,12 +333,12 @@ export function registerOrderItemRoutes(app: App) {
             properties: {
               id: { type: "string", format: "uuid" },
               comanda_id: { type: "string", format: "uuid" },
-              prato_id: { type: "string", format: "uuid", nullable: true },
+              prato_id: { type: "string", format: "uuid" },
               prato_nome: { type: "string" },
               mesa_numero: { type: ["number", "null"] },
               quantidade: { type: "number" },
               preco_unitario: { type: "string" },
-              observacao: { type: "string", nullable: true },
+              observacao: { type: "string" },
               status: { type: "string" },
               created_at: { type: "string", format: "date-time" },
             },
@@ -424,7 +424,7 @@ export function registerOrderItemRoutes(app: App) {
               pratoId: { type: "string" },
               quantidade: { type: "number" },
               precoUnitario: { type: "string" },
-              observacao: { type: "string", nullable: true },
+              observacao: { type: "string" },
               status: { type: "string" },
               createdAt: { type: "string" },
             },
@@ -464,6 +464,29 @@ export function registerOrderItemRoutes(app: App) {
 
         if (existing[0].status === "cancelado") {
           return reply.code(409).send({ error: "Item cancelado não pode mudar de status." });
+        }
+
+        // Verificar se é delivery e se a entrega já saiu/foi entregue/cancelada
+        try {
+          const [comanda] = await app.db
+            .select({ tipo: schema.comandas.tipo, id: schema.comandas.id })
+            .from(schema.comandas)
+            .where(eq(schema.comandas.id, existing[0].comandaId));
+
+          if (comanda?.tipo === "delivery") {
+            const [entrega] = await app.db
+              .select({ status: schema.entregas.status })
+              .from(schema.entregas)
+              .where(eq(schema.entregas.comandaId, existing[0].comandaId))
+              .orderBy(desc(schema.entregas.createdAt))
+              .limit(1);
+
+            if (entrega && ["saiu_entrega", "entregue", "cancelada"].includes(entrega.status)) {
+              return reply.code(409).send({ error: `Não é possível alterar itens de um delivery que já ${entrega.status === "saiu_entrega" ? "saiu para entrega" : entrega.status === "entregue" ? "foi entregue" : "foi cancelado"}.` });
+            }
+          }
+        } catch (checkErr) {
+          app.logger.warn({ err: checkErr }, "Failed to check delivery status before item update");
         }
 
         const [updated] = await app.db
@@ -514,6 +537,62 @@ export function registerOrderItemRoutes(app: App) {
           });
         } catch (err) {
           app.logger.error({ err }, "Failed to publish pedido.status_changed event");
+        }
+
+        // Efeitos colaterais para delivery
+        try {
+          const [comanda] = await app.db
+            .select({ tipo: schema.comandas.tipo, id: schema.comandas.id })
+            .from(schema.comandas)
+            .where(eq(schema.comandas.id, updated.comandaId));
+
+          if (comanda?.tipo === "delivery") {
+            const [entrega] = await app.db
+              .select({ id: schema.entregas.id, status: schema.entregas.status, clienteNome: schema.entregas.clienteNome })
+              .from(schema.entregas)
+              .where(eq(schema.entregas.comandaId, updated.comandaId))
+              .orderBy(desc(schema.entregas.createdAt))
+              .limit(1);
+
+            if (entrega) {
+              // Avanço automático: pendente → preparando quando primeiro item entra em preparo
+              if (request.body.status === "em_preparo" && entrega.status === "pendente") {
+                await app.db.update(schema.entregas)
+                  .set({ status: "preparando" as any })
+                  .where(eq(schema.entregas.id, entrega.id));
+                try {
+                  realtimeHub.publish(restauranteIdAtual, {
+                    type: "delivery.status_changed",
+                    entityId: updated.comandaId,
+                    occurredAt: new Date().toISOString(),
+                    payload: { comanda_id: updated.comandaId, tipo: "delivery", status: "preparando", cliente_nome: entrega.clienteNome },
+                  });
+                } catch {}
+              }
+
+              // Evento delivery.pronto quando último item ativo fica pronto
+              if (request.body.status === "pronto") {
+                const todosItens = await app.db
+                  .select({ status: schema.pedidos.status })
+                  .from(schema.pedidos)
+                  .where(eq(schema.pedidos.comandaId, updated.comandaId));
+                const ativos = todosItens.filter((i: any) => i.status !== "cancelado");
+                const prontos = ativos.filter((i: any) => i.status === "pronto");
+                if (ativos.length > 0 && prontos.length === ativos.length) {
+                  try {
+                    realtimeHub.publish(restauranteIdAtual, {
+                      type: "delivery.pronto",
+                      entityId: updated.comandaId,
+                      occurredAt: new Date().toISOString(),
+                      payload: { comanda_id: updated.comandaId, entrega_id: entrega.id, cliente_nome: entrega.clienteNome },
+                    });
+                  } catch {}
+                }
+              }
+            }
+          }
+        } catch (deliveryErr) {
+          app.logger.warn({ err: deliveryErr }, "Failed to process delivery side effects");
         }
 
         return reply.code(200).send({
@@ -658,10 +737,10 @@ export function registerOrderItemRoutes(app: App) {
             properties: {
               id: { type: "string", format: "uuid" },
               comanda_id: { type: "string", format: "uuid" },
-              prato_id: { type: "string", format: "uuid", nullable: true },
+              prato_id: { type: "string", format: "uuid" },
               quantidade: { type: "number" },
               preco_unitario: { type: "string" },
-              observacao: { type: "string", nullable: true },
+              observacao: { type: "string" },
               status: { type: "string" },
               createdAt: { type: "string", format: "date-time" },
             },

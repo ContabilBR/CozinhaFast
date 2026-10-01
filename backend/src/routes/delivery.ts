@@ -1,7 +1,7 @@
 import { eq, and, desc } from "drizzle-orm";
 import type { FastifyRequest, FastifyReply } from "fastify";
 import type { App } from "../index.js";
-import { requireAuth as customRequireAuth, requireTenant } from "../utils/auth.js";
+import { requireAuth as customRequireAuth, requireTenant, requireRole } from "../utils/auth.js";
 import * as schema from "../db/schema/schema.js";
 import { realtimeHub } from "../realtime/hub.js";
 
@@ -68,24 +68,10 @@ export function registerDeliveryRoutes(app: App) {
               entrega: { type: "object" },
             },
           },
-          400: {
-            type: "object",
-            properties: {
-              error: { type: "string" },
-            },
-          },
-          401: {
-            type: "object",
-            properties: {
-              error: { type: "string" },
-            },
-          },
-          500: {
-            type: "object",
-            properties: {
-              error: { type: "string" },
-            },
-          },
+          400: { type: "object", properties: { error: { type: "string" } } },
+          401: { type: "object", properties: { error: { type: "string" } } },
+          403: { type: "object", properties: { error: { type: "string" } } },
+          500: { type: "object", properties: { error: { type: "string" } } },
         },
       },
     },
@@ -93,6 +79,7 @@ export function registerDeliveryRoutes(app: App) {
       try {
         const authUser = await customRequireAuth(app, request, reply);
         if (!authUser) return;
+        if (!requireRole(authUser, ["garcom", "gerente", "administrador", "admin", "superadmin", "super_admin"], reply)) return;
         const restauranteId = requireTenant(authUser);
         const body = request.body;
 
@@ -193,11 +180,39 @@ export function registerDeliveryRoutes(app: App) {
   // GET /api/delivery/pedidos — listar pedidos delivery
   app.fastify.get(
     "/api/delivery/pedidos",
+    {
+      schema: {
+        description: "List delivery orders",
+        tags: ["delivery"],
+        querystring: {
+          type: "object",
+          properties: {
+            status: { type: "string" },
+          },
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              pedidos: {
+                type: "array",
+                items: { type: "object", additionalProperties: true },
+              },
+              total: { type: "number" },
+            },
+          },
+          401: { type: "object", properties: { error: { type: "string" } } },
+        },
+      },
+    },
     async (request: FastifyRequest<{ Querystring: { status?: string } }>, reply: FastifyReply) => {
       try {
         const authUser = await customRequireAuth(app, request, reply);
         if (!authUser) return;
         const restauranteId = requireTenant(authUser);
+        if (!restauranteId) {
+          return reply.code(401).send({ error: "Nenhum restaurante associado" });
+        }
 
         const statusFiltro = (request.query as any)?.status;
         let entregas;
@@ -207,12 +222,36 @@ export function registerDeliveryRoutes(app: App) {
           entregas = await db.select().from(schema.entregas).where(eq(schema.entregas.restauranteId, restauranteId)).orderBy(desc(schema.entregas.createdAt));
         }
 
-        // Buscar comandas e itens para cada entrega
+        // Buscar comandas e itens para cada entrega, com prato_nome e status
         const pedidos = [];
         for (const entrega of entregas) {
           const [comanda] = await db.select().from(schema.comandas).where(eq(schema.comandas.id, entrega.comandaId));
-          const itens = await db.select({ id: schema.pedidos.id, quantidade: schema.pedidos.quantidade, precoUnitario: schema.pedidos.precoUnitario, observacao: schema.pedidos.observacao, pratoId: schema.pedidos.pratoId, status: schema.pedidos.status }).from(schema.pedidos).where(eq(schema.pedidos.comandaId, entrega.comandaId));
-          pedidos.push({ entrega, comanda, itens });
+          const itens = await db
+            .select({
+              id: schema.pedidos.id,
+              quantidade: schema.pedidos.quantidade,
+              precoUnitario: schema.pedidos.precoUnitario,
+              observacao: schema.pedidos.observacao,
+              pratoId: schema.pedidos.pratoId,
+              status: schema.pedidos.status,
+              prato_nome: schema.pratos.nome,
+            })
+            .from(schema.pedidos)
+            .leftJoin(schema.pratos, eq(schema.pedidos.pratoId, schema.pratos.id))
+            .where(eq(schema.pedidos.comandaId, entrega.comandaId));
+
+          const itens_ativos = itens.filter((i: any) => i.status !== "cancelado").length;
+          const itens_prontos = itens.filter((i: any) => i.status === "pronto").length;
+          const pronto_para_despachar =
+            itens_ativos > 0 &&
+            itens_prontos === itens_ativos &&
+            ["pendente", "preparando"].includes(entrega.status);
+
+          pedidos.push({
+            entrega: { ...entrega, itens_ativos, itens_prontos, pronto_para_despachar },
+            comanda,
+            itens,
+          });
         }
 
         return reply.code(200).send({ pedidos, total: pedidos.length });
@@ -241,30 +280,33 @@ export function registerDeliveryRoutes(app: App) {
           200: {
             type: "object",
             properties: {
-              entrega: { type: "object" },
-              comanda: { type: "object" },
-              itens: { type: "array" },
+              entrega: {
+                type: "object",
+                properties: {
+                  itens_ativos: { type: "number" },
+                  itens_prontos: { type: "number" },
+                  pronto_para_despachar: { type: "boolean" },
+                },
+                additionalProperties: true,
+              },
+              comanda: { type: "object", additionalProperties: true },
+              itens: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    prato_nome: { type: "string" },
+                    status: { type: "string" },
+                  },
+                  additionalProperties: true,
+                },
+              },
               pagamentos: { type: "array" },
             },
           },
-          404: {
-            type: "object",
-            properties: {
-              error: { type: "string" },
-            },
-          },
-          401: {
-            type: "object",
-            properties: {
-              error: { type: "string" },
-            },
-          },
-          500: {
-            type: "object",
-            properties: {
-              error: { type: "string" },
-            },
-          },
+          404: { type: "object", properties: { error: { type: "string" } } },
+          401: { type: "object", properties: { error: { type: "string" } } },
+          500: { type: "object", properties: { error: { type: "string" } } },
         },
       },
     },
@@ -278,10 +320,34 @@ export function registerDeliveryRoutes(app: App) {
         if (!entrega) return reply.code(404).send({ error: "Entrega não encontrada" });
 
         const [comanda] = await db.select().from(schema.comandas).where(eq(schema.comandas.id, entrega.comandaId));
-        const itens = await db.select().from(schema.pedidos).where(eq(schema.pedidos.comandaId, entrega.comandaId));
+        const itens = await db
+          .select({
+            id: schema.pedidos.id,
+            quantidade: schema.pedidos.quantidade,
+            precoUnitario: schema.pedidos.precoUnitario,
+            observacao: schema.pedidos.observacao,
+            pratoId: schema.pedidos.pratoId,
+            status: schema.pedidos.status,
+            prato_nome: schema.pratos.nome,
+          })
+          .from(schema.pedidos)
+          .leftJoin(schema.pratos, eq(schema.pedidos.pratoId, schema.pratos.id))
+          .where(eq(schema.pedidos.comandaId, entrega.comandaId));
         const pagamentos = await db.select().from(schema.pagamentos).where(eq(schema.pagamentos.comandaId, entrega.comandaId));
 
-        return reply.code(200).send({ entrega, comanda, itens, pagamentos });
+        const itens_ativos = itens.filter((i: any) => i.status !== "cancelado").length;
+        const itens_prontos = itens.filter((i: any) => i.status === "pronto").length;
+        const pronto_para_despachar =
+          itens_ativos > 0 &&
+          itens_prontos === itens_ativos &&
+          ["pendente", "preparando"].includes(entrega.status);
+
+        return reply.code(200).send({
+          entrega: { ...entrega, itens_ativos, itens_prontos, pronto_para_despachar },
+          comanda,
+          itens,
+          pagamentos,
+        });
       } catch (err) {
         app.logger.error({ error: (err as any).message }, "Erro ao consultar delivery");
         return reply.code(500).send({ error: "Erro interno" });
@@ -306,7 +372,7 @@ export function registerDeliveryRoutes(app: App) {
         body: {
           type: "object",
           properties: {
-            status: { type: "string", enum: ["pendente", "preparando", "saiu_entrega", "entregue", "cancelada"] },
+            status: { type: "string", enum: ["saiu_entrega", "entregue", "cancelada"] },
             entregador_nome: { type: "string" },
             entregador_telefone: { type: "string" },
           },
@@ -319,30 +385,12 @@ export function registerDeliveryRoutes(app: App) {
               entrega: { type: "object" },
             },
           },
-          400: {
-            type: "object",
-            properties: {
-              error: { type: "string" },
-            },
-          },
-          404: {
-            type: "object",
-            properties: {
-              error: { type: "string" },
-            },
-          },
-          401: {
-            type: "object",
-            properties: {
-              error: { type: "string" },
-            },
-          },
-          500: {
-            type: "object",
-            properties: {
-              error: { type: "string" },
-            },
-          },
+          400: { type: "object", properties: { error: { type: "string" } } },
+          404: { type: "object", properties: { error: { type: "string" } } },
+          409: { type: "object", properties: { error: { type: "string" } } },
+          401: { type: "object", properties: { error: { type: "string" } } },
+          403: { type: "object", properties: { error: { type: "string" } } },
+          500: { type: "object", properties: { error: { type: "string" } } },
         },
       },
     },
@@ -350,49 +398,73 @@ export function registerDeliveryRoutes(app: App) {
       try {
         const authUser = await customRequireAuth(app, request, reply);
         if (!authUser) return;
+        if (!requireRole(authUser, ["garcom", "gerente", "administrador", "admin", "superadmin", "super_admin"], reply)) return;
         const restauranteId = requireTenant(authUser);
 
-        const [entrega] = await db.select().from(schema.entregas).where(and(eq(schema.entregas.id, request.params.id), eq(schema.entregas.restauranteId, restauranteId)));
+        const [entrega] = await db.select().from(schema.entregas)
+          .where(and(eq(schema.entregas.id, request.params.id), eq(schema.entregas.restauranteId, restauranteId)));
         if (!entrega) return reply.code(404).send({ error: "Entrega não encontrada" });
 
         const { status, entregador_nome, entregador_telefone } = request.body;
-        const statusValidos = ["pendente", "preparando", "saiu_entrega", "entregue", "cancelada"];
-        if (!statusValidos.includes(status)) return reply.code(400).send({ error: "Status inválido. Opções: " + statusValidos.join(", ") });
 
-        const updateData: any = { status };
+        // Sequência válida
+        const SEQUENCIA = ["pendente", "preparando", "saiu_entrega", "entregue"];
+        const idxAtual = SEQUENCIA.indexOf(entrega.status);
+        const idxNovo = SEQUENCIA.indexOf(status);
 
-        if (status === "saiu_entrega") {
-          updateData.saiuEm = new Date();
-          if (entregador_nome) updateData.entregadorNome = entregador_nome;
-          if (entregador_telefone) updateData.entregadorTelefone = entregador_telefone;
+        if (status === "cancelada") {
+          if (entrega.status === "entregue" || entrega.status === "cancelada") {
+            return reply.code(409).send({ error: `Não é possível cancelar uma entrega com status "${entrega.status}".` });
+          }
+        } else {
+          if (idxNovo === -1) return reply.code(400).send({ error: "Status inválido." });
+          if (idxNovo !== idxAtual + 1) {
+            return reply.code(409).send({ error: `Não é possível passar de "${entrega.status}" para "${status}". A sequência correta é: ${SEQUENCIA.join(" → ")}.` });
+          }
         }
 
+        // Ao despachar: entregador_nome obrigatório + todos os itens ativos prontos
+        if (status === "saiu_entrega") {
+          if (!entregador_nome?.trim()) {
+            return reply.code(400).send({ error: "O nome de quem vai entregar é obrigatório para despachar." });
+          }
+          const itens = await db.select({ status: schema.pedidos.status })
+            .from(schema.pedidos)
+            .where(eq(schema.pedidos.comandaId, entrega.comandaId));
+          const ativos = itens.filter((i: any) => i.status !== "cancelado");
+          const prontos = ativos.filter((i: any) => i.status === "pronto");
+          if (ativos.length === 0) {
+            return reply.code(409).send({ error: "Não há itens ativos neste pedido." });
+          }
+          if (prontos.length < ativos.length) {
+            return reply.code(409).send({ error: `Ainda há itens em preparo. ${prontos.length} de ${ativos.length} itens prontos.` });
+          }
+        }
+
+        const updateData: any = { status };
+        if (status === "saiu_entrega") {
+          updateData.saiuEm = new Date();
+          updateData.entregadorNome = entregador_nome!.trim();
+          if (entregador_telefone) updateData.entregadorTelefone = entregador_telefone;
+        }
         if (status === "entregue") {
           updateData.entregueEm = new Date();
         }
-
         if (status === "cancelada") {
-          // Cancelar comanda também
           await db.update(schema.comandas).set({ status: "cancelada" }).where(eq(schema.comandas.id, entrega.comandaId));
         }
 
         await db.update(schema.entregas).set(updateData).where(eq(schema.entregas.id, request.params.id));
-
         const [entregaAtualizada] = await db.select().from(schema.entregas).where(eq(schema.entregas.id, request.params.id));
 
-        // Publicar evento realtime para a cozinha
+        // Publicar evento realtime
         try {
           const eventType = status === "cancelada" ? "delivery.cancelado" : "delivery.status_changed";
           realtimeHub.publish(restauranteId, {
             type: eventType,
             entityId: entrega.comandaId,
             occurredAt: new Date().toISOString(),
-            payload: {
-              comanda_id: entrega.comandaId,
-              tipo: "delivery",
-              status,
-              cliente_nome: entrega.clienteNome,
-            },
+            payload: { comanda_id: entrega.comandaId, tipo: "delivery", status, cliente_nome: entrega.clienteNome },
           });
         } catch (pubErr) {
           app.logger.error({ err: pubErr }, "Failed to publish delivery event");
