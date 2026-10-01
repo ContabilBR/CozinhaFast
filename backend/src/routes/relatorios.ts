@@ -6,47 +6,122 @@ import { requireAuth as customRequireAuth, requireTenant, requireRole } from "..
 
 type Periodo = "hoje" | "7dias" | "mes" | "personalizado";
 
-function formatDateBR(date: Date): string {
-  const dd = String(date.getUTCDate()).padStart(2, "0");
-  const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
-  const yyyy = date.getUTCFullYear();
-  return `${dd}/${mm}/${yyyy}`;
+// ---------------------------------------------------------------------------
+// Períodos do dashboard/relatórios
+// ---------------------------------------------------------------------------
+// Fuso do negócio: America/Sao_Paulo (UTC-3, sem horário de verão desde 2019).
+// Todos os "dias" (hoje, 7 dias, mês, personalizado) começam à meia-noite DESTE
+// fuso, e não à meia-noite UTC (que cai às 21h no Brasil).
+const FUSO_HORAS = -3;
+const MS_HORA = 60 * 60 * 1000;
+
+interface DiaLocal {
+  ano: number;
+  mes0: number; // 0-11
+  dia: number;
+}
+
+// Meia-noite local do dia informado, expressa como instante UTC.
+// Date.UTC normaliza estouros (dia 0 = último dia do mês anterior, dia 32 = dia 1 do seguinte).
+function inicioDoDiaLocal(ano: number, mes0: number, dia: number): Date {
+  return new Date(Date.UTC(ano, mes0, dia) - FUSO_HORAS * MS_HORA);
+}
+
+// Data/hora "de parede" no fuso do negócio (ler o resultado com getUTC*).
+function paraLocal(instante: Date): Date {
+  return new Date(instante.getTime() + FUSO_HORAS * MS_HORA);
+}
+
+function diaLocalDeInstante(instante: Date): DiaLocal {
+  const l = paraLocal(instante);
+  return { ano: l.getUTCFullYear(), mes0: l.getUTCMonth(), dia: l.getUTCDate() };
+}
+
+function formatDiaBR(d: DiaLocal): string {
+  const normal = new Date(Date.UTC(d.ano, d.mes0, d.dia));
+  const dd = String(normal.getUTCDate()).padStart(2, "0");
+  const mm = String(normal.getUTCMonth() + 1).padStart(2, "0");
+  return `${dd}/${mm}/${normal.getUTCFullYear()}`;
+}
+
+// Aceita "YYYY-MM-DD" (formato enviado pelo app) ou uma data/hora ISO (formato antigo).
+// No caso ISO, usa o dia civil no fuso do negócio. Retorna null se for inválido.
+function lerDiaLocal(valor: string | undefined): DiaLocal | null {
+  if (!valor) return null;
+  const texto = valor.trim();
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(texto);
+  if (m) {
+    const ano = Number(m[1]);
+    const mes0 = Number(m[2]) - 1;
+    const dia = Number(m[3]);
+    const conferido = new Date(Date.UTC(ano, mes0, dia));
+    if (
+      conferido.getUTCFullYear() !== ano ||
+      conferido.getUTCMonth() !== mes0 ||
+      conferido.getUTCDate() !== dia
+    ) {
+      return null;
+    }
+    return { ano, mes0, dia };
+  }
+  const instante = new Date(texto);
+  if (isNaN(instante.getTime())) return null;
+  return diaLocalDeInstante(instante);
 }
 
 // Resolve o período pedido num intervalo [inicio, fim) em UTC.
-// "hoje"/"mes" usam o mesmo critério de dia que o DATE_TRUNC('day', NOW()) usava
-// antes (sem conversão de fuso — mantém o comportamento existente, sem regressão).
+//  - hoje:          do início ao fim do dia de hoje (horário de Brasília)
+//  - 7dias:         hoje e os 6 dias anteriores (7 dias corridos, dias completos)
+//  - mes:           do dia 1 ao último dia do mês atual
+//  - personalizado: do dia inicial ao dia final, ambos inclusos, dias completos
+// "agora" só existe para permitir testes; em produção usa o relógio atual.
 function resolvePeriodo(
   periodo: string | undefined,
   dataInicio: string | undefined,
-  dataFim: string | undefined
+  dataFim: string | undefined,
+  agora: Date = new Date()
 ): { inicio: Date; fim: Date; label: string } {
-  const now = new Date();
+  const hoje = diaLocalDeInstante(agora);
 
-  if (periodo === "personalizado" && dataInicio && dataFim) {
-    const inicio = new Date(dataInicio);
-    const fimBase = new Date(dataFim);
-    // fim é exclusivo — avança 1 dia (UTC) pra cobrir o dia inteiro selecionado
-    const fim = new Date(Date.UTC(fimBase.getUTCFullYear(), fimBase.getUTCMonth(), fimBase.getUTCDate() + 1));
-    return { inicio, fim, label: `${formatDateBR(inicio)} – ${formatDateBR(fimBase)}` };
+  if (periodo === "personalizado") {
+    let di = lerDiaLocal(dataInicio);
+    let df = lerDiaLocal(dataFim);
+    if (di && df) {
+      // Se vierem invertidos, corrige em vez de devolver um período vazio.
+      if (Date.UTC(di.ano, di.mes0, di.dia) > Date.UTC(df.ano, df.mes0, df.dia)) {
+        [di, df] = [df, di];
+      }
+      return {
+        inicio: inicioDoDiaLocal(di.ano, di.mes0, di.dia),
+        fim: inicioDoDiaLocal(df.ano, df.mes0, df.dia + 1),
+        label: `${formatDiaBR(di)} – ${formatDiaBR(df)}`,
+      };
+    }
+    // datas ausentes ou inválidas: cai no padrão ("hoje")
   }
 
   if (periodo === "7dias") {
-    const inicio = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const fim = new Date(now.getTime() + 24 * 60 * 60 * 1000); // cobre até o fim de hoje
-    return { inicio, fim, label: "Últimos 7 dias" };
+    return {
+      inicio: inicioDoDiaLocal(hoje.ano, hoje.mes0, hoje.dia - 6),
+      fim: inicioDoDiaLocal(hoje.ano, hoje.mes0, hoje.dia + 1),
+      label: "Últimos 7 dias",
+    };
   }
 
   if (periodo === "mes") {
-    const inicio = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-    const fim = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
-    return { inicio, fim, label: "Este mês" };
+    return {
+      inicio: inicioDoDiaLocal(hoje.ano, hoje.mes0, 1),
+      fim: inicioDoDiaLocal(hoje.ano, hoje.mes0 + 1, 1),
+      label: "Este mês",
+    };
   }
 
-  // default: "hoje"
-  const inicio = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const fim = new Date(inicio.getTime() + 24 * 60 * 60 * 1000);
-  return { inicio, fim, label: "Hoje" };
+  // padrão: "hoje"
+  return {
+    inicio: inicioDoDiaLocal(hoje.ano, hoje.mes0, hoje.dia),
+    fim: inicioDoDiaLocal(hoje.ano, hoje.mes0, hoje.dia + 1),
+    label: "Hoje",
+  };
 }
 
 export function registerRelatoriosRoutes(app: App) {
