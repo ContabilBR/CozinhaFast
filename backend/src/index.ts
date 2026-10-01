@@ -25,6 +25,7 @@ import { registerRealtimeRoutes } from './routes/realtime.js';
 import { registerCardapioPublicoRoutes } from './routes/cardapio-publico.js';
 import { registerEstoqueRoutes } from './routes/estoque.js';
 import { registerSuperAdminRoutes } from './routes/superadmin.js';
+import { registerRenovacaoDeImagens } from './utils/imagem-assinada.js';
 import { seedDatabase } from './db/seed.js';
 import { enableSelectRetry } from './db/withRetry.js';
 import { garantirColunasDeCancelamento } from './db/ensure-schema.js';
@@ -117,6 +118,9 @@ try {
 
 // Register routes - IMPORTANT: Always use registration functions to avoid circular dependency issues
 // Register custom auth routes FIRST so they take priority
+// Renova as URLs assinadas das fotos (valem só 15 min) em toda resposta. Deve vir ANTES das rotas.
+registerRenovacaoDeImagens(app);
+
 registerCustomAuthRoutes(app);
 registerAuthRoutes(app);
 registerDishRoutes(app);
