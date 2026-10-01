@@ -4,8 +4,6 @@ import {
   Text,
   TextInput,
   ScrollView,
-  KeyboardAvoidingView,
-  Platform,
   Animated,
   ActivityIndicator,
   TouchableOpacity,
@@ -138,10 +136,7 @@ export default function AuthScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: BG }}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-    >
+    <View style={{ flex: 1, backgroundColor: BG }}>
       <ScrollView
         contentContainerStyle={{
           flexGrow: 1,
@@ -455,6 +450,6 @@ export default function AuthScreen() {
           </View>
         </Animated.View>
       </ScrollView>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
