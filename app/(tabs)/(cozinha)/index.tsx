@@ -12,6 +12,7 @@ import {
   UIManager,
   TouchableOpacity,
   Pressable,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
@@ -34,9 +35,11 @@ import {
   Bike,
   ShoppingBag,
 } from "lucide-react-native";
+import { useRouter } from "expo-router";
 import { useRealtime, type RealtimeStatus, type RealtimeEvent } from "@/hooks/useRealtime";
 import { useKeepAwake } from "expo-keep-awake";
 import { isDelivery, isBalcao, tituloCartao, calcPrazoDelivery, textoAvisoCancelamento } from "@/utils/cozinhaDelivery";
+import { useAuth } from "@/contexts/AuthContext";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -819,6 +822,8 @@ export default function CozinhaScreen() {
 
   const COLORS = useColors();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const { user: authUser } = useAuth();
 
   const [activeTab, setActiveTab] = useState<"fila" | "comandas">("fila");
 
@@ -880,6 +885,25 @@ export default function CozinhaScreen() {
       return;
     }
 
+    if (event?.type === "delivery.pronto") {
+      const role = (authUser?.role || "").toLowerCase();
+      if (!["cozinheiro", "kitchen"].includes(role)) {
+        const nome = event.payload?.cliente_nome ?? "";
+        const comandaId = event.payload?.comanda_id;
+        console.log("[Cozinha] delivery.pronto event — cliente:", nome, "comanda:", comandaId);
+        Alert.alert(
+          "Delivery pronto",
+          `Delivery de ${nome} pronto para despachar`,
+          [
+            { text: "Fechar", style: "cancel" },
+            { text: "Ver pedido", onPress: () => { console.log("[Cozinha] Ver pedido pressed for comanda:", comandaId); router.push("/delivery/" + comandaId); } },
+          ]
+        );
+      }
+      setTimeout(() => fetchComandas(), 300);
+      return;
+    }
+
     if (event?.type === "delivery.criado" || event?.type === "delivery.status_changed") {
       setTimeout(() => fetchComandas(), 300);
       return;
@@ -890,7 +914,7 @@ export default function CozinhaScreen() {
       console.log("[Cozinha] Realtime event — refreshing comandas");
       fetchComandas();
     }, 300);
-  }, [fetchComandas]);
+  }, [fetchComandas, authUser?.role, router]);
 
   const realtimeStatus = useRealtime({
     onEvent: handleRealtimeEvent,
@@ -930,8 +954,10 @@ export default function CozinhaScreen() {
       await apiPut(`/api/pedidos/${id}/status`, { status });
       console.log("[Cozinha] Status updated, refreshing comandas");
       await fetchComandas();
-    } catch (e) {
+    } catch (e: any) {
       console.error("[Cozinha] Status update error:", e);
+      const msg = e?.body?.error || e?.message || "Erro ao atualizar status";
+      Alert.alert("Erro", msg);
     }
   };
 

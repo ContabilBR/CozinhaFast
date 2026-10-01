@@ -9,11 +9,25 @@ import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { CardSkeleton } from "@/components/SkeletonLoader";
 import { apiGet } from "@/utils/api";
 import { formatCurrency, formatRelativeTime } from "@/utils/helpers";
+import { useRealtime } from "@/hooks/useRealtime";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface Entrega {
-  entrega: { id: string; cliente_nome: string; cliente_telefone: string; endereco: string; bairro?: string; status: string; taxa_entrega: string; created_at: string };
+  entrega: {
+    id: string;
+    cliente_nome: string;
+    cliente_telefone: string;
+    endereco: string;
+    bairro?: string;
+    status: string;
+    taxa_entrega: string;
+    created_at: string;
+  };
   comanda: { id: string; total: string; subtotal: string };
-  itens: any[];
+  itens: Array<{ id: string; status: string; prato_nome?: string; quantidade: number }>;
+  itens_ativos: number;
+  itens_prontos: number;
+  pronto_para_despachar: boolean;
 }
 
 const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
@@ -50,8 +64,20 @@ function DeliveryCard({ item, onPress, index }: { item: Entrega; onPress: () => 
               <Ionicons name="location-outline" size={12} /> {e.endereco}{e.bairro ? " - " + e.bairro : ""}
             </Text>
           </View>
-          <View style={{ backgroundColor: statusCfg.bg, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 12 }}>
-            <Text style={{ fontSize: 11, fontWeight: "600", color: statusCfg.text }}>{statusCfg.label}</Text>
+          <View style={{ alignItems: "flex-end" }}>
+            <View style={{ backgroundColor: statusCfg.bg, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 12 }}>
+              <Text style={{ fontSize: 11, fontWeight: "600", color: statusCfg.text }}>{statusCfg.label}</Text>
+            </View>
+            {item.pronto_para_despachar && (
+              <View style={{ backgroundColor: "#D1FAE5", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12, marginTop: 6 }}>
+                <Text style={{ fontSize: 11, fontWeight: "700", color: "#065F46" }}>✓ Pronto para despachar</Text>
+              </View>
+            )}
+            {!item.pronto_para_despachar && item.itens_ativos > 0 && e.status !== "saiu_entrega" && e.status !== "entregue" && e.status !== "cancelada" && (
+              <Text style={{ fontSize: 12, color: COLORS.textSecondary, marginTop: 4 }}>
+                {item.itens_prontos} de {item.itens_ativos} itens prontos
+              </Text>
+            )}
           </View>
         </View>
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 10, paddingTop: 10, borderTopWidth: 0.5, borderTopColor: COLORS.surfaceSecondary }}>
@@ -67,6 +93,7 @@ export default function DeliveryScreen() {
   const COLORS = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
   const [pedidos, setPedidos] = useState<Entrega[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -74,7 +101,9 @@ export default function DeliveryScreen() {
 
   const fetchPedidos = useCallback(async () => {
     try {
-      const path = filtro ? "/api/delivery/pedidos?status=" + filtro : "/api/delivery/pedidos";
+      // "prontos" is a client-side filter — don't send it to the API
+      const apiStatus = filtro === "prontos" ? null : filtro;
+      const path = apiStatus ? "/api/delivery/pedidos?status=" + apiStatus : "/api/delivery/pedidos";
       console.log("[Delivery] Fetching pedidos:", path);
       const data = await apiGet<{ pedidos: Entrega[] }>(path);
       console.log("[Delivery] Pedidos received:", data.pedidos?.length ?? 0);
@@ -89,13 +118,28 @@ export default function DeliveryScreen() {
 
   useFocusEffect(useCallback(() => { setLoading(true); fetchPedidos(); }, [fetchPedidos]));
 
+  const handleRealtimeEvent = useCallback((event: any) => {
+    if (event.type?.startsWith("delivery.")) {
+      console.log("[Delivery] Realtime event received:", event.type, "— refreshing list");
+      fetchPedidos();
+    }
+  }, [fetchPedidos]);
+
+  useRealtime({ onEvent: handleRealtimeEvent });
+
   const filtros = [
     { key: null, label: "Todos" },
     { key: "pendente", label: "Pendente" },
     { key: "preparando", label: "Preparando" },
     { key: "saiu_entrega", label: "Saiu" },
     { key: "entregue", label: "Entregue" },
+    { key: "prontos", label: "Prontos" },
   ];
+
+  // Apply client-side "prontos" filter
+  const pedidosExibidos = filtro === "prontos"
+    ? pedidos.filter((p) => p.pronto_para_despachar === true)
+    : pedidos;
 
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.background }}>
@@ -103,7 +147,7 @@ export default function DeliveryScreen() {
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
           <View>
             <Text style={{ fontSize: 22, fontWeight: "700", color: COLORS.text }}>Delivery</Text>
-            <Text style={{ fontSize: 13, color: COLORS.textSecondary, marginTop: 2 }}>{pedidos.length} pedido{pedidos.length !== 1 ? "s" : ""}</Text>
+            <Text style={{ fontSize: 13, color: COLORS.textSecondary, marginTop: 2 }}>{pedidosExibidos.length} pedido{pedidosExibidos.length !== 1 ? "s" : ""}</Text>
           </View>
           <Pressable onPress={() => { console.log("[Delivery] Novo pedido button pressed"); router.push("/delivery/novo"); }} style={{ backgroundColor: COLORS.primary, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, flexDirection: "row", alignItems: "center", gap: 6 }}>
             <Ionicons name="add" size={18} color="white" />
@@ -127,7 +171,7 @@ export default function DeliveryScreen() {
         <View style={{ padding: 16 }}><CardSkeleton /><CardSkeleton /><CardSkeleton /></View>
       ) : (
         <FlatList
-          data={pedidos}
+          data={pedidosExibidos}
           keyExtractor={(item) => item.entrega.id}
           contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { console.log("[Delivery] Pull-to-refresh triggered"); setRefreshing(true); fetchPedidos(); }} tintColor={COLORS.primary} />}

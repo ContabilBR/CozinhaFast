@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { View, Text, ScrollView, Pressable, Alert, ActivityIndicator } from "react-native";
+import { View, Text, ScrollView, Pressable, Alert, ActivityIndicator, TextInput } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -20,6 +20,9 @@ export default function DeliveryDetalhes() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
+  const [showDespacharForm, setShowDespacharForm] = useState(false);
+  const [entregadorNome, setEntregadorNome] = useState("");
+  const [entregadorTelefone, setEntregadorTelefone] = useState("");
 
   const fetch = useCallback(async () => {
     console.log("[DeliveryDetalhes] Fetching delivery order:", id);
@@ -33,23 +36,44 @@ export default function DeliveryDetalhes() {
 
   useEffect(() => { fetch(); }, [fetch]);
 
-  const avancarStatus = async () => {
-    if (!data) return;
-    const current = data.entrega.status;
-    const idx = STATUS_FLOW.indexOf(current);
-    if (idx < 0 || idx >= STATUS_FLOW.length - 1) return;
-    const next = STATUS_FLOW[idx + 1];
-    console.log("[DeliveryDetalhes] Advancing status from", current, "to", next, "for order:", id);
+  const despachar = async () => {
+    if (!entregadorNome.trim()) return;
+    console.log("[DeliveryDetalhes] Despachar pressed for order:", id, "entregador:", entregadorNome.trim());
     setUpdating(true);
     try {
-      await apiPut("/api/delivery/pedidos/" + id + "/status", { status: next });
-      console.log("[DeliveryDetalhes] Status updated to:", next);
+      await apiPut("/api/delivery/pedidos/" + id + "/status", {
+        status: "saiu_entrega",
+        entregador_nome: entregadorNome.trim(),
+        entregador_telefone: entregadorTelefone.trim() || undefined,
+      });
+      console.log("[DeliveryDetalhes] Despacho confirmed for order:", id);
+      setShowDespacharForm(false);
+      setEntregadorNome("");
+      setEntregadorTelefone("");
       await fetch();
     } catch (err: any) {
-      console.error("[DeliveryDetalhes] Error updating status:", err);
-      Alert.alert("Erro", err?.message || "Erro ao atualizar");
+      console.error("[DeliveryDetalhes] Error dispatching order:", err);
+      const msg = err?.body?.error || err?.message || "Erro ao despachar";
+      Alert.alert("Erro", msg);
+    } finally {
+      setUpdating(false);
     }
-    finally { setUpdating(false); }
+  };
+
+  const confirmarEntrega = async () => {
+    console.log("[DeliveryDetalhes] Confirmar entrega pressed for order:", id);
+    setUpdating(true);
+    try {
+      await apiPut("/api/delivery/pedidos/" + id + "/status", { status: "entregue" });
+      console.log("[DeliveryDetalhes] Entrega confirmed for order:", id);
+      await fetch();
+    } catch (err: any) {
+      console.error("[DeliveryDetalhes] Error confirming delivery:", err);
+      const msg = err?.body?.error || err?.message || "Erro ao confirmar entrega";
+      Alert.alert("Erro", msg);
+    } finally {
+      setUpdating(false);
+    }
   };
 
   const cancelar = () => {
@@ -66,7 +90,8 @@ export default function DeliveryDetalhes() {
         }
         catch (err: any) {
           console.error("[DeliveryDetalhes] Error cancelling order:", err);
-          Alert.alert("Erro", err?.message || "Erro");
+          const msg = err?.body?.error || err?.message || "Erro ao cancelar";
+          Alert.alert("Erro", msg);
         }
         finally { setUpdating(false); }
       }},
@@ -78,7 +103,6 @@ export default function DeliveryDetalhes() {
 
   const e = data.entrega;
   const currentIdx = STATUS_FLOW.indexOf(e.status);
-  const nextStatus = currentIdx >= 0 && currentIdx < STATUS_FLOW.length - 1 ? STATUS_FLOW[currentIdx + 1] : null;
   const total = parseFloat(data.comanda?.total || "0");
 
   return (
@@ -125,12 +149,45 @@ export default function DeliveryDetalhes() {
         {/* Itens */}
         <View style={{ backgroundColor: COLORS.surface, borderRadius: 12, padding: 14, borderWidth: 0.5, borderColor: COLORS.surfaceSecondary, marginBottom: 12 }}>
           <Text style={{ fontSize: 12, fontWeight: "600", color: COLORS.primary, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>Itens</Text>
-          {(data.itens || []).map((item: any, i: number) => (
-            <View key={item.id || i} style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 6, borderBottomWidth: i < (data.itens || []).length - 1 ? 0.5 : 0, borderBottomColor: COLORS.surfaceSecondary }}>
-              <Text style={{ fontSize: 14, color: COLORS.text }}>{item.quantidade}x item</Text>
-              <Text style={{ fontSize: 14, fontWeight: "500", color: COLORS.text }}>{formatCurrency(parseFloat(item.precoUnitario || item.preco_unitario || "0") * (item.quantidade || 1))}</Text>
-            </View>
-          ))}
+          {(data.itens || []).map((item: any, i: number) => {
+            const itemStatus = item.status || "pendente";
+            const statusColor: Record<string, string> = {
+              pendente: "#94A3B8",
+              em_preparo: "#F59E0B",
+              pronto: "#22C55E",
+              cancelado: "#EF4444",
+              entregue: "#0D9488",
+            };
+            const statusLabel: Record<string, string> = {
+              pendente: "Pendente",
+              em_preparo: "Em preparo",
+              pronto: "Pronto",
+              cancelado: "Cancelado",
+              entregue: "Entregue",
+            };
+            const isCancelado = itemStatus === "cancelado";
+            const itemColor = statusColor[itemStatus] || "#94A3B8";
+            const itemLabel = statusLabel[itemStatus] || itemStatus;
+            const itemsLength = (data.itens || []).length;
+            const precoUnitario = parseFloat(item.preco_unitario || item.precoUnitario || "0");
+            const itemTotal = precoUnitario * (item.quantidade || 1);
+            return (
+              <View key={item.id || i} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8, borderBottomWidth: i < itemsLength - 1 ? 0.5 : 0, borderBottomColor: COLORS.surfaceSecondary }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, color: isCancelado ? COLORS.textTertiary : COLORS.text, textDecorationLine: isCancelado ? "line-through" : "none" }}>
+                    {item.quantidade}x {item.prato_nome || "Item"}
+                  </Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
+                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: itemColor, marginRight: 4 }} />
+                    <Text style={{ fontSize: 11, color: itemColor }}>{itemLabel}</Text>
+                  </View>
+                </View>
+                <Text style={{ fontSize: 14, fontWeight: "500", color: isCancelado ? COLORS.textTertiary : COLORS.text }}>
+                  {formatCurrency(itemTotal)}
+                </Text>
+              </View>
+            );
+          })}
           <View style={{ flexDirection: "row", justifyContent: "space-between", paddingTop: 8, marginTop: 4, borderTopWidth: 0.5, borderTopColor: COLORS.surfaceSecondary }}>
             <Text style={{ fontSize: 13, color: COLORS.textSecondary }}>Taxa entrega</Text>
             <Text style={{ fontSize: 13, color: COLORS.text }}>{formatCurrency(parseFloat(e.taxa_entrega || e.taxaEntrega || "0"))}</Text>
@@ -144,11 +201,88 @@ export default function DeliveryDetalhes() {
         {/* Ações */}
         {e.status !== "entregue" && e.status !== "cancelada" && (
           <View style={{ gap: 10 }}>
-            {nextStatus && (
-              <Pressable onPress={avancarStatus} disabled={updating} style={{ backgroundColor: updating ? COLORS.textTertiary : STATUS_COLORS[nextStatus], borderRadius: 12, padding: 16, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 8 }}>
-                {updating ? <ActivityIndicator color="white" /> : <><Ionicons name={STATUS_ICONS[nextStatus] as any} size={20} color="white" /><Text style={{ color: "white", fontSize: 16, fontWeight: "600" }}>{STATUS_LABELS[nextStatus]}</Text></>}
-              </Pressable>
+            {/* Botão principal contextual */}
+            {(() => {
+              const itensAtivos = (data.itens || []).filter((i: any) => i.status !== "cancelado");
+              const itensProntos = itensAtivos.filter((i: any) => i.status === "pronto");
+              const prontoParaDespachar = itensAtivos.length > 0 && itensProntos.length === itensAtivos.length;
+              const aguardandoCozinha = !prontoParaDespachar && e.status !== "saiu_entrega";
+
+              if (e.status === "saiu_entrega") {
+                return (
+                  <Pressable
+                    onPress={() => { console.log("[DeliveryDetalhes] Confirmar entrega pressed"); confirmarEntrega(); }}
+                    disabled={updating}
+                    style={{ backgroundColor: updating ? COLORS.textTertiary : "#22C55E", borderRadius: 12, padding: 16, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 8 }}
+                  >
+                    {updating ? <ActivityIndicator color="white" /> : (
+                      <><Ionicons name="checkmark-circle-outline" size={20} color="white" /><Text style={{ color: "white", fontSize: 16, fontWeight: "600" }}>Confirmar entrega</Text></>
+                    )}
+                  </Pressable>
+                );
+              }
+
+              if (prontoParaDespachar) {
+                return (
+                  <Pressable
+                    onPress={() => { console.log("[DeliveryDetalhes] Despachar button pressed"); setShowDespacharForm(true); }}
+                    disabled={updating}
+                    style={{ backgroundColor: "#3B82F6", borderRadius: 12, padding: 16, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 8 }}
+                  >
+                    <Ionicons name="bicycle-outline" size={20} color="white" />
+                    <Text style={{ color: "white", fontSize: 16, fontWeight: "600" }}>Despachar</Text>
+                  </Pressable>
+                );
+              }
+
+              if (aguardandoCozinha) {
+                return (
+                  <View style={{ backgroundColor: COLORS.surface, borderRadius: 12, padding: 16, alignItems: "center", borderWidth: 1, borderColor: COLORS.border }}>
+                    <Text style={{ color: COLORS.textSecondary, fontSize: 14 }}>
+                      Aguardando cozinha ({itensProntos.length} de {itensAtivos.length} itens prontos)
+                    </Text>
+                  </View>
+                );
+              }
+
+              return null;
+            })()}
+
+            {/* Formulário de despacho */}
+            {showDespacharForm && (
+              <View style={{ backgroundColor: COLORS.surface, borderRadius: 12, padding: 14, borderWidth: 0.5, borderColor: COLORS.surfaceSecondary, gap: 10 }}>
+                <Text style={{ fontSize: 14, fontWeight: "600", color: COLORS.text }}>Quem vai entregar?</Text>
+                <TextInput
+                  value={entregadorNome}
+                  onChangeText={setEntregadorNome}
+                  placeholder="Nome do entregador *"
+                  placeholderTextColor={COLORS.textTertiary}
+                  style={{ borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, padding: 10, color: COLORS.text, fontSize: 14 }}
+                />
+                <TextInput
+                  value={entregadorTelefone}
+                  onChangeText={setEntregadorTelefone}
+                  placeholder="Telefone (opcional)"
+                  placeholderTextColor={COLORS.textTertiary}
+                  keyboardType="phone-pad"
+                  style={{ borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, padding: 10, color: COLORS.text, fontSize: 14 }}
+                />
+                <View style={{ flexDirection: "row", gap: 8 }}>
+                  <Pressable onPress={() => { console.log("[DeliveryDetalhes] Despachar form cancelled"); setShowDespacharForm(false); }} style={{ flex: 1, borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, padding: 12, alignItems: "center" }}>
+                    <Text style={{ color: COLORS.text }}>Cancelar</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={despachar}
+                    disabled={updating || !entregadorNome.trim()}
+                    style={{ flex: 2, backgroundColor: updating || !entregadorNome.trim() ? COLORS.textTertiary : "#3B82F6", borderRadius: 8, padding: 12, alignItems: "center" }}
+                  >
+                    {updating ? <ActivityIndicator color="white" size="small" /> : <Text style={{ color: "white", fontWeight: "600" }}>Confirmar despacho</Text>}
+                  </Pressable>
+                </View>
+              </View>
             )}
+
+            {/* Cancelar */}
             <Pressable onPress={cancelar} style={{ borderWidth: 1, borderColor: "#EF4444", borderRadius: 12, padding: 14, alignItems: "center" }}>
               <Text style={{ color: "#EF4444", fontSize: 14, fontWeight: "500" }}>Cancelar pedido</Text>
             </Pressable>
