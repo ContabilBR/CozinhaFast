@@ -1929,6 +1929,33 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 200, 400, 401, 404, 500);
   });
 
+  test("Cancel delivery order returns 200 or 400 or 403 or 404 or 409 or 500", async () => {
+    const res = await api(
+      "/api/delivery/pedidos/00000000-0000-0000-0000-000000000000/cancelar",
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          motivo: "cliente_desistiu",
+          detalhe: "Customer changed mind",
+        }),
+      }
+    );
+    await expectStatus(res, 200, 400, 403, 404, 409, 500);
+  });
+
+  test("Cancel delivery order without motivo returns 400 or 404", async () => {
+    const res = await api(
+      "/api/delivery/pedidos/00000000-0000-0000-0000-000000000000/cancelar",
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }
+    );
+    await expectStatus(res, 400, 404);
+  });
+
   // ==================== Payments ====================
   test("Add payment to comanda returns 200 or 201 or 400 or 404", async () => {
     const mesaRes = await authenticatedApi("/api/mesas", adminToken, {

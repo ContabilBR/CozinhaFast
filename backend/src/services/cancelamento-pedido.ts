@@ -26,6 +26,8 @@ export const MOTIVOS_CANCELAMENTO = [
   "demora",
   "qualidade",
   "outro",
+  "cliente_nao_atendeu",
+  "endereco_fora_area",
 ] as const;
 export type MotivoCancelamento = (typeof MOTIVOS_CANCELAMENTO)[number];
 

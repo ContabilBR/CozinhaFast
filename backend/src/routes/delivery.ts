@@ -302,7 +302,9 @@ export function registerDeliveryRoutes(app: App) {
                 },
               },
               pagamentos: { type: "array" },
+              pode_cancelar: { type: "boolean" },
             },
+            additionalProperties: true,
           },
           404: { type: "object", properties: { error: { type: "string" } } },
           401: { type: "object", properties: { error: { type: "string" } } },
@@ -328,6 +330,13 @@ export function registerDeliveryRoutes(app: App) {
             observacao: schema.pedidos.observacao,
             pratoId: schema.pedidos.pratoId,
             status: schema.pedidos.status,
+            canceladoEm: schema.pedidos.canceladoEm,
+            canceladoPorId: schema.pedidos.canceladoPorId,
+            canceladoPorNome: schema.pedidos.canceladoPorNome,
+            canceladoPorRole: schema.pedidos.canceladoPorRole,
+            motivoCancelamento: schema.pedidos.motivoCancelamento,
+            motivoCancelamentoDetalhe: schema.pedidos.motivoCancelamentoDetalhe,
+            canceladoAposInicio: schema.pedidos.canceladoAposInicio,
             prato_nome: schema.pratos.nome,
           })
           .from(schema.pedidos)
@@ -342,11 +351,59 @@ export function registerDeliveryRoutes(app: App) {
           itens_prontos === itens_ativos &&
           ["pendente", "preparando"].includes(entrega.status);
 
+        // Informações de cancelamento (vêm dos itens cancelados com registro)
+        let cancelamento_info: any = null;
+        if (entrega.status === "cancelada") {
+          const itemCancelado = itens.find((i: any) => i.canceladoPorId || i.cancelado_por_id);
+          if (itemCancelado) {
+            cancelamento_info = {
+              cancelado_por_nome: itemCancelado.canceladoPorNome || itemCancelado.cancelado_por_nome || null,
+              cancelado_por_role: itemCancelado.canceladoPorRole || itemCancelado.cancelado_por_role || null,
+              cancelado_em: itemCancelado.canceladoEm || itemCancelado.cancelado_em || null,
+              motivo_cancelamento: itemCancelado.motivoCancelamento || itemCancelado.motivo_cancelamento || null,
+              motivo_cancelamento_detalhe: itemCancelado.motivoCancelamentoDetalhe || itemCancelado.motivo_cancelamento_detalhe || null,
+              houve_perda: itens.some((i: any) => i.canceladoAposInicio || i.cancelado_apos_inicio),
+            };
+          }
+        }
+
+        // Calcular pode_cancelar e motivo_nao_pode_cancelar para o usuário atual
+        const userRole = (authUser.role || "").toLowerCase();
+        const ehGestorAtual = ["gerente", "administrador", "admin", "manager", "superadmin", "super_admin"].includes(userRole);
+        const ehCozinheiro = ["cozinheiro", "kitchen"].includes(userRole);
+
+        let pode_cancelar = false;
+        let motivo_nao_pode_cancelar: string | null = null;
+
+        if (ehCozinheiro) {
+          motivo_nao_pode_cancelar = "Cozinheiro não pode cancelar pedidos de delivery.";
+        } else if (entrega.status === "entregue") {
+          motivo_nao_pode_cancelar = "Não é possível cancelar uma entrega já entregue.";
+        } else if (entrega.status === "cancelada") {
+          motivo_nao_pode_cancelar = "Esta entrega já foi cancelada.";
+        } else if (pagamentos.length > 0) {
+          motivo_nao_pode_cancelar = "A comanda já tem pagamento confirmado. Procure o gerente para estorno.";
+        } else {
+          const itensAtivosLocal = itens.filter((i: any) => i.status !== "cancelado");
+          const itensIniciadosLocal = itensAtivosLocal.filter((i: any) => i.status === "em_preparo" || i.status === "pronto");
+          const entregaSaiuLocal = entrega.status === "saiu_entrega";
+
+          if (!ehGestorAtual && entregaSaiuLocal) {
+            motivo_nao_pode_cancelar = "Só gerente ou administrador pode cancelar um pedido que já saiu para entrega.";
+          } else if (!ehGestorAtual && itensIniciadosLocal.length > 0) {
+            motivo_nao_pode_cancelar = "Só gerente ou administrador pode cancelar um pedido que já está em preparo.";
+          } else {
+            pode_cancelar = true;
+          }
+        }
+
         return reply.code(200).send({
-          entrega: { ...entrega, itens_ativos, itens_prontos, pronto_para_despachar },
+          entrega: { ...entrega, itens_ativos, itens_prontos, pronto_para_despachar, cancelamento_info },
           comanda,
           itens,
           pagamentos,
+          pode_cancelar,
+          motivo_nao_pode_cancelar,
         });
       } catch (err) {
         app.logger.error({ error: (err as any).message }, "Erro ao consultar delivery");
@@ -372,7 +429,7 @@ export function registerDeliveryRoutes(app: App) {
         body: {
           type: "object",
           properties: {
-            status: { type: "string", enum: ["saiu_entrega", "entregue", "cancelada"] },
+            status: { type: "string", enum: ["saiu_entrega", "entregue"] },
             entregador_nome: { type: "string" },
             entregador_telefone: { type: "string" },
           },
@@ -407,20 +464,18 @@ export function registerDeliveryRoutes(app: App) {
 
         const { status, entregador_nome, entregador_telefone } = request.body;
 
+        if (status === "cancelada") {
+          return reply.code(409).send({ error: "Para cancelar um pedido de delivery use PUT /api/delivery/pedidos/:id/cancelar (motivo obrigatório)." });
+        }
+
         // Sequência válida
         const SEQUENCIA = ["pendente", "preparando", "saiu_entrega", "entregue"];
         const idxAtual = SEQUENCIA.indexOf(entrega.status);
         const idxNovo = SEQUENCIA.indexOf(status);
 
-        if (status === "cancelada") {
-          if (entrega.status === "entregue" || entrega.status === "cancelada") {
-            return reply.code(409).send({ error: `Não é possível cancelar uma entrega com status "${entrega.status}".` });
-          }
-        } else {
-          if (idxNovo === -1) return reply.code(400).send({ error: "Status inválido." });
-          if (idxNovo !== idxAtual + 1) {
-            return reply.code(409).send({ error: `Não é possível passar de "${entrega.status}" para "${status}". A sequência correta é: ${SEQUENCIA.join(" → ")}.` });
-          }
+        if (idxNovo === -1) return reply.code(400).send({ error: "Status inválido." });
+        if (idxNovo !== idxAtual + 1) {
+          return reply.code(409).send({ error: `Não é possível passar de "${entrega.status}" para "${status}". A sequência correta é: ${SEQUENCIA.join(" → ")}.` });
         }
 
         // Ao despachar: entregador_nome obrigatório + todos os itens ativos prontos
@@ -450,18 +505,14 @@ export function registerDeliveryRoutes(app: App) {
         if (status === "entregue") {
           updateData.entregueEm = new Date();
         }
-        if (status === "cancelada") {
-          await db.update(schema.comandas).set({ status: "cancelada" }).where(eq(schema.comandas.id, entrega.comandaId));
-        }
 
         await db.update(schema.entregas).set(updateData).where(eq(schema.entregas.id, request.params.id));
         const [entregaAtualizada] = await db.select().from(schema.entregas).where(eq(schema.entregas.id, request.params.id));
 
         // Publicar evento realtime
         try {
-          const eventType = status === "cancelada" ? "delivery.cancelado" : "delivery.status_changed";
           realtimeHub.publish(restauranteId, {
-            type: eventType,
+            type: "delivery.status_changed",
             entityId: entrega.comandaId,
             occurredAt: new Date().toISOString(),
             payload: { comanda_id: entrega.comandaId, tipo: "delivery", status, cliente_nome: entrega.clienteNome },
@@ -473,6 +524,180 @@ export function registerDeliveryRoutes(app: App) {
         return reply.code(200).send({ entrega: entregaAtualizada });
       } catch (err) {
         app.logger.error({ error: (err as any).message }, "Erro ao atualizar status delivery");
+        return reply.code(500).send({ error: "Erro interno" });
+      }
+    }
+  );
+
+  // PUT /api/delivery/pedidos/:id/cancelar — cancelar pedido de delivery com motivo
+  app.fastify.put<{ Params: { id: string }; Body: { motivo: string; detalhe?: string } }>(
+    "/api/delivery/pedidos/:id/cancelar",
+    {
+      schema: {
+        description: "Cancelar pedido de delivery com motivo",
+        tags: ["delivery"],
+        params: { type: "object", required: ["id"], properties: { id: { type: "string" } } },
+        body: {
+          type: "object",
+          required: ["motivo"],
+          properties: {
+            motivo: { type: "string" },
+            detalhe: { type: "string", maxLength: 300 },
+          },
+        },
+        response: {
+          200: { type: "object", properties: { ok: { type: "boolean" }, houve_perda: { type: "boolean" } } },
+          400: { type: "object", properties: { error: { type: "string" } } },
+          403: { type: "object", properties: { error: { type: "string" } } },
+          404: { type: "object", properties: { error: { type: "string" } } },
+          409: { type: "object", properties: { error: { type: "string" } } },
+          500: { type: "object", properties: { error: { type: "string" } } },
+        },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const authUser = await customRequireAuth(app, request, reply);
+        if (!authUser) return;
+        const restauranteId = requireTenant(authUser);
+        const { motivo, detalhe } = request.body;
+        const entregaId = request.params.id;
+
+        const MOTIVOS_VALIDOS = [
+          "erro_lancamento", "cliente_desistiu", "item_em_falta", "demora",
+          "qualidade", "outro", "cliente_nao_atendeu", "endereco_fora_area",
+        ];
+        if (!MOTIVOS_VALIDOS.includes(motivo)) {
+          return reply.code(400).send({ error: "Motivo inválido." });
+        }
+        if (motivo === "outro" && (!detalhe || !detalhe.trim())) {
+          return reply.code(400).send({ error: "O detalhe é obrigatório quando o motivo é 'outro'." });
+        }
+
+        // Cozinheiro nunca cancela
+        const role = (authUser.role || "").toLowerCase();
+        if (["cozinheiro", "kitchen"].includes(role)) {
+          return reply.code(403).send({ error: "Cozinheiro não pode cancelar pedidos de delivery." });
+        }
+
+        const ehGestor = ["gerente", "administrador", "admin", "manager", "superadmin", "super_admin"].includes(role);
+
+        // Tudo dentro de uma transação
+        const resultado = await (db as any).transaction(async (tx: any) => {
+          // 1) Buscar e travar a entrega
+          const [entrega] = await tx.select()
+            .from(schema.entregas)
+            .where(and(eq(schema.entregas.id, entregaId), eq(schema.entregas.restauranteId, restauranteId)))
+            .for("update");
+          if (!entrega) return { erro: "Entrega não encontrada", code: 404 };
+
+          // 2) Verificar estado da entrega
+          if (entrega.status === "entregue") {
+            return { erro: "Não é possível cancelar uma entrega já entregue.", code: 409 };
+          }
+          if (entrega.status === "cancelada") {
+            return { erro: "Esta entrega já foi cancelada.", code: 409 };
+          }
+
+          // 3) Buscar e travar a comanda
+          const [comanda] = await tx.select()
+            .from(schema.comandas)
+            .where(and(eq(schema.comandas.id, entrega.comandaId), eq(schema.comandas.restauranteId, restauranteId)))
+            .for("update");
+          if (!comanda) return { erro: "Comanda não encontrada", code: 404 };
+
+          // 4) Verificar pagamento confirmado
+          const pagamentos = await tx.select({ id: schema.pagamentos.id })
+            .from(schema.pagamentos)
+            .where(eq(schema.pagamentos.comandaId, comanda.id));
+          if (pagamentos.length > 0) {
+            return { erro: "Não é possível cancelar: a comanda já tem pagamento confirmado. Procure o gerente para estorno.", code: 409 };
+          }
+
+          // 5) Buscar todos os itens
+          const itens = await tx.select()
+            .from(schema.pedidos)
+            .where(eq(schema.pedidos.comandaId, comanda.id));
+
+          // 6) Verificar se algum item já foi entregue
+          const itemEntregue = itens.find((i: any) => i.status === "entregue");
+          if (itemEntregue) {
+            return { erro: "Não é possível cancelar: um ou mais itens já foram entregues.", code: 409 };
+          }
+
+          // 7) Verificar permissão por momento
+          const itensAtivos = itens.filter((i: any) => i.status !== "cancelado");
+          const itensIniciados = itensAtivos.filter((i: any) => i.status === "em_preparo" || i.status === "pronto");
+          const entregaSaiu = entrega.status === "saiu_entrega";
+
+          if (!ehGestor) {
+            // Garçom só pode cancelar se tudo pendente e entrega não saiu
+            if (entregaSaiu) {
+              return { erro: "Só gerente ou administrador pode cancelar um pedido que já saiu para entrega.", code: 403 };
+            }
+            if (itensIniciados.length > 0) {
+              return { erro: "Só gerente ou administrador pode cancelar um pedido que já está em preparo.", code: 403 };
+            }
+          }
+
+          // 8) Cancelar todos os itens ativos
+          const agora = new Date();
+          let houvePerda = false;
+          for (const item of itensAtivos) {
+            const aposInicio = item.status === "em_preparo" || item.status === "pronto" || entregaSaiu;
+            if (aposInicio) houvePerda = true;
+            await tx.update(schema.pedidos)
+              .set({
+                status: "cancelado",
+                canceladoEm: agora,
+                canceladoPorId: authUser.id,
+                canceladoPorNome: ((authUser as any).name || (authUser as any).nome || "Desconhecido") as string,
+                canceladoPorRole: authUser.role,
+                motivoCancelamento: motivo as any,
+                motivoCancelamentoDetalhe: detalhe || null,
+                canceladoAposInicio: aposInicio,
+              })
+              .where(eq(schema.pedidos.id, item.id));
+          }
+
+          // 9) Marcar entrega como cancelada
+          await tx.update(schema.entregas)
+            .set({ status: "cancelada" as any })
+            .where(eq(schema.entregas.id, entregaId));
+
+          // 10) Marcar comanda como cancelada e zerar totais
+          await tx.update(schema.comandas)
+            .set({ status: "cancelada" as any, subtotal: "0.00", total: "0.00" })
+            .where(eq(schema.comandas.id, comanda.id));
+
+          return { ok: true, houvePerda, clienteNome: entrega.clienteNome, comandaId: comanda.id };
+        });
+
+        if (resultado.erro) {
+          return reply.code(resultado.code).send({ error: resultado.erro });
+        }
+
+        // Publicar evento realtime após a transação
+        try {
+          realtimeHub.publish(restauranteId, {
+            type: "delivery.cancelado",
+            entityId: resultado.comandaId,
+            occurredAt: new Date().toISOString(),
+            payload: {
+              comanda_id: resultado.comandaId,
+              tipo: "delivery",
+              status: "cancelada",
+              cliente_nome: resultado.clienteNome,
+              houve_item_iniciado: resultado.houvePerda,
+            },
+          });
+        } catch (pubErr) {
+          app.logger.error({ err: pubErr }, "Failed to publish delivery.cancelado event");
+        }
+
+        return reply.code(200).send({ ok: true, houve_perda: resultado.houvePerda });
+      } catch (err) {
+        app.logger.error({ error: (err as any).message }, "Erro ao cancelar delivery");
         return reply.code(500).send({ error: "Erro interno" });
       }
     }
