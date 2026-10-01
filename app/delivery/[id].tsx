@@ -38,6 +38,9 @@ export default function DeliveryDetalhes() {
   const [cancelMotivo, setCancelMotivo] = useState("");
   const [cancelDetalhe, setCancelDetalhe] = useState("");
   const [cancelando, setCancelando] = useState(false);
+  const [showConfirmarModal, setShowConfirmarModal] = useState(false);
+  const [confirmarForma, setConfirmarForma] = useState<string>("");
+  const [confirmarValorRecebido, setConfirmarValorRecebido] = useState("");
 
   const fetch = useCallback(async () => {
     console.log("[DeliveryDetalhes] Fetching delivery order:", id);
@@ -75,12 +78,27 @@ export default function DeliveryDetalhes() {
     }
   };
 
-  const confirmarEntrega = async () => {
+  const confirmarEntrega = () => {
     console.log("[DeliveryDetalhes] Confirmar entrega pressed for order:", id);
+    const pagPrevisto = data?.pagamentos?.find((p: any) => p.status === "pendente" || p.status === "confirmado");
+    setConfirmarForma(pagPrevisto?.metodo || "dinheiro");
+    setConfirmarValorRecebido("");
+    setShowConfirmarModal(true);
+  };
+
+  const executarConfirmacao = async () => {
+    console.log("[DeliveryDetalhes] executarConfirmacao pressed for order:", id, "forma:", confirmarForma, "valor:", confirmarValorRecebido);
     setUpdating(true);
     try {
-      await apiPut("/api/delivery/pedidos/" + id + "/status", { status: "entregue" });
-      console.log("[DeliveryDetalhes] Entrega confirmed for order:", id);
+      const body: any = {};
+      if (confirmarForma) body.forma_pagamento = confirmarForma;
+      if (confirmarForma === "dinheiro" && confirmarValorRecebido) {
+        body.valor_recebido = parseFloat(confirmarValorRecebido);
+      }
+      console.log("[DeliveryDetalhes] PUT /api/delivery/pedidos/" + id + "/confirmar-entrega", body);
+      const res = await apiPut("/api/delivery/pedidos/" + id + "/confirmar-entrega", body);
+      console.log("[DeliveryDetalhes] Entrega confirmed for order:", id, res);
+      setShowConfirmarModal(false);
       await fetch();
     } catch (err: any) {
       console.error("[DeliveryDetalhes] Error confirming delivery:", err);
@@ -220,6 +238,30 @@ export default function DeliveryDetalhes() {
           </View>
         </View>
 
+        {/* Resumo de pagamento */}
+        {data?.pagamentos && data.pagamentos.length > 0 && (() => {
+          const pag = data.pagamentos[0];
+          const formaLabel: Record<string, string> = { pix: "Pix", credito: "Cartão de crédito", debito: "Cartão de débito", dinheiro: "Dinheiro" };
+          return (
+            <View style={{ backgroundColor: COLORS.surface, borderRadius: 10, padding: 12, marginBottom: 10 }}>
+              <Text style={{ fontSize: 12, fontWeight: "600", color: COLORS.textSecondary, marginBottom: 6, textTransform: "uppercase" }}>Pagamento</Text>
+              <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                <Text style={{ fontSize: 13, color: COLORS.text }}>{formaLabel[pag.metodo] || pag.metodo}</Text>
+                <Text style={{ fontSize: 13, fontWeight: "600", color: COLORS.text }}>{formatCurrency(parseFloat(pag.valor || "0"))}</Text>
+              </View>
+              {pag.status === "confirmado" && (
+                <Text style={{ fontSize: 11, color: "#22C55E", marginTop: 2 }}>✓ Pago{pag.confirmado_em ? ` em ${new Date(pag.confirmado_em).toLocaleString("pt-BR")}` : ""}</Text>
+              )}
+              {pag.status === "pendente" && (
+                <Text style={{ fontSize: 11, color: "#F59E0B", marginTop: 2 }}>Aguardando pagamento na entrega</Text>
+              )}
+              {pag.referencia && (
+                <Text style={{ fontSize: 11, color: COLORS.textSecondary, marginTop: 2 }}>{pag.referencia}</Text>
+              )}
+            </View>
+          );
+        })()}
+
         {/* Bloco de cancelamento */}
         {e.status === "cancelada" && e.cancelamento_info && (
           <View style={{ backgroundColor: "#FEF2F2", borderRadius: 12, padding: 14, borderWidth: 0.5, borderColor: "#FECACA", marginBottom: 12 }}>
@@ -245,6 +287,29 @@ export default function DeliveryDetalhes() {
             )}
           </View>
         )}
+
+        {/* Bloco pós-entrega */}
+        {e.status === "entregue" && (() => {
+          const pag = data?.pagamentos?.find((p: any) => p.status === "confirmado");
+          const formaLabel: Record<string, string> = { pix: "Pix", credito: "Cartão de crédito", debito: "Cartão de débito", dinheiro: "Dinheiro" };
+          return (
+            <View style={{ backgroundColor: "#F0FDF4", borderRadius: 12, padding: 14, borderWidth: 0.5, borderColor: "#BBF7D0", marginBottom: 12 }}>
+              <Text style={{ fontSize: 12, fontWeight: "600", color: "#22C55E", marginBottom: 8, textTransform: "uppercase" }}>Pedido encerrado</Text>
+              {pag && (
+                <>
+                  <Text style={{ fontSize: 13, color: "#166534" }}>Forma: {formaLabel[pag.metodo] || pag.metodo}</Text>
+                  <Text style={{ fontSize: 13, color: "#166534", marginTop: 2 }}>Valor cobrado: {formatCurrency(parseFloat(pag.valor || "0"))}</Text>
+                  {pag.referencia?.startsWith("Troco:") && (
+                    <Text style={{ fontSize: 13, color: "#166534", marginTop: 2 }}>{pag.referencia}</Text>
+                  )}
+                </>
+              )}
+              {e.entregue_em && (
+                <Text style={{ fontSize: 11, color: "#15803D", marginTop: 4 }}>Entregue em: {new Date(e.entregue_em).toLocaleString("pt-BR")}</Text>
+              )}
+            </View>
+          );
+        })()}
 
         {/* Ações */}
         {e.status !== "entregue" && e.status !== "cancelada" && (
@@ -437,6 +502,113 @@ export default function DeliveryDetalhes() {
                 {cancelando ? <ActivityIndicator color="white" size="small" /> : <Text style={{ color: "white", fontWeight: "600" }}>Confirmar cancelamento</Text>}
               </Pressable>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal de confirmação de entrega */}
+      <Modal
+        visible={showConfirmarModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowConfirmarModal(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" }}>
+          <View style={{ backgroundColor: COLORS.background, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 40 }}>
+            <Text style={{ fontSize: 18, fontWeight: "700", color: COLORS.text, marginBottom: 4 }}>Confirmar entrega</Text>
+            {(() => {
+              const totalDue = parseFloat(data?.comanda?.total || "0");
+              const pag = data?.pagamentos?.[0];
+              const jaFoiPago = pag?.status === "confirmado";
+              const formaLabel: Record<string, string> = { pix: "Pix", credito: "Cartão de crédito", debito: "Cartão de débito", dinheiro: "Dinheiro" };
+              const valorRecebidoNum = parseFloat(confirmarValorRecebido);
+              const troco = confirmarForma === "dinheiro" && confirmarValorRecebido
+                ? Math.max(0, valorRecebidoNum - totalDue)
+                : null;
+
+              return (
+                <>
+                  <Text style={{ fontSize: 22, fontWeight: "700", color: COLORS.primary, marginBottom: 16 }}>
+                    Total: {formatCurrency(totalDue)}
+                  </Text>
+
+                  {jaFoiPago ? (
+                    <View style={{ backgroundColor: "#D1FAE5", borderRadius: 8, padding: 10, marginBottom: 16 }}>
+                      <Text style={{ color: "#065F46", fontWeight: "600" }}>✓ Pedido já pago ({formaLabel[pag.metodo] || pag.metodo})</Text>
+                    </View>
+                  ) : (
+                    <>
+                      {/* Forma de pagamento */}
+                      <Text style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 6 }}>Forma de pagamento</Text>
+                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+                        {([
+                          { key: "dinheiro", label: "Dinheiro" },
+                          { key: "pix", label: "Pix" },
+                          { key: "credito", label: "Crédito" },
+                          { key: "debito", label: "Débito" },
+                        ] as const).map(({ key, label }) => (
+                          <Pressable
+                            key={key}
+                            onPress={() => { console.log("[DeliveryDetalhes] confirmarForma selected:", key); setConfirmarForma(key); }}
+                            style={{
+                              paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8,
+                              backgroundColor: confirmarForma === key ? COLORS.primary : COLORS.surface,
+                              borderWidth: 1, borderColor: confirmarForma === key ? COLORS.primary : COLORS.border,
+                            }}
+                          >
+                            <Text style={{ color: confirmarForma === key ? "#fff" : COLORS.text, fontSize: 13 }}>{label}</Text>
+                          </Pressable>
+                        ))}
+                      </View>
+
+                      {/* Valor recebido (dinheiro) */}
+                      {confirmarForma === "dinheiro" && (
+                        <View style={{ marginBottom: 12 }}>
+                          <Text style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 4 }}>Valor recebido *</Text>
+                          <TextInput
+                            value={confirmarValorRecebido}
+                            onChangeText={setConfirmarValorRecebido}
+                            placeholder={totalDue.toFixed(2)}
+                            placeholderTextColor={COLORS.textTertiary}
+                            keyboardType="decimal-pad"
+                            style={{ borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, padding: 10, color: COLORS.text, fontSize: 16 }}
+                          />
+                          {troco !== null && troco >= 0 && (
+                            <Text style={{ fontSize: 14, color: "#22C55E", fontWeight: "600", marginTop: 6 }}>
+                              Troco a devolver: {formatCurrency(troco)}
+                            </Text>
+                          )}
+                          {confirmarValorRecebido && parseFloat(confirmarValorRecebido) < totalDue && (
+                            <Text style={{ fontSize: 13, color: "#EF4444", marginTop: 4 }}>Valor insuficiente</Text>
+                          )}
+                        </View>
+                      )}
+                    </>
+                  )}
+
+                  {/* Botões */}
+                  <View style={{ flexDirection: "row", gap: 10 }}>
+                    <Pressable
+                      onPress={() => { console.log("[DeliveryDetalhes] Confirmar modal dismissed"); setShowConfirmarModal(false); }}
+                      style={{ flex: 1, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, padding: 14, alignItems: "center" }}
+                    >
+                      <Text style={{ color: COLORS.text, fontWeight: "500" }}>Cancelar</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={executarConfirmacao}
+                      disabled={updating || (!jaFoiPago && confirmarForma === "dinheiro" && (!confirmarValorRecebido || parseFloat(confirmarValorRecebido) < totalDue))}
+                      style={{
+                        flex: 2, borderRadius: 10, padding: 14, alignItems: "center",
+                        backgroundColor: (updating || (!jaFoiPago && confirmarForma === "dinheiro" && (!confirmarValorRecebido || parseFloat(confirmarValorRecebido) < totalDue)))
+                          ? COLORS.textTertiary : "#22C55E",
+                      }}
+                    >
+                      {updating ? <ActivityIndicator color="white" size="small" /> : <Text style={{ color: "white", fontWeight: "600" }}>Confirmar entrega</Text>}
+                    </Pressable>
+                  </View>
+                </>
+              );
+            })()}
           </View>
         </View>
       </Modal>

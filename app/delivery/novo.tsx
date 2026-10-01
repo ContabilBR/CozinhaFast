@@ -27,6 +27,9 @@ export default function NovoDelivery() {
   const [pratos, setPratos] = useState<Prato[]>([]);
   const [showCardapio, setShowCardapio] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [pagMomento, setPagMomento] = useState<"ja_pago" | "na_entrega">("na_entrega");
+  const [pagForma, setPagForma] = useState<"pix" | "credito" | "debito" | "dinheiro">("dinheiro");
+  const [trocoPara, setTrocoPara] = useState("");
 
   useEffect(() => {
     console.log("[NovoDelivery] Fetching pratos");
@@ -54,19 +57,24 @@ export default function NovoDelivery() {
   const total = subtotal + taxa;
 
   const submit = async () => {
-    console.log("[NovoDelivery] submit pressed", { clienteNome, clienteTelefone, endereco, itens: itens.length });
+    console.log("[NovoDelivery] submit pressed", { clienteNome, clienteTelefone, endereco, itens: itens.length, pagMomento, pagForma });
     if (!clienteNome.trim()) return Alert.alert("Erro", "Informe o nome do cliente");
     if (!clienteTelefone.trim()) return Alert.alert("Erro", "Informe o telefone");
     if (!endereco.trim()) return Alert.alert("Erro", "Informe o endereço");
     if (itens.length === 0) return Alert.alert("Erro", "Adicione pelo menos um item");
     setSaving(true);
     try {
-      console.log("[NovoDelivery] POST /api/delivery/pedidos", { cliente_nome: clienteNome, itens });
+      console.log("[NovoDelivery] POST /api/delivery/pedidos", { cliente_nome: clienteNome, itens, pagMomento, pagForma });
       await apiPost("/api/delivery/pedidos", {
         cliente_nome: clienteNome.trim(), cliente_telefone: clienteTelefone.trim(), endereco: endereco.trim(),
         complemento: complemento.trim() || undefined, bairro: bairro.trim() || undefined, cep: cep.trim() || undefined,
         referencia: referencia.trim() || undefined, taxa_entrega: taxa, observacao: observacao.trim() || undefined,
         itens: itens.map((i) => ({ prato_id: i.prato_id, quantidade: i.quantidade, observacao: i.observacao })),
+        pagamento: {
+          momento: pagMomento,
+          forma: pagForma,
+          ...(pagMomento === "na_entrega" && pagForma === "dinheiro" && trocoPara ? { troco_para: parseFloat(trocoPara) } : {}),
+        },
       });
       console.log("[NovoDelivery] Pedido criado com sucesso");
       router.back();
@@ -135,6 +143,70 @@ export default function NovoDelivery() {
           <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}><Text style={{ fontSize: 13, color: COLORS.textSecondary }}>Subtotal</Text><Text style={{ fontSize: 13, color: COLORS.text }}>{formatCurrency(subtotal)}</Text></View>
           <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}><Text style={{ fontSize: 13, color: COLORS.textSecondary }}>Taxa de entrega</Text><Text style={{ fontSize: 13, color: COLORS.text }}>{formatCurrency(taxa)}</Text></View>
           <View style={{ flexDirection: "row", justifyContent: "space-between", paddingTop: 8, borderTopWidth: 0.5, borderTopColor: COLORS.surfaceSecondary }}><Text style={{ fontSize: 16, fontWeight: "600", color: COLORS.text }}>Total</Text><Text style={{ fontSize: 16, fontWeight: "600", color: COLORS.primary }}>{formatCurrency(total)}</Text></View>
+        </View>
+
+        {/* Pagamento */}
+        <View style={{ marginBottom: 16 }}>
+          <Text style={{ fontSize: 14, fontWeight: "600", color: COLORS.text, marginBottom: 8 }}>Pagamento *</Text>
+
+          {/* Toggle Já pago / Paga na entrega */}
+          <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
+            {(["na_entrega", "ja_pago"] as const).map(op => (
+              <Pressable
+                key={op}
+                onPress={() => { console.log("[NovoDelivery] pagMomento selected:", op); setPagMomento(op); }}
+                style={{
+                  flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: "center",
+                  backgroundColor: pagMomento === op ? COLORS.primary : COLORS.surface,
+                  borderWidth: 1, borderColor: pagMomento === op ? COLORS.primary : COLORS.border,
+                }}
+              >
+                <Text style={{ color: pagMomento === op ? "#fff" : COLORS.text, fontWeight: "600", fontSize: 13 }}>
+                  {op === "na_entrega" ? "Paga na entrega" : "Já pago"}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          {/* Forma de pagamento */}
+          <Text style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 6 }}>
+            {pagMomento === "ja_pago" ? "Forma de pagamento" : "Forma prevista"}
+          </Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            {([
+              { key: "dinheiro", label: "Dinheiro" },
+              { key: "pix", label: "Pix" },
+              { key: "credito", label: "Cartão crédito" },
+              { key: "debito", label: "Cartão débito" },
+            ] as const).map(({ key, label }) => (
+              <Pressable
+                key={key}
+                onPress={() => { console.log("[NovoDelivery] pagForma selected:", key); setPagForma(key); }}
+                style={{
+                  paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8,
+                  backgroundColor: pagForma === key ? COLORS.primary : COLORS.surface,
+                  borderWidth: 1, borderColor: pagForma === key ? COLORS.primary : COLORS.border,
+                }}
+              >
+                <Text style={{ color: pagForma === key ? "#fff" : COLORS.text, fontSize: 13 }}>{label}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          {/* Troco para quanto (só dinheiro + na entrega) */}
+          {pagMomento === "na_entrega" && pagForma === "dinheiro" && (
+            <View style={{ marginTop: 10 }}>
+              <Text style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 4 }}>Troco para quanto? (opcional)</Text>
+              <TextInput
+                value={trocoPara}
+                onChangeText={setTrocoPara}
+                placeholder="Ex: 50.00"
+                placeholderTextColor={COLORS.textTertiary}
+                keyboardType="decimal-pad"
+                style={{ borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, padding: 10, color: COLORS.text, fontSize: 14 }}
+              />
+            </View>
+          )}
         </View>
 
         <Pressable onPress={submit} disabled={saving} style={{ backgroundColor: saving ? COLORS.textTertiary : COLORS.primary, borderRadius: 12, padding: 16, alignItems: "center" }}>

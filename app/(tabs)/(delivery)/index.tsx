@@ -23,7 +23,7 @@ interface Entrega {
     taxa_entrega: string;
     created_at: string;
   };
-  comanda: { id: string; total: string; subtotal: string };
+  comanda: { id: string; total: string; subtotal: string; status?: string };
   itens: Array<{ id: string; status: string; prato_nome?: string; quantidade: number }>;
   itens_ativos: number;
   itens_prontos: number;
@@ -101,10 +101,18 @@ export default function DeliveryScreen() {
 
   const fetchPedidos = useCallback(async () => {
     try {
-      // "prontos" is a client-side filter — don't send it to the API
-      const apiStatus = filtro === "prontos" ? null : filtro;
-      const path = apiStatus ? "/api/delivery/pedidos?status=" + apiStatus : "/api/delivery/pedidos";
-      console.log("[Delivery] Fetching pedidos:", path);
+      // "prontos" and "encerrados" are handled specially
+      let path: string;
+      if (filtro === "prontos") {
+        path = "/api/delivery/pedidos";
+      } else if (filtro === "encerrados") {
+        path = "/api/delivery/pedidos?status=entregue";
+      } else if (filtro) {
+        path = "/api/delivery/pedidos?status=" + filtro;
+      } else {
+        path = "/api/delivery/pedidos";
+      }
+      console.log("[Delivery] Fetching pedidos:", path, "filtro:", filtro);
       const data = await apiGet<{ pedidos: Entrega[] }>(path);
       console.log("[Delivery] Pedidos received:", data.pedidos?.length ?? 0);
       setPedidos(data.pedidos || []);
@@ -132,14 +140,28 @@ export default function DeliveryScreen() {
     { key: "pendente", label: "Pendente" },
     { key: "preparando", label: "Preparando" },
     { key: "saiu_entrega", label: "Saiu" },
-    { key: "entregue", label: "Entregue" },
     { key: "prontos", label: "Prontos" },
+    { key: "encerrados", label: "Encerrados" },
   ];
 
-  // Apply client-side "prontos" filter
-  const pedidosExibidos = filtro === "prontos"
-    ? pedidos.filter((p) => p.pronto_para_despachar === true)
-    : pedidos;
+  // Apply client-side filters
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const pedidosExibidos = (() => {
+    if (filtro === "prontos") {
+      return pedidos.filter((p) => p.pronto_para_despachar === true);
+    }
+    if (filtro === "encerrados") {
+      return pedidos.filter((p) => {
+        const createdAt = new Date(p.entrega.created_at);
+        return createdAt >= sevenDaysAgo;
+      });
+    }
+    if (filtro === null) {
+      // "Todos" excludes fully closed orders (entregue + comanda fechada)
+      return pedidos.filter((p) => !(p.entrega.status === "entregue" && p.comanda?.status === "fechada"));
+    }
+    return pedidos;
+  })();
 
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.background }}>

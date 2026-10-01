@@ -28,6 +28,12 @@ interface ReportSummary {
   top_dishes?: { dish_name: string; quantity_sold: number }[];
   orders_by_status?: { aberta?: number; fechada?: number; cancelada?: number };
   periodo_label?: string;
+  vendas_por_canal?: Array<{
+    canal: string;
+    faturamento: number;
+    quantidade: number;
+    taxa_entrega_total?: number;
+  }>;
 }
 
 interface MesaResumo {
@@ -419,6 +425,44 @@ export default function RelatoriosScreen() {
                 )}
               </View>
             </View>
+
+            {/* Vendas por canal */}
+            {summary?.vendas_por_canal && summary.vendas_por_canal.length > 0 && (
+              <View>
+                <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 18, color: COLORS.text, marginBottom: 12 }}>
+                  Vendas por canal
+                </Text>
+                <View
+                  style={{
+                    backgroundColor: COLORS.surface,
+                    borderRadius: 16,
+                    padding: 16,
+                    borderWidth: 1,
+                    borderColor: COLORS.border,
+                  }}
+                >
+                  {summary.vendas_por_canal.map((canal) => {
+                    const canalLabel: Record<string, string> = { mesa: "Mesa", balcao: "Balcão", delivery: "Delivery" };
+                    const canalNome = canalLabel[canal.canal] || canal.canal;
+                    const quantidadeText = canal.quantidade !== 1 ? "s" : "";
+                    const mostrarTaxa = canal.canal === "delivery" && canal.taxa_entrega_total !== undefined && canal.taxa_entrega_total > 0;
+                    const taxaFormatada = mostrarTaxa ? formatCurrency(canal.taxa_entrega_total!) : "";
+                    return (
+                      <View key={canal.canal} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", paddingVertical: 8, borderBottomWidth: 0.5, borderBottomColor: COLORS.border }}>
+                        <View>
+                          <Text style={{ fontSize: 14, fontWeight: "600", color: COLORS.text }}>{canalNome}</Text>
+                          <Text style={{ fontSize: 12, color: COLORS.textSecondary }}>{canal.quantidade} pedido{quantidadeText}</Text>
+                          {mostrarTaxa && (
+                            <Text style={{ fontSize: 11, color: COLORS.textSecondary }}>Taxa de entrega: {taxaFormatada}</Text>
+                          )}
+                        </View>
+                        <Text style={{ fontSize: 16, fontWeight: "700", color: COLORS.primary }}>{formatCurrency(canal.faturamento)}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
 
             {/* Por mesa */}
             <View>
