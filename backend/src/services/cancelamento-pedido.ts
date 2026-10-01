@@ -17,7 +17,7 @@ import { and, eq, sql } from "drizzle-orm";
 import * as schema from "../db/schema/schema.js";
 import type { App } from "../index.js";
 import { realtimeHub } from "../realtime/hub.js";
-import { subtotalDaComanda } from "./total-comanda.js";
+import { subtotalDaComanda, totalDelivery } from "./total-comanda.js";
 
 export const MOTIVOS_CANCELAMENTO = [
   "erro_lancamento",
@@ -136,8 +136,14 @@ export async function cancelarPedido(
 
     // 5) Recalcula o total gravado na comanda (sem os itens cancelados)
     const subtotal = await subtotalDaComanda(tx, comandaId);
-    const gorjeta = parseFloat(String(comanda.gorjeta || "0"));
-    const total = subtotal + gorjeta;
+    let total: number;
+    if (comanda.tipo === "delivery") {
+      // Para delivery: subtotal + taxa de entrega (gorjeta não se aplica)
+      total = await totalDelivery(tx, comandaId);
+    } else {
+      const gorjeta = parseFloat(String(comanda.gorjeta || "0"));
+      total = subtotal + gorjeta;
+    }
     await tx
       .update(schema.comandas)
       .set({ subtotal: subtotal.toString(), total: total.toFixed(2) })

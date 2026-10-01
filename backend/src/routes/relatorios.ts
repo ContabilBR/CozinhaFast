@@ -179,6 +179,18 @@ export function registerRelatoriosRoutes(app: App) {
               gorjeta_total: { type: "number" },
               comandas_com_gorjeta: { type: "number" },
               gorjeta_media: { type: "number" },
+              vendas_por_canal: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    canal: { type: "string" },
+                    faturamento: { type: "number" },
+                    quantidade: { type: "number" },
+                    taxa_entrega_total: { type: "number" },
+                  },
+                },
+              },
             },
           },
           401: { type: "object", properties: { error: { type: "string" } } },
@@ -504,6 +516,82 @@ export function registerRelatoriosRoutes(app: App) {
         const comandasComGorjeta = Number(gorjetaHistResult[0]?.comandas_com_gorjeta ?? 0) + Number(gorjetaComandasResult[0]?.comandas_com_gorjeta ?? 0);
         const gorjetaMedia = comandasComGorjeta > 0 ? gorjetaTotal / comandasComGorjeta : 0;
 
+        // Vendas por canal no período (mesa, balcao, delivery)
+        let vendasPorCanal: Array<{
+          canal: string;
+          faturamento: number;
+          quantidade: number;
+          taxa_entrega_total?: number;
+        }> = [];
+        try {
+          // Comandas ativas fechadas no período
+          const canalAtivasResult = await (app.db as any).execute(
+            sql`
+              SELECT
+                COALESCE(tipo, 'mesa') as canal,
+                COALESCE(SUM(total), 0)::float AS faturamento,
+                COUNT(*)::integer AS quantidade
+              FROM comandas
+              WHERE restaurante_id = ${tenantId}::uuid
+                AND status = 'fechada'
+                AND closed_at >= ${inicio.toISOString()}::timestamptz
+                AND closed_at < ${fim.toISOString()}::timestamptz
+              GROUP BY COALESCE(tipo, 'mesa')
+            `
+          ) as any[];
+
+          // Comandas históricas fechadas no período (sem coluna tipo — todas são mesa/balcao)
+          const canalHistResult = await (app.db as any).execute(
+            sql`
+              SELECT
+                'mesa' as canal,
+                COALESCE(SUM(total), 0)::float AS faturamento,
+                COUNT(*)::integer AS quantidade
+              FROM comandas_historico
+              WHERE restaurante_id = ${tenantId}::uuid
+                AND status = 'fechada'
+                AND closed_at >= ${inicio.toISOString()}::timestamptz
+                AND closed_at < ${fim.toISOString()}::timestamptz
+            `
+          ) as any[];
+
+          // Taxa de entrega total para delivery no período
+          const taxaEntregaResult = await (app.db as any).execute(
+            sql`
+              SELECT COALESCE(SUM(CAST(e.taxa_entrega AS DECIMAL(10,2))), 0)::float AS total_taxa
+              FROM entregas e
+              INNER JOIN comandas c ON e.comanda_id = c.id
+              WHERE c.restaurante_id = ${tenantId}::uuid
+                AND c.status = 'fechada'
+                AND c.tipo = 'delivery'
+                AND c.closed_at >= ${inicio.toISOString()}::timestamptz
+                AND c.closed_at < ${fim.toISOString()}::timestamptz
+            `
+          ) as any[];
+          const totalTaxaEntrega = taxaEntregaResult[0]?.total_taxa || 0;
+
+          // Mesclar resultados
+          const canalMap = new Map<string, { faturamento: number; quantidade: number }>();
+          for (const row of [...(Array.isArray(canalAtivasResult) ? canalAtivasResult : []), ...(Array.isArray(canalHistResult) ? canalHistResult : [])]) {
+            const canal = row.canal || "mesa";
+            const existing = canalMap.get(canal) || { faturamento: 0, quantidade: 0 };
+            canalMap.set(canal, {
+              faturamento: existing.faturamento + (parseFloat(String(row.faturamento)) || 0),
+              quantidade: existing.quantidade + (parseInt(String(row.quantidade)) || 0),
+            });
+          }
+
+          vendasPorCanal = Array.from(canalMap.entries()).map(([canal, data]) => ({
+            canal,
+            faturamento: data.faturamento,
+            quantidade: data.quantidade,
+            ...(canal === "delivery" ? { taxa_entrega_total: totalTaxaEntrega } : {}),
+          }));
+        } catch (canalErr) {
+          app.logger.warn({ err: canalErr }, "Failed to get vendas por canal");
+          vendasPorCanal = [];
+        }
+
         app.logger.info(
           {
             tenantId, totalMesas, mesasOcupadas, comandasAbertas, pedidosPendentes, pedidosEmPreparo, pedidosAtrasados, receitaPeriodo, periodoLabel,
@@ -532,6 +620,7 @@ export function registerRelatoriosRoutes(app: App) {
           gorjeta_total: gorjetaTotal,
           comandas_com_gorjeta: comandasComGorjeta,
           gorjeta_media: gorjetaMedia,
+          vendas_por_canal: vendasPorCanal,
         });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to get resumo");

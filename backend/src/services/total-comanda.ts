@@ -23,3 +23,19 @@ export async function subtotalDaComanda(executor: any, comandaId: string): Promi
     .where(eq(schema.pedidos.comandaId, comandaId));
   return parseFloat(String(linhas[0]?.total ?? "0"));
 }
+
+/**
+ * Total de um pedido de delivery: subtotal dos itens não cancelados + taxa de entrega.
+ * Gorjeta não se aplica ao delivery.
+ */
+export async function totalDelivery(executor: any, comandaId: string): Promise<number> {
+  const subtotal = await subtotalDaComanda(executor, comandaId);
+  const linhas = await executor
+    .select({
+      taxa: sql<string>`COALESCE(MAX(CAST(${schema.entregas.taxaEntrega} AS DECIMAL(10,2))), 0)`,
+    })
+    .from(schema.entregas)
+    .where(eq(schema.entregas.comandaId, comandaId));
+  const taxa = parseFloat(String(linhas[0]?.taxa ?? "0"));
+  return subtotal + taxa;
+}

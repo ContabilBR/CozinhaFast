@@ -1,9 +1,10 @@
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import type { FastifyRequest, FastifyReply } from "fastify";
 import type { App } from "../index.js";
 import { requireAuth as customRequireAuth, requireTenant, requireRole } from "../utils/auth.js";
 import * as schema from "../db/schema/schema.js";
 import { realtimeHub } from "../realtime/hub.js";
+import { totalDelivery, subtotalDaComanda } from "../services/total-comanda.js";
 
 interface DeliveryBody {
   cliente_nome: string;
@@ -17,6 +18,11 @@ interface DeliveryBody {
   taxa_entrega?: number;
   tempo_estimado?: number;
   observacao?: string;
+  pagamento: {
+    momento: "ja_pago" | "na_entrega";
+    forma: "pix" | "credito" | "debito" | "dinheiro";
+    troco_para?: number;
+  };
   itens: Array<{ prato_id: string; quantidade: number; observacao?: string }>;
 }
 
@@ -32,7 +38,7 @@ export function registerDeliveryRoutes(app: App) {
         tags: ["delivery"],
         body: {
           type: "object",
-          required: ["cliente_nome", "cliente_telefone", "endereco", "itens"],
+          required: ["cliente_nome", "cliente_telefone", "endereco", "itens", "pagamento"],
           properties: {
             cliente_nome: { type: "string" },
             cliente_telefone: { type: "string" },
@@ -45,6 +51,15 @@ export function registerDeliveryRoutes(app: App) {
             taxa_entrega: { type: "number" },
             tempo_estimado: { type: "integer" },
             observacao: { type: "string" },
+            pagamento: {
+              type: "object",
+              required: ["momento", "forma"],
+              properties: {
+                momento: { type: "string", enum: ["ja_pago", "na_entrega"] },
+                forma: { type: "string", enum: ["pix", "credito", "debito", "dinheiro"] },
+                troco_para: { type: "number" },
+              },
+            },
             itens: {
               type: "array",
               minItems: 1,
@@ -147,6 +162,30 @@ export function registerDeliveryRoutes(app: App) {
             restauranteId,
           }).returning();
 
+          // Criar pagamento
+          const totalPedido = await totalDelivery(tx, comanda.id);
+
+          if (body.pagamento.momento === "na_entrega" && body.pagamento.forma === "dinheiro" && body.pagamento.troco_para !== undefined) {
+            if (body.pagamento.troco_para < totalPedido) {
+              throw new Error(`TROCO_INSUFICIENTE:O valor de troco (R$ ${body.pagamento.troco_para.toFixed(2)}) é menor que o total do pedido (R$ ${totalPedido.toFixed(2)}).`);
+            }
+          }
+
+          const referenciaPag = body.pagamento.momento === "na_entrega" && body.pagamento.forma === "dinheiro" && body.pagamento.troco_para !== undefined
+            ? `Troco para R$ ${body.pagamento.troco_para.toFixed(2)}`
+            : null;
+
+          await tx.insert(schema.pagamentos).values({
+            comandaId: comanda.id,
+            restauranteId: restauranteId as any,
+            valor: totalPedido.toFixed(2),
+            formaPagamento: body.pagamento.forma as any,
+            status: body.pagamento.momento === "ja_pago" ? "confirmado" : "pendente",
+            confirmadoEm: body.pagamento.momento === "ja_pago" ? new Date() : null,
+            referencia: referenciaPag,
+            troco: "0.00",
+          });
+
           return { comanda, entrega };
         });
 
@@ -171,6 +210,9 @@ export function registerDeliveryRoutes(app: App) {
 
         return reply.code(201).send({ comanda: result.comanda, entrega: result.entrega });
       } catch (err) {
+        if ((err as any)?.message?.startsWith("TROCO_INSUFICIENTE:")) {
+          return reply.code(400).send({ error: (err as any).message.replace("TROCO_INSUFICIENTE:", "") });
+        }
         app.logger.error({ error: (err as any).message }, "Erro ao criar pedido delivery");
         return reply.code(500).send({ error: "Erro interno" });
       }
@@ -429,7 +471,7 @@ export function registerDeliveryRoutes(app: App) {
         body: {
           type: "object",
           properties: {
-            status: { type: "string", enum: ["saiu_entrega", "entregue"] },
+            status: { type: "string", enum: ["saiu_entrega"] },
             entregador_nome: { type: "string" },
             entregador_telefone: { type: "string" },
           },
@@ -457,6 +499,10 @@ export function registerDeliveryRoutes(app: App) {
         if (!authUser) return;
         if (!requireRole(authUser, ["garcom", "gerente", "administrador", "admin", "superadmin", "super_admin"], reply)) return;
         const restauranteId = requireTenant(authUser);
+
+        if (request.body.status === "entregue") {
+          return reply.code(409).send({ error: "Para confirmar a entrega use PUT /api/delivery/pedidos/:id/confirmar-entrega (registra o pagamento e fecha a comanda)." });
+        }
 
         const [entrega] = await db.select().from(schema.entregas)
           .where(and(eq(schema.entregas.id, request.params.id), eq(schema.entregas.restauranteId, restauranteId)));
@@ -607,10 +653,11 @@ export function registerDeliveryRoutes(app: App) {
           if (!comanda) return { erro: "Comanda não encontrada", code: 404 };
 
           // 4) Verificar pagamento confirmado
-          const pagamentos = await tx.select({ id: schema.pagamentos.id })
+          const pagamentos = await tx.select({ id: schema.pagamentos.id, status: schema.pagamentos.status })
             .from(schema.pagamentos)
             .where(eq(schema.pagamentos.comandaId, comanda.id));
-          if (pagamentos.length > 0) {
+          const pagConfirmado = pagamentos.find((p: any) => p.status === "confirmado");
+          if (pagConfirmado) {
             return { erro: "Não é possível cancelar: a comanda já tem pagamento confirmado. Procure o gerente para estorno.", code: 409 };
           }
 
@@ -670,6 +717,14 @@ export function registerDeliveryRoutes(app: App) {
             .set({ status: "cancelada" as any, subtotal: "0.00", total: "0.00" })
             .where(eq(schema.comandas.id, comanda.id));
 
+          // 11) Cancelar pagamento pendente (se houver)
+          await tx.update(schema.pagamentos)
+            .set({ status: "cancelado" as any })
+            .where(and(
+              eq(schema.pagamentos.comandaId, comanda.id),
+              eq(schema.pagamentos.status, "pendente" as any)
+            ));
+
           return { ok: true, houvePerda, clienteNome: entrega.clienteNome, comandaId: comanda.id };
         });
 
@@ -698,6 +753,177 @@ export function registerDeliveryRoutes(app: App) {
         return reply.code(200).send({ ok: true, houve_perda: resultado.houvePerda });
       } catch (err) {
         app.logger.error({ error: (err as any).message }, "Erro ao cancelar delivery");
+        return reply.code(500).send({ error: "Erro interno" });
+      }
+    }
+  );
+
+  // PUT /api/delivery/pedidos/:id/confirmar-entrega — confirmar entrega, cobrar e fechar comanda
+  app.fastify.put<{
+    Params: { id: string };
+    Body: { forma_pagamento?: string; valor_recebido?: number };
+  }>(
+    "/api/delivery/pedidos/:id/confirmar-entrega",
+    {
+      schema: {
+        description: "Confirmar entrega, cobrar e fechar a comanda",
+        tags: ["delivery"],
+        params: { type: "object", required: ["id"], properties: { id: { type: "string" } } },
+        body: {
+          type: "object",
+          properties: {
+            forma_pagamento: { type: "string", enum: ["pix", "credito", "debito", "dinheiro"] },
+            valor_recebido: { type: "number" },
+          },
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              ok: { type: "boolean" },
+            },
+            additionalProperties: true,
+          },
+          400: { type: "object", properties: { error: { type: "string" } } },
+          403: { type: "object", properties: { error: { type: "string" } } },
+          404: { type: "object", properties: { error: { type: "string" } } },
+          409: { type: "object", properties: { error: { type: "string" } } },
+          500: { type: "object", properties: { error: { type: "string" } } },
+        },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const authUser = await customRequireAuth(app, request, reply);
+        if (!authUser) return;
+        const role = (authUser.role || "").toLowerCase();
+        if (["cozinheiro", "kitchen"].includes(role)) {
+          return reply.code(403).send({ error: "Cozinheiro não pode confirmar entregas." });
+        }
+        const restauranteId = requireTenant(authUser);
+        const { forma_pagamento, valor_recebido } = request.body;
+
+        let troco: number | null = null;
+
+        const resultado = await (db as any).transaction(async (tx: any) => {
+          // 1) Travar entrega
+          const [entrega] = await tx.select()
+            .from(schema.entregas)
+            .where(and(eq(schema.entregas.id, request.params.id), eq(schema.entregas.restauranteId, restauranteId)))
+            .for("update");
+          if (!entrega) return { erro: "Entrega não encontrada", code: 404 };
+
+          if (entrega.status === "entregue") {
+            return { erro: "Esta entrega já foi confirmada.", code: 409 };
+          }
+          if (entrega.status !== "saiu_entrega") {
+            return { erro: `Só é possível confirmar a entrega quando o status é 'saiu_entrega'. Status atual: '${entrega.status}'.`, code: 409 };
+          }
+
+          // 2) Travar comanda
+          const [comanda] = await tx.select()
+            .from(schema.comandas)
+            .where(and(eq(schema.comandas.id, entrega.comandaId), eq(schema.comandas.restauranteId, restauranteId)))
+            .for("update");
+          if (!comanda) return { erro: "Comanda não encontrada", code: 404 };
+
+          // 3) Calcular total
+          const totalDue = await totalDelivery(tx, comanda.id);
+          const subtotal = await subtotalDaComanda(tx, comanda.id);
+
+          // 4) Buscar pagamento pendente
+          const [pagPendente] = await tx.select()
+            .from(schema.pagamentos)
+            .where(and(
+              eq(schema.pagamentos.comandaId, comanda.id),
+              eq(schema.pagamentos.status, "pendente" as any)
+            ));
+
+          // 5) Processar pagamento
+          if (pagPendente) {
+            const formaReal = forma_pagamento || pagPendente.formaPagamento;
+            if (formaReal === "dinheiro") {
+              if (valor_recebido === undefined || valor_recebido === null) {
+                return { erro: "Informe o valor recebido do cliente para pagamento em dinheiro.", code: 400 };
+              }
+              if (valor_recebido < totalDue) {
+                return { erro: `Valor recebido (R$ ${valor_recebido.toFixed(2)}) é menor que o total (R$ ${totalDue.toFixed(2)}).`, code: 400 };
+              }
+              troco = parseFloat((valor_recebido - totalDue).toFixed(2));
+            }
+            await tx.update(schema.pagamentos)
+              .set({
+                status: "confirmado" as any,
+                formaPagamento: formaReal as any,
+                valor: totalDue.toFixed(2),
+                confirmadoEm: new Date(),
+                referencia: troco !== null && troco > 0 ? `Troco: R$ ${troco.toFixed(2)}` : null,
+              })
+              .where(eq(schema.pagamentos.id, pagPendente.id));
+          } else {
+            // Verificar se já está pago
+            const [pagConfirmado] = await tx.select()
+              .from(schema.pagamentos)
+              .where(and(
+                eq(schema.pagamentos.comandaId, comanda.id),
+                eq(schema.pagamentos.status, "confirmado" as any)
+              ));
+            if (!pagConfirmado) {
+              return { erro: "O pedido não está pago. Registre o pagamento antes de confirmar a entrega.", code: 409 };
+            }
+          }
+
+          // 6) Marcar entrega como entregue
+          await tx.update(schema.entregas)
+            .set({ status: "entregue" as any, entregueEm: new Date() })
+            .where(eq(schema.entregas.id, request.params.id));
+
+          // 7) Marcar itens ativos como entregues
+          await tx.update(schema.pedidos)
+            .set({ status: "entregue" as any })
+            .where(and(
+              eq(schema.pedidos.comandaId, comanda.id),
+              sql`${schema.pedidos.status} <> 'cancelado'`
+            ));
+
+          // 8) Fechar comanda
+          await tx.update(schema.comandas)
+            .set({
+              status: "fechada" as any,
+              closedAt: new Date(),
+              subtotal: subtotal.toFixed(2),
+              total: totalDue.toFixed(2),
+              gorjeta: "0.00",
+            })
+            .where(eq(schema.comandas.id, comanda.id));
+
+          return { ok: true, comandaId: comanda.id, clienteNome: entrega.clienteNome };
+        });
+
+        if (resultado.erro) {
+          return reply.code(resultado.code).send({ error: resultado.erro });
+        }
+
+        // Publicar evento realtime
+        try {
+          realtimeHub.publish(restauranteId, {
+            type: "delivery.status_changed",
+            entityId: resultado.comandaId,
+            occurredAt: new Date().toISOString(),
+            payload: {
+              comanda_id: resultado.comandaId,
+              tipo: "delivery",
+              status: "entregue",
+              cliente_nome: resultado.clienteNome,
+            },
+          });
+        } catch (pubErr) {
+          app.logger.error({ err: pubErr }, "Failed to publish delivery.status_changed (entregue) event");
+        }
+
+        return reply.code(200).send({ ok: true, troco });
+      } catch (err) {
+        app.logger.error({ error: (err as any).message }, "Erro ao confirmar entrega");
         return reply.code(500).send({ error: "Erro interno" });
       }
     }

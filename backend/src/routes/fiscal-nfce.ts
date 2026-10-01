@@ -212,6 +212,12 @@ export function registerFiscalNfceRoutes(app: App) {
         }
         const { arquivada } = encontrada;
 
+        // Bloquear NFC-e para delivery
+        const tipoComanda = (encontrada as any).comanda?.tipo || (encontrada as any).tipo;
+        if (tipoComanda === "delivery") {
+          return reply.code(400).send({ error: "A nota fiscal de delivery será implementada em uma etapa própria." });
+        }
+
         // 3. Idempotencia
         const bloqueante = await buscarNfceBloqueante(db, comanda_id, restauranteId);
         if (bloqueante) {
