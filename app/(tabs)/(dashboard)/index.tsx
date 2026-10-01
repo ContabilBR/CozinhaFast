@@ -175,6 +175,15 @@ function formatDateBR(date: Date): string {
   return `${dd}/${mm}/${yyyy}`;
 }
 
+// Data civil do aparelho no formato YYYY-MM-DD (sem horário, sem fuso).
+// O servidor interpreta esse dia inteiro (00:00 a 23:59) no horário de Brasília.
+function formatYMD(date: Date): string {
+  const dd = String(date.getDate()).padStart(2, "0");
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const yyyy = date.getFullYear();
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 export default function DashboardScreen() {
   const COLORS = useColors();
   const insets = useSafeAreaInsets();
@@ -205,8 +214,8 @@ export default function DashboardScreen() {
 
     let resumoUrl = "/api/relatorios/resumo";
     if (periodo === "personalizado" && dataInicio && dataFim) {
-      resumoUrl += `?periodo=personalizado&dataInicio=${dataInicio.toISOString()}&dataFim=${dataFim.toISOString()}`;
-      console.log("[Dashboard] Fetching dashboard data with custom range:", dataInicio.toISOString(), "–", dataFim.toISOString());
+      resumoUrl += `?periodo=personalizado&dataInicio=${formatYMD(dataInicio)}&dataFim=${formatYMD(dataFim)}`;
+      console.log("[Dashboard] Fetching dashboard data with custom range:", formatYMD(dataInicio), "–", formatYMD(dataFim));
     } else {
       resumoUrl += `?periodo=${periodo}`;
       console.log("[Dashboard] Fetching dashboard data with periodo:", periodo);
@@ -329,6 +338,7 @@ export default function DashboardScreen() {
     if (showDatePicker === "inicio") {
       console.log("[Dashboard] Data início selected:", selectedDate.toISOString());
       setDataInicio(selectedDate);
+      setDataFim(null);
       setShowDatePicker("fim");
     } else if (showDatePicker === "fim") {
       console.log("[Dashboard] Data fim selected:", selectedDate.toISOString());
@@ -807,7 +817,8 @@ export default function DashboardScreen() {
           mode="date"
           display={Platform.OS === "ios" ? "inline" : "default"}
           onChange={handleDatePickerChange}
-          maximumDate={showDatePicker === "fim" && dataInicio ? undefined : new Date()}
+          minimumDate={showDatePicker === "fim" && dataInicio ? dataInicio : undefined}
+          maximumDate={new Date()}
         />
       )}
     </View>
