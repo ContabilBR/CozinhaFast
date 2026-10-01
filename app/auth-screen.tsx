@@ -14,7 +14,7 @@ import { useRouter } from "expo-router";
 import { useAuth } from "@/contexts/AuthContext";
 import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { TEST_MODE, TEST_ADMIN_EMAIL, TEST_ADMIN_PASSWORD } from "@/constants/testMode";
-import { Mail, Lock, Eye, EyeOff } from "lucide-react-native";
+import { ChefHat, Mail, Lock, Eye, EyeOff } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const PRIMARY = "#e94560";
@@ -145,7 +145,7 @@ export default function AuthScreen() {
       <ScrollView
         contentContainerStyle={{
           flexGrow: 1,
-          paddingTop: insets.top + 60,
+          paddingTop: insets.top + 40,
           paddingBottom: insets.bottom + 32,
           paddingHorizontal: 24,
         }}
@@ -161,6 +161,24 @@ export default function AuthScreen() {
             transform: [{ translateY: slideAnim }],
           }}
         >
+          <View
+            style={{
+              width: 84,
+              height: 84,
+              borderRadius: 26,
+              backgroundColor: PRIMARY,
+              alignItems: "center",
+              justifyContent: "center",
+              marginBottom: 18,
+              shadowColor: PRIMARY,
+              shadowOffset: { width: 0, height: 8 },
+              shadowOpacity: 0.4,
+              shadowRadius: 16,
+              elevation: 8,
+            }}
+          >
+            <ChefHat size={42} color="#fff" strokeWidth={2} />
+          </View>
           <Text
             style={{
               fontFamily: "Outfit_700Bold",
