@@ -47,9 +47,10 @@ export default function PerfilScreen() {
   }, [fadeAnim, slideAnim]);
 
   const role = ((user as any)?.role as UserRole) || "garcom";
-  const name = user?.nome || (user as any)?.name || user?.email || "Usuário";
+  const name = user?.nome || (user as any)?.name || "";
   const email = user?.email || "";
-  const initials = getInitials(name);
+  const nameDisplay = name || email;
+  const initials = getInitials(nameDisplay);
   const roleLabel = getRoleLabel(role);
   const roleColor = ROLE_COLORS[role] || COLORS.primary;
   const appVersion = Constants.expoConfig?.version || "1.0.0";
@@ -180,6 +181,20 @@ export default function PerfilScreen() {
             boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04)",
           }}
         >
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 14, padding: 16, borderBottomWidth: 1, borderBottomColor: COLORS.divider }}>
+            <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: COLORS.surfaceSecondary, alignItems: "center", justifyContent: "center" }}>
+              <User size={18} color={COLORS.textSecondary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 12, color: COLORS.textSecondary }}>
+                Nome
+              </Text>
+              <Text numberOfLines={1} style={{ fontFamily: "Outfit_600SemiBold", fontSize: 14, color: COLORS.text }}>
+                {nameDisplay}
+              </Text>
+            </View>
+          </View>
+
           <View style={{ flexDirection: "row", alignItems: "center", gap: 14, padding: 16, borderBottomWidth: 1, borderBottomColor: COLORS.divider }}>
             <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: COLORS.surfaceSecondary, alignItems: "center", justifyContent: "center" }}>
               <Mail size={18} color={COLORS.textSecondary} />
