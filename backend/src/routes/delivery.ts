@@ -366,6 +366,9 @@ export function registerDeliveryRoutes(app: App) {
               },
               pagamentos: { type: "array" },
               pode_cancelar: { type: "boolean" },
+              exige_estorno: { type: "boolean" },
+              valor_estorno: { type: "number" },
+              forma_pagamento_original: { type: "string" },
             },
             additionalProperties: true,
           },
@@ -426,6 +429,16 @@ export function registerDeliveryRoutes(app: App) {
               houve_perda: itens.some((i: any) => i.canceladoAposInicio || i.cancelado_apos_inicio),
             };
           }
+          // Extrair estorno_info do pagamento cancelado
+          const pagCancelado = pagamentos.find((p: any) => p.status === "cancelado" && p.referencia?.includes("ESTORNO MANUAL"));
+          if (pagCancelado?.referencia) {
+            cancelamento_info = cancelamento_info || {};
+            cancelamento_info.estorno_info = {
+              referencia_completa: pagCancelado.referencia,
+              valor: parseFloat(pagCancelado.valor || "0"),
+              forma_pagamento: pagCancelado.formaPagamento,
+            };
+          }
         }
 
         // Calcular pode_cancelar e motivo_nao_pode_cancelar para o usuário atual
@@ -435,6 +448,9 @@ export function registerDeliveryRoutes(app: App) {
 
         let pode_cancelar = false;
         let motivo_nao_pode_cancelar: string | null = null;
+        let exige_estorno = false;
+        let valor_estorno: number | null = null;
+        let forma_pagamento_original: string | null = null;
 
         if (ehCozinheiro) {
           motivo_nao_pode_cancelar = "Cozinheiro não pode cancelar pedidos de delivery.";
@@ -443,8 +459,16 @@ export function registerDeliveryRoutes(app: App) {
         } else if (entrega.status === "cancelada") {
           motivo_nao_pode_cancelar = "Esta entrega já foi cancelada.";
         } else if (pagamentos.some((p: any) => p.status === "confirmado")) {
-          // Bug 2: só bloqueia se houver pagamento CONFIRMADO (não pendente)
-          motivo_nao_pode_cancelar = "A comanda já tem pagamento confirmado. Procure o gerente para estorno.";
+          if (ehGestorAtual) {
+            // Gestor pode cancelar, mas exige estorno
+            const pagConf = pagamentos.find((p: any) => p.status === "confirmado");
+            pode_cancelar = true;
+            exige_estorno = true;
+            valor_estorno = parseFloat(pagConf?.valor || "0");
+            forma_pagamento_original = pagConf?.formaPagamento || null;
+          } else {
+            motivo_nao_pode_cancelar = "Este pedido já foi pago. Só gerente ou administrador pode cancelar e registrar o estorno.";
+          }
         } else {
           const itensAtivosLocal = itens.filter((i: any) => i.status !== "cancelado");
           const itensIniciadosLocal = itensAtivosLocal.filter((i: any) => i.status === "em_preparo" || i.status === "pronto");
@@ -466,6 +490,9 @@ export function registerDeliveryRoutes(app: App) {
           pagamentos,
           pode_cancelar,
           motivo_nao_pode_cancelar,
+          exige_estorno,
+          valor_estorno,
+          forma_pagamento_original,
         });
       } catch (err) {
         app.logger.error({ error: (err as any).message }, "Erro ao consultar delivery");
@@ -599,7 +626,7 @@ export function registerDeliveryRoutes(app: App) {
   );
 
   // PUT /api/delivery/pedidos/:id/cancelar — cancelar pedido de delivery com motivo
-  app.fastify.put<{ Params: { id: string }; Body: { motivo: string; detalhe?: string } }>(
+  app.fastify.put<{ Params: { id: string }; Body: { motivo: string; detalhe?: string; confirmar_estorno?: boolean; forma_devolucao?: string; detalhe_devolucao?: string; observacao_estorno?: string } }>(
     "/api/delivery/pedidos/:id/cancelar",
     {
       schema: {
@@ -612,10 +639,14 @@ export function registerDeliveryRoutes(app: App) {
           properties: {
             motivo: { type: "string" },
             detalhe: { type: "string", maxLength: 300 },
+            confirmar_estorno: { type: "boolean" },
+            forma_devolucao: { type: "string", enum: ["pix", "dinheiro", "estorno_cartao", "outra"] },
+            detalhe_devolucao: { type: "string", maxLength: 300 },
+            observacao_estorno: { type: "string", maxLength: 300 },
           },
         },
         response: {
-          200: { type: "object", properties: { ok: { type: "boolean" }, houve_perda: { type: "boolean" } } },
+          200: { type: "object", properties: { ok: { type: "boolean" }, houve_perda: { type: "boolean" }, houve_estorno: { type: "boolean" } } },
           400: { type: "object", properties: { error: { type: "string" } } },
           403: { type: "object", properties: { error: { type: "string" } } },
           404: { type: "object", properties: { error: { type: "string" } } },
@@ -676,12 +707,26 @@ export function registerDeliveryRoutes(app: App) {
           if (!comanda) return { erro: "Comanda não encontrada", code: 404 };
 
           // 4) Verificar pagamento confirmado
-          const pagamentos = await tx.select({ id: schema.pagamentos.id, status: schema.pagamentos.status })
+          const pagamentos = await tx.select()
             .from(schema.pagamentos)
             .where(eq(schema.pagamentos.comandaId, comanda.id));
-          const pagConfirmado = pagamentos.find((p: any) => p.status === "confirmado");
-          if (pagConfirmado) {
-            return { erro: "Não é possível cancelar: a comanda já tem pagamento confirmado. Procure o gerente para estorno.", code: 409 };
+          const pagsConfirmados = pagamentos.filter((p: any) => p.status === "confirmado");
+          if (pagsConfirmados.length > 0) {
+            // Garçom nunca pode cancelar pedido pago
+            if (!ehGestor) {
+              return { erro: "Este pedido já foi pago. Só gerente ou administrador pode cancelar e registrar o estorno.", code: 403 };
+            }
+            // Gestor precisa confirmar o estorno explicitamente
+            const { confirmar_estorno, forma_devolucao, detalhe_devolucao } = (request as any).body;
+            if (!confirmar_estorno) {
+              return { erro: "Este pedido já foi pago. Para cancelar, confirme que o valor será devolvido ao cliente (campo confirmar_estorno: true).", code: 409 };
+            }
+            if (!forma_devolucao) {
+              return { erro: "Informe como o valor será devolvido ao cliente (campo forma_devolucao).", code: 400 };
+            }
+            if (forma_devolucao === "outra" && (!detalhe_devolucao || !detalhe_devolucao.trim())) {
+              return { erro: "O detalhe da devolução é obrigatório quando a forma for 'outra'.", code: 400 };
+            }
           }
 
           // 5) Buscar todos os itens
@@ -748,7 +793,45 @@ export function registerDeliveryRoutes(app: App) {
               eq(schema.pagamentos.status, "pendente" as any)
             ));
 
-          return { ok: true, houvePerda, clienteNome: entrega.clienteNome, comandaId: comanda.id };
+          // 12) Registrar estorno manual nos pagamentos confirmados (se houver)
+          const { confirmar_estorno, forma_devolucao, detalhe_devolucao, observacao_estorno } = (request as any).body;
+          if (pagsConfirmados.length > 0 && confirmar_estorno) {
+            const agora12 = new Date();
+            const autorNome = (authUser as any).name || (authUser as any).nome || "Desconhecido";
+            const autorRole = authUser.role || "";
+            const FORMA_LABEL: Record<string, string> = {
+              pix: "Pix", dinheiro: "Dinheiro", estorno_cartao: "Estorno no cartão", outra: detalhe_devolucao || "Outra forma",
+            };
+            const formaLabel = FORMA_LABEL[forma_devolucao] || forma_devolucao;
+
+            for (const pag of pagsConfirmados) {
+              const valorStr = parseFloat(pag.valor || "0").toFixed(2);
+              const refEstorno = [
+                `ESTORNO MANUAL — R$ ${valorStr} via ${formaLabel}`,
+                observacao_estorno ? `Obs: ${observacao_estorno}` : null,
+                `Autorizado por: ${autorNome} (${autorRole}) em ${agora12.toLocaleString("pt-BR")}`,
+              ].filter(Boolean).join(" | ");
+
+              const refFinal = pag.referencia
+                ? `${pag.referencia} | ${refEstorno}`
+                : refEstorno;
+
+              await tx.update(schema.pagamentos)
+                .set({ status: "cancelado" as any, referencia: refFinal })
+                .where(eq(schema.pagamentos.id, pag.id));
+            }
+
+            app.logger.info({
+              autorId: authUser.id,
+              autorNome,
+              autorRole,
+              comandaId: comanda.id,
+              valor: pagsConfirmados.map((p: any) => p.valor).join(", "),
+              formaDevolucao: forma_devolucao,
+            }, "Estorno manual registrado no cancelamento de delivery");
+          }
+
+          return { ok: true, houvePerda, houve_estorno: pagsConfirmados.length > 0, clienteNome: entrega.clienteNome, comandaId: comanda.id };
         });
 
         if (resultado.erro) {
@@ -773,7 +856,7 @@ export function registerDeliveryRoutes(app: App) {
           app.logger.error({ err: pubErr }, "Failed to publish delivery.cancelado event");
         }
 
-        return reply.code(200).send({ ok: true, houve_perda: resultado.houvePerda });
+        return reply.code(200).send({ ok: true, houve_perda: resultado.houvePerda, houve_estorno: resultado.houve_estorno ?? false });
       } catch (err) {
         app.logger.error({ error: (err as any).message }, "Erro ao cancelar delivery");
         return reply.code(500).send({ error: "Erro interno" });
