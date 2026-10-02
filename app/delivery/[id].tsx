@@ -12,10 +12,36 @@ import * as Print from "expo-print";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 
-const STATUS_FLOW = ["pendente", "preparando", "saiu_entrega", "entregue"];
-const STATUS_LABELS: Record<string, string> = { pendente: "Pendente", preparando: "Preparando", saiu_entrega: "Saiu para entrega", entregue: "Entregue", cancelada: "Cancelada" };
-const STATUS_ICONS: Record<string, string> = { pendente: "time-outline", preparando: "flame-outline", saiu_entrega: "bicycle-outline", entregue: "checkmark-circle-outline", cancelada: "close-circle-outline" };
-const STATUS_COLORS: Record<string, string> = { pendente: "#EF4444", preparando: "#F59E0B", saiu_entrega: "#3B82F6", entregue: "#22C55E", cancelada: "#6B7280" };
+const ETAPA_FLOW = ["pendente", "preparando", "pronto_para_despachar", "saiu_entrega", "entregue"] as const;
+type Etapa = typeof ETAPA_FLOW[number];
+
+const ETAPA_LABELS: Record<string, string> = {
+  pendente: "Pendente",
+  preparando: "Preparando",
+  pronto_para_despachar: "Pronto para despachar",
+  saiu_entrega: "Saiu para entrega",
+  entregue: "Entregue",
+  cancelada: "Cancelada",
+};
+const ETAPA_ICONS: Record<string, string> = {
+  pendente: "time-outline",
+  preparando: "flame-outline",
+  pronto_para_despachar: "checkmark-done-outline",
+  saiu_entrega: "bicycle-outline",
+  entregue: "checkmark-circle-outline",
+  cancelada: "close-circle-outline",
+};
+const ETAPA_COLORS: Record<string, string> = {
+  pendente: "#6B7280",
+  preparando: "#6B7280",
+  pronto_para_despachar: "#22C55E",
+  saiu_entrega: "#3B82F6",
+  entregue: "#22C55E",
+  cancelada: "#6B7280",
+};
+// Cor neutra para passos já concluídos (não o atual)
+const DONE_COLOR = "#22C55E";
+const DONE_ICON = "checkmark";
 
 const MOTIVO_LABELS: Record<string, string> = {
   erro_lancamento: "Erro de lançamento",
@@ -324,7 +350,9 @@ export default function DeliveryDetalhes() {
   if (!data) return <View style={{ flex: 1, backgroundColor: COLORS.background, justifyContent: "center", alignItems: "center" }}><Text style={{ color: COLORS.textSecondary }}>Pedido não encontrado</Text></View>;
 
   const e = data.entrega;
-  const currentIdx = STATUS_FLOW.indexOf(e.status);
+  // Usar o campo "etapa" que vem do servidor; fallback para status da entrega
+  const etapaAtual: string = data.etapa || e.status || "pendente";
+  const currentIdx = ETAPA_FLOW.indexOf(etapaAtual as Etapa);
   const total = parseFloat(data.comanda?.total || "0");
 
   return (
@@ -337,25 +365,60 @@ export default function DeliveryDetalhes() {
         {/* Timeline */}
         <View style={{ backgroundColor: COLORS.surface, borderRadius: 12, padding: 14, borderWidth: 0.5, borderColor: COLORS.surfaceSecondary, marginBottom: 12 }}>
           <Text style={{ fontSize: 12, fontWeight: "600", color: COLORS.primary, marginBottom: 12, textTransform: "uppercase", letterSpacing: 0.5 }}>Status da entrega</Text>
-          {STATUS_FLOW.map((s, i) => {
-            const done = i <= currentIdx;
-            const active = i === currentIdx;
-            const color = done ? STATUS_COLORS[s] : "#D1D5DB";
-            return (
-              <View key={s} style={{ flexDirection: "row", alignItems: "flex-start", gap: 12, marginBottom: i < STATUS_FLOW.length - 1 ? 4 : 0 }}>
-                <View style={{ alignItems: "center" }}>
-                  <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: color, justifyContent: "center", alignItems: "center" }}>
-                    <Ionicons name={done ? "checkmark" : (STATUS_ICONS[s] as any)} size={14} color="white" />
-                  </View>
-                  {i < STATUS_FLOW.length - 1 && <View style={{ width: 2, height: 22, backgroundColor: i < currentIdx ? STATUS_COLORS[STATUS_FLOW[i + 1]] : "#D1D5DB" }} />}
-                </View>
-                <View style={{ paddingTop: 3 }}>
-                  <Text style={{ fontSize: 14, fontWeight: active ? "600" : "400", color: active ? STATUS_COLORS[s] : done ? COLORS.text : COLORS.textTertiary }}>{STATUS_LABELS[s]}</Text>
-                  {s === "saiu_entrega" && e.entregador_nome && <Text style={{ fontSize: 12, color: COLORS.textSecondary }}>{e.entregador_nome} {e.entregador_telefone || ""}</Text>}
-                </View>
+          {e.status === "cancelada" ? (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: "#EF4444", justifyContent: "center", alignItems: "center" }}>
+                <Ionicons name="close-circle-outline" size={14} color="white" />
               </View>
-            );
-          })}
+              <Text style={{ fontSize: 14, fontWeight: "600", color: "#EF4444" }}>Pedido cancelado</Text>
+            </View>
+          ) : (
+            ETAPA_FLOW.map((s, i) => {
+              const isPast = i < currentIdx;
+              const isActive = i === currentIdx;
+              const isFuture = i > currentIdx;
+
+              // Círculo: passado = verde neutro, atual = cor da etapa, futuro = cinza
+              const circleColor = isPast ? DONE_COLOR : isActive ? ETAPA_COLORS[s] : "#D1D5DB";
+              // Ícone: passado = checkmark, atual = ícone da etapa, futuro = ícone da etapa
+              const iconName = isPast ? DONE_ICON : ETAPA_ICONS[s];
+              // Linha conectora: colorida se o próximo passo já foi concluído ou é o atual
+              const lineColor = i < currentIdx ? DONE_COLOR : "#D1D5DB";
+
+              return (
+                <View key={s} style={{ flexDirection: "row", alignItems: "flex-start", gap: 12, marginBottom: i < ETAPA_FLOW.length - 1 ? 4 : 0 }}>
+                  <View style={{ alignItems: "center" }}>
+                    <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: circleColor, justifyContent: "center", alignItems: "center" }}>
+                      <Ionicons name={iconName as any} size={14} color="white" />
+                    </View>
+                    {i < ETAPA_FLOW.length - 1 && (
+                      <View style={{ width: 2, height: 22, backgroundColor: lineColor }} />
+                    )}
+                  </View>
+                  <View style={{ paddingTop: 3, flex: 1 }}>
+                    <Text style={{
+                      fontSize: 14,
+                      fontWeight: isActive ? "700" : "400",
+                      color: isActive ? ETAPA_COLORS[s] : isFuture ? COLORS.textTertiary : COLORS.text,
+                    }}>
+                      {ETAPA_LABELS[s]}
+                    </Text>
+                    {/* Subtexto do passo atual pronto_para_despachar */}
+                    {isActive && s === "pronto_para_despachar" && (
+                      <Text style={{ fontSize: 12, color: "#22C55E", marginTop: 2 }}>Todos os itens prontos. Aguardando despacho.</Text>
+                    )}
+                    {/* Entregador abaixo de "Saiu para entrega" */}
+                    {s === "saiu_entrega" && (isPast || isActive) && e.entregador_nome && (
+                      <Text style={{ fontSize: 12, color: COLORS.textSecondary, marginTop: 2 }}>
+                        {e.entregador_nome}{e.entregador_telefone ? " · " + e.entregador_telefone : ""}
+                        {e.saiu_em ? " · " + new Date(e.saiu_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+              );
+            })
+          )}
         </View>
 
         {/* Cliente */}
@@ -508,7 +571,8 @@ export default function DeliveryDetalhes() {
             {(() => {
               const itensAtivos = (data.itens || []).filter((i: any) => i.status !== "cancelado");
               const itensProntos = itensAtivos.filter((i: any) => i.status === "pronto");
-              const prontoParaDespachar = itensAtivos.length > 0 && itensProntos.length === itensAtivos.length;
+              // Usar etapa do servidor como fonte de verdade
+              const prontoParaDespachar = etapaAtual === "pronto_para_despachar";
               const aguardandoCozinha = !prontoParaDespachar && e.status !== "saiu_entrega";
 
               if (e.status === "saiu_entrega") {
