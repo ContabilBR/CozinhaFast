@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { apiGet, apiPut } from "@/utils/api";
-import { formatCurrency, formatRelativeTime } from "@/utils/helpers";
+import { formatCurrency, formatRelativeTime, parseBRL } from "@/utils/helpers";
 import { formatViaEntrega, formatEtiquetaLacre, imprimirViaDelivery } from "@/utils/deliveryPrinter";
 import { useAuth } from "@/contexts/AuthContext";
 import * as Print from "expo-print";
@@ -43,6 +43,15 @@ const ETAPA_COLORS: Record<string, string> = {
 const DONE_COLOR = "#22C55E";
 const DONE_ICON = "checkmark";
 
+function normalizarForma(raw: string | undefined): "dinheiro" | "pix" | "credito" | "debito" {
+  if (!raw) return "dinheiro";
+  const s = raw.toLowerCase().replace(/[^a-z]/g, "");
+  if (s === "pix") return "pix";
+  if (s.includes("credito") || s === "credito") return "credito";
+  if (s.includes("debito") || s === "debito") return "debito";
+  return "dinheiro";
+}
+
 const MOTIVO_LABELS: Record<string, string> = {
   erro_lancamento: "Erro de lançamento",
   cliente_desistiu: "Cliente desistiu",
@@ -77,6 +86,7 @@ export default function DeliveryDetalhes() {
   const [showConfirmarModal, setShowConfirmarModal] = useState(false);
   const [confirmarForma, setConfirmarForma] = useState<string>("");
   const [confirmarValorRecebido, setConfirmarValorRecebido] = useState("");
+  const [confirmarErro, setConfirmarErro] = useState<string | null>(null);
   const [imprimindo, setImprimindo] = useState(false);
   const [perguntarImpressao, setPerguntarImpressao] = useState(false);
 
@@ -268,16 +278,14 @@ export default function DeliveryDetalhes() {
 
   const confirmarEntrega = () => {
     console.log("[DeliveryDetalhes] Confirmar entrega pressed for order:", id);
-    const pagPrevisto = data?.pagamentos?.find((p: any) => p.status === "pendente" || p.status === "confirmado");
-    const formaRaw = pagPrevisto?.forma_pagamento || "dinheiro";
-    const FORMA_PARA_CURTA: Record<string, string> = {
-      "cartão de crédito": "credito",
-      "cartão de débito": "debito",
-      pix: "pix",
-      dinheiro: "dinheiro",
-    };
-    setConfirmarForma(FORMA_PARA_CURTA[formaRaw] ?? formaRaw);
-    setConfirmarValorRecebido("");
+    const pagPrevisto = data?.pagamentos?.find((p: any) => p.status === "pendente");
+    const formaInicial = normalizarForma(pagPrevisto?.forma_pagamento);
+    const totalDue = parseFloat(data?.comanda?.total || "0");
+    const totalStr = totalDue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    setConfirmarForma(formaInicial);
+    // Pre-fill valor recebido with total when dinheiro
+    setConfirmarValorRecebido(formaInicial === "dinheiro" ? totalStr : "");
+    setConfirmarErro(null);
     setShowConfirmarModal(true);
   };
 
@@ -288,7 +296,8 @@ export default function DeliveryDetalhes() {
       const body: any = {};
       if (confirmarForma) body.forma_pagamento = confirmarForma;
       if (confirmarForma === "dinheiro" && confirmarValorRecebido) {
-        body.valor_recebido = parseFloat(confirmarValorRecebido);
+        const parsed = parseBRL(confirmarValorRecebido);
+        if (parsed !== undefined) body.valor_recebido = parsed;
       }
       console.log("[DeliveryDetalhes] PUT /api/delivery/pedidos/" + id + "/confirmar-entrega", body);
       const res = await apiPut("/api/delivery/pedidos/" + id + "/confirmar-entrega", body);
@@ -298,7 +307,7 @@ export default function DeliveryDetalhes() {
     } catch (err: any) {
       console.error("[DeliveryDetalhes] Error confirming delivery:", err);
       const msg = err?.body?.error || err?.message || "Erro ao confirmar entrega";
-      Alert.alert("Erro", msg);
+      setConfirmarErro(msg);
     } finally {
       setUpdating(false);
     }
@@ -491,11 +500,11 @@ export default function DeliveryDetalhes() {
             <View style={{ backgroundColor: COLORS.surface, borderRadius: 10, padding: 12, marginBottom: 10 }}>
               <Text style={{ fontSize: 12, fontWeight: "600", color: COLORS.textSecondary, marginBottom: 6, textTransform: "uppercase" }}>Pagamento</Text>
               <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                <Text style={{ fontSize: 13, color: COLORS.text }}>{formaLabel[pag.formaPagamento] || pag.formaPagamento}</Text>
+                <Text style={{ fontSize: 13, color: COLORS.text }}>{formaLabel[normalizarForma(pag.forma_pagamento)]}</Text>
                 <Text style={{ fontSize: 13, fontWeight: "600", color: COLORS.text }}>{formatCurrency(parseFloat(pag.valor || "0"))}</Text>
               </View>
               {pag.status === "confirmado" && (
-                <Text style={{ fontSize: 11, color: "#22C55E", marginTop: 2 }}>✓ Pago{pag.confirmadoEm ? ` em ${new Date(pag.confirmadoEm).toLocaleString("pt-BR")}` : ""}</Text>
+                <Text style={{ fontSize: 11, color: "#22C55E", marginTop: 2 }}>✓ Pago{pag.confirmado_em ? ` em ${new Date(pag.confirmado_em).toLocaleString("pt-BR")}` : ""}</Text>
               )}
               {pag.status === "pendente" && (
                 <Text style={{ fontSize: 11, color: "#F59E0B", marginTop: 2 }}>Aguardando pagamento na entrega</Text>
@@ -550,7 +559,7 @@ export default function DeliveryDetalhes() {
               <Text style={{ fontSize: 12, fontWeight: "600", color: "#22C55E", marginBottom: 8, textTransform: "uppercase" }}>Pedido encerrado</Text>
               {pag && (
                 <>
-                  <Text style={{ fontSize: 13, color: "#166534" }}>Forma: {formaLabel[pag.formaPagamento] || pag.formaPagamento}</Text>
+                  <Text style={{ fontSize: 13, color: "#166534" }}>Forma: {formaLabel[normalizarForma(pag.forma_pagamento)]}</Text>
                   <Text style={{ fontSize: 13, color: "#166534", marginTop: 2 }}>Valor cobrado: {formatCurrency(parseFloat(pag.valor || "0"))}</Text>
                   {pag.referencia?.startsWith("Troco:") && (
                     <Text style={{ fontSize: 13, color: "#166534", marginTop: 2 }}>{pag.referencia}</Text>
@@ -878,13 +887,44 @@ export default function DeliveryDetalhes() {
             <Text style={{ fontSize: 18, fontWeight: "700", color: COLORS.text, marginBottom: 4 }}>Confirmar entrega</Text>
             {(() => {
               const totalDue = parseFloat(data?.comanda?.total || "0");
-              const pag = data?.pagamentos?.[0];
-              const jaFoiPago = pag?.status === "confirmado";
-              const formaLabel: Record<string, string> = { pix: "Pix", credito: "Cartão de crédito", debito: "Cartão de débito", dinheiro: "Dinheiro" };
-              const valorRecebidoNum = parseFloat(confirmarValorRecebido);
-              const troco = confirmarForma === "dinheiro" && confirmarValorRecebido
-                ? Math.max(0, valorRecebidoNum - totalDue)
+              const jaFoiPago = (data?.pagamentos || []).some((p: any) => p.status === "confirmado");
+              const pagConfirmado = (data?.pagamentos || []).find((p: any) => p.status === "confirmado");
+
+              const FORMA_LABEL: Record<string, string> = {
+                pix: "Pix",
+                credito: "Cartão de crédito",
+                debito: "Cartão de débito",
+                dinheiro: "Dinheiro",
+              };
+
+              // Parse valor recebido using parseBRL
+              const valorRecebidoNum = parseBRL(confirmarValorRecebido);
+              const totalCents = Math.round(totalDue * 100);
+              const recebidoCents = valorRecebidoNum !== undefined ? Math.round(valorRecebidoNum * 100) : 0;
+              const troco = confirmarForma === "dinheiro" && valorRecebidoNum !== undefined && recebidoCents > totalCents
+                ? Math.round((valorRecebidoNum - totalDue) * 100) / 100
                 : null;
+
+              // Button disabled logic
+              const btnDisabled = updating || (() => {
+                if (jaFoiPago) return false;
+                if (confirmarForma !== "dinheiro") return !confirmarForma;
+                if (valorRecebidoNum === undefined) return true;
+                return recebidoCents < totalCents;
+              })();
+
+              // Reason text for disabled button
+              const btnDisabledReason = (() => {
+                if (jaFoiPago || !btnDisabled || updating) return null;
+                if (confirmarForma === "dinheiro") {
+                  if (valorRecebidoNum === undefined) return "Informe o valor recebido";
+                  if (recebidoCents < totalCents) {
+                    const totalFmt = totalDue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    return `Valor menor que o total (R$ ${totalFmt})`;
+                  }
+                }
+                return null;
+              })();
 
               return (
                 <>
@@ -894,7 +934,9 @@ export default function DeliveryDetalhes() {
 
                   {jaFoiPago ? (
                     <View style={{ backgroundColor: "#D1FAE5", borderRadius: 8, padding: 10, marginBottom: 16 }}>
-                      <Text style={{ color: "#065F46", fontWeight: "600" }}>✓ Pedido já pago ({formaLabel[pag.formaPagamento] || pag.formaPagamento})</Text>
+                      <Text style={{ color: "#065F46", fontWeight: "600" }}>
+                        ✓ Pedido já pago ({FORMA_LABEL[normalizarForma(pagConfirmado?.forma_pagamento)] || pagConfirmado?.forma_pagamento || "—"})
+                      </Text>
                     </View>
                   ) : (
                     <>
@@ -909,7 +951,17 @@ export default function DeliveryDetalhes() {
                         ] as const).map(({ key, label }) => (
                           <Pressable
                             key={key}
-                            onPress={() => { console.log("[DeliveryDetalhes] confirmarForma selected:", key); setConfirmarForma(key); }}
+                            onPress={() => {
+                              console.log("[DeliveryDetalhes] confirmarForma selected:", key);
+                              setConfirmarForma(key);
+                              if (key === "dinheiro") {
+                                const totalStr = totalDue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                                setConfirmarValorRecebido(totalStr);
+                              } else {
+                                setConfirmarValorRecebido("");
+                              }
+                              setConfirmarErro(null);
+                            }}
                             style={{
                               paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8,
                               backgroundColor: confirmarForma === key ? COLORS.primary : COLORS.surface,
@@ -924,44 +976,62 @@ export default function DeliveryDetalhes() {
                       {/* Valor recebido (dinheiro) */}
                       {confirmarForma === "dinheiro" && (
                         <View style={{ marginBottom: 12 }}>
-                          <Text style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 4 }}>Valor recebido *</Text>
+                          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                            <Text style={{ fontSize: 13, color: COLORS.textSecondary }}>Valor recebido *</Text>
+                            <Pressable
+                              onPress={() => {
+                                console.log("[DeliveryDetalhes] Valor exato pressed");
+                                const totalStr = totalDue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                                setConfirmarValorRecebido(totalStr);
+                                setConfirmarErro(null);
+                              }}
+                              style={{ paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border }}
+                            >
+                              <Text style={{ fontSize: 12, color: COLORS.primary }}>Valor exato</Text>
+                            </Pressable>
+                          </View>
                           <TextInput
                             value={confirmarValorRecebido}
-                            onChangeText={setConfirmarValorRecebido}
-                            placeholder={totalDue.toFixed(2)}
+                            onChangeText={(t) => { setConfirmarValorRecebido(t); setConfirmarErro(null); }}
+                            placeholder="0,00"
                             placeholderTextColor={COLORS.textTertiary}
                             keyboardType="decimal-pad"
                             style={{ borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, padding: 10, color: COLORS.text, fontSize: 16 }}
                           />
-                          {troco !== null && troco >= 0 && (
+                          {troco !== null && (
                             <Text style={{ fontSize: 14, color: "#22C55E", fontWeight: "600", marginTop: 6 }}>
                               Troco a devolver: {formatCurrency(troco)}
                             </Text>
-                          )}
-                          {confirmarValorRecebido && parseFloat(confirmarValorRecebido) < totalDue && (
-                            <Text style={{ fontSize: 13, color: "#EF4444", marginTop: 4 }}>Valor insuficiente</Text>
                           )}
                         </View>
                       )}
                     </>
                   )}
 
+                  {/* Error from server */}
+                  {confirmarErro && (
+                    <View style={{ backgroundColor: "#FEE2E2", borderRadius: 8, padding: 10, marginBottom: 10 }}>
+                      <Text style={{ color: "#991B1B", fontSize: 13 }}>{confirmarErro}</Text>
+                    </View>
+                  )}
+
+                  {/* Disabled reason */}
+                  {btnDisabledReason && (
+                    <Text style={{ fontSize: 13, color: "#EF4444", marginBottom: 8, textAlign: "center" }}>{btnDisabledReason}</Text>
+                  )}
+
                   {/* Botões */}
                   <View style={{ flexDirection: "row", gap: 10 }}>
                     <Pressable
-                      onPress={() => { console.log("[DeliveryDetalhes] Confirmar modal dismissed"); setShowConfirmarModal(false); }}
+                      onPress={() => { console.log("[DeliveryDetalhes] Confirmar modal dismissed"); setShowConfirmarModal(false); setConfirmarErro(null); }}
                       style={{ flex: 1, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, padding: 14, alignItems: "center" }}
                     >
                       <Text style={{ color: COLORS.text, fontWeight: "500" }}>Cancelar</Text>
                     </Pressable>
                     <Pressable
                       onPress={executarConfirmacao}
-                      disabled={updating || (!jaFoiPago && confirmarForma === "dinheiro" && (!confirmarValorRecebido || parseFloat(confirmarValorRecebido) < totalDue))}
-                      style={{
-                        flex: 2, borderRadius: 10, padding: 14, alignItems: "center",
-                        backgroundColor: (updating || (!jaFoiPago && confirmarForma === "dinheiro" && (!confirmarValorRecebido || parseFloat(confirmarValorRecebido) < totalDue)))
-                          ? COLORS.textTertiary : "#22C55E",
-                      }}
+                      disabled={btnDisabled}
+                      style={{ flex: 2, borderRadius: 10, padding: 14, alignItems: "center", backgroundColor: btnDisabled ? COLORS.textTertiary : "#22C55E" }}
                     >
                       {updating ? <ActivityIndicator color="white" size="small" /> : <Text style={{ color: "white", fontWeight: "600" }}>Confirmar entrega</Text>}
                     </Pressable>

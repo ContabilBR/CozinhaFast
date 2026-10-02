@@ -21,7 +21,7 @@ import { useColors } from "@/hooks/useColors";
 import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { SkeletonLine } from "@/components/SkeletonLoader";
 import { apiGet, apiPost } from "@/utils/api";
-import { formatCurrency } from "@/utils/helpers";
+import { formatCurrency, parseBRL } from "@/utils/helpers";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -777,7 +777,7 @@ export default function NovoDelivery() {
   const [showModal, setShowModal] = useState(false);
 
   const subtotal = itens.reduce((s, i) => s + i.preco * i.quantidade, 0);
-  const taxa = parseFloat(taxaEntrega) || 0;
+  const taxa = parseBRL(taxaEntrega) ?? 0;
   const total = subtotal + taxa;
 
   const handleCommitItens = (newItens: ItemPedido[]) => {
@@ -846,7 +846,7 @@ export default function NovoDelivery() {
           momento: pagMomento,
           forma: pagForma,
           ...(pagMomento === "na_entrega" && pagForma === "dinheiro" && trocoPara
-            ? { troco_para: parseFloat(trocoPara) }
+            ? { troco_para: parseBRL(trocoPara) }
             : {}),
         },
       });
@@ -1139,7 +1139,7 @@ export default function NovoDelivery() {
           Entrega
         </Text>
         <TextInput
-          placeholder="Taxa de entrega (R$)"
+          placeholder="Taxa de entrega (ex: 10,50)"
           placeholderTextColor={COLORS.textTertiary}
           value={taxaEntrega}
           onChangeText={setTaxaEntrega}
@@ -1268,7 +1268,7 @@ export default function NovoDelivery() {
               <TextInput
                 value={trocoPara}
                 onChangeText={setTrocoPara}
-                placeholder="Ex: 50.00"
+                placeholder="Ex: 50,00"
                 placeholderTextColor={COLORS.textTertiary}
                 keyboardType="decimal-pad"
                 style={{

@@ -138,3 +138,23 @@ export function getInitials(name: string | undefined | null): string {
 export function isAdmin(role: UserRole | string | undefined | null): boolean {
   return role === 'gerente' || role === 'administrador' || role === 'admin';
 }
+
+/**
+ * Parse a Brazilian-formatted monetary string typed by the user.
+ * Accepts: "174,90" "174.90" "1.234,50" "R$ 50" "50"
+ * Returns the numeric value rounded to 2 decimal places, or undefined if empty/invalid.
+ */
+export function parseBRL(text: string): number | undefined {
+  if (!text) return undefined;
+  // Remove R$, spaces
+  let s = text.replace(/R\$\s*/g, "").trim();
+  if (!s) return undefined;
+  // If there's a comma, treat comma as decimal separator and dots as thousand separators
+  if (s.includes(",")) {
+    s = s.replace(/\./g, "").replace(",", ".");
+  }
+  // Otherwise dots are decimal separators (e.g. "174.90")
+  const n = parseFloat(s);
+  if (isNaN(n)) return undefined;
+  return Math.round(n * 100) / 100;
+}
