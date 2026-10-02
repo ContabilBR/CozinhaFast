@@ -516,11 +516,13 @@ export function registerOrderItemRoutes(app: App) {
 
           let mesaNumero: number | null = null;
           let pratoNome: string | null = null;
+          let comandaTipo: string | null = null;
           try {
             const [enriched] = await app.db
               .select({
                 mesaNumero: schema.comandas.mesaNumero,
                 pratoNome: schema.pratos.nome,
+                comandaTipo: schema.comandas.tipo,
               })
               .from(schema.pedidos)
               .innerJoin(schema.comandas, eq(schema.pedidos.comandaId, schema.comandas.id))
@@ -530,6 +532,7 @@ export function registerOrderItemRoutes(app: App) {
             if (enriched) {
               mesaNumero = enriched.mesaNumero;
               pratoNome = enriched.pratoNome;
+              comandaTipo = enriched.comandaTipo;
             }
           } catch (enrichErr) {
             app.logger.warn({ err: enrichErr }, "Failed to enrich pedido.status_changed event, publishing minimal payload");
@@ -544,6 +547,7 @@ export function registerOrderItemRoutes(app: App) {
               comanda_id: updated.comandaId,
               mesa_numero: mesaNumero,
               prato_nome: pratoNome,
+              comanda_tipo: comandaTipo,
             },
           });
         } catch (err) {
@@ -672,17 +676,67 @@ export function registerOrderItemRoutes(app: App) {
           canceladoPor: { id: session.id, nome: session.name, role: session.role },
         });
 
-        switch (resultado.tipo) {
-          case "nao_encontrado":
-            return reply.code(404).send({ error: "Pedido not found" });
-          case "comanda_nao_aberta":
-            return reply.code(409).send({ error: "Só é possível cancelar itens de uma comanda aberta." });
-          case "ja_cancelado":
-            return reply.code(409).send({ error: "Item já está cancelado." });
-          case "ja_entregue":
-            return reply.code(409).send({ error: "Item já entregue não pode ser cancelado. Cortesia e estorno ainda não estão disponíveis." });
-          case "requer_gestor":
-            return reply.code(403).send({ error: "Só gerente ou administrador pode cancelar um item que já está em preparo ou pronto." });
+        if (resultado.tipo !== "cancelado") {
+          switch (resultado.tipo) {
+            case "nao_encontrado":
+              return reply.code(404).send({ error: "Pedido not found" });
+            case "comanda_nao_aberta":
+              return reply.code(409).send({ error: "Só é possível cancelar itens de uma comanda aberta." });
+            case "ja_cancelado":
+              return reply.code(409).send({ error: "Item já está cancelado." });
+            case "ja_entregue":
+              return reply.code(409).send({ error: "Item já entregue não pode ser cancelado. Cortesia e estorno ainda não estão disponíveis." });
+            case "requer_gestor":
+              return reply.code(403).send({ error: "Só gerente ou administrador pode cancelar um item que já está em preparo ou pronto." });
+          }
+        }
+
+        // Publicar delivery.pronto se aplicável (após sucesso da transação)
+        if (resultado.tipo === "cancelado") {
+          try {
+            // Verificar se é delivery
+            const [cmdCheck] = await app.db
+              .select({ tipo: schema.comandas.tipo })
+              .from(schema.comandas)
+              .where(eq(schema.comandas.id, resultado.comandaId));
+
+            if (cmdCheck?.tipo === "delivery") {
+              // Buscar todos os pedidos da comanda
+              const todosItens = await app.db
+                .select({ status: schema.pedidos.status })
+                .from(schema.pedidos)
+                .where(eq(schema.pedidos.comandaId, resultado.comandaId));
+
+              const ativos = todosItens.filter((i: any) => i.status !== "cancelado");
+              const prontos = ativos.filter((i: any) => i.status === "pronto");
+
+              // Se há itens ativos e TODOS são pronto
+              if (ativos.length > 0 && prontos.length === ativos.length) {
+                // Buscar entrega mais recente
+                const [entrega] = await app.db
+                  .select({ id: schema.entregas.id, status: schema.entregas.status, clienteNome: schema.entregas.clienteNome })
+                  .from(schema.entregas)
+                  .where(eq(schema.entregas.comandaId, resultado.comandaId))
+                  .orderBy(desc(schema.entregas.createdAt))
+                  .limit(1);
+
+                if (entrega && ["pendente", "preparando"].includes(entrega.status)) {
+                  realtimeHub.publish(restauranteId, {
+                    type: "delivery.pronto",
+                    entityId: resultado.comandaId,
+                    occurredAt: new Date().toISOString(),
+                    payload: {
+                      comanda_id: resultado.comandaId,
+                      entrega_id: entrega.id,
+                      cliente_nome: entrega.clienteNome,
+                    },
+                  });
+                }
+              }
+            }
+          } catch (deliveryErr) {
+            app.logger.warn({ err: deliveryErr }, "Failed to publish delivery.pronto event after cancellation");
+          }
         }
 
         return reply.code(200).send({

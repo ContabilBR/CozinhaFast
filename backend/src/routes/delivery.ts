@@ -26,6 +26,13 @@ function calcProntoParaDespachar(itens: { status: string }[], entregaStatus: str
   return itens_ativos > 0 && itens_prontos === itens_ativos && ["pendente", "preparando"].includes(entregaStatus);
 }
 
+// Calcula a etapa (estado visual) de uma entrega
+function calcEtapa(itens: { status: string }[], entregaStatus: string): string {
+  if (entregaStatus === "cancelada") return "cancelada";
+  if (calcProntoParaDespachar(itens, entregaStatus)) return "pronto_para_despachar";
+  return entregaStatus;
+}
+
 interface DeliveryBody {
   cliente_nome: string;
   cliente_telefone: string;
@@ -291,7 +298,7 @@ export function registerDeliveryRoutes(app: App) {
         const pedidos = [];
         for (const entrega of entregas) {
           const [comanda] = await db.select().from(schema.comandas).where(eq(schema.comandas.id, entrega.comandaId));
-          const itens = await db
+          const itensRaw = await db
             .select({
               id: schema.pedidos.id,
               quantidade: schema.pedidos.quantidade,
@@ -305,15 +312,46 @@ export function registerDeliveryRoutes(app: App) {
             .leftJoin(schema.pratos, eq(schema.pedidos.pratoId, schema.pratos.id))
             .where(eq(schema.pedidos.comandaId, entrega.comandaId));
 
-          // Bug 1: usar helper calcProntoParaDespachar
-          const pronto_para_despachar = calcProntoParaDespachar(itens, entrega.status);
-          const itens_ativos = itens.filter((i: any) => i.status !== "cancelado").length;
-          const itens_prontos = itens.filter((i: any) => i.status === "pronto").length;
+          const itens_ativos = itensRaw.filter((i: any) => i.status !== "cancelado").length;
+          const itens_prontos = itensRaw.filter((i: any) => i.status === "pronto").length;
+          const etapa = calcEtapa(itensRaw, entrega.status);
+          const pronto_para_despachar = etapa === "pronto_para_despachar";
 
           pedidos.push({
-            entrega: { ...entrega, itens_ativos, itens_prontos, pronto_para_despachar },
+            entrega: {
+              id: entrega.id,
+              status: entrega.status,
+              etapa,
+              cliente_nome: entrega.clienteNome,
+              cliente_telefone: entrega.clienteTelefone,
+              endereco: entrega.endereco,
+              complemento: entrega.complemento,
+              bairro: entrega.bairro,
+              cidade: entrega.cidade,
+              cep: entrega.cep,
+              referencia: entrega.referencia,
+              taxa_entrega: entrega.taxaEntrega,
+              tempo_estimado: entrega.tempoEstimado,
+              observacao: entrega.observacao,
+              entregador_nome: entrega.entregadorNome,
+              entregador_telefone: entrega.entregadorTelefone,
+              saiu_em: entrega.saiuEm,
+              entregue_em: entrega.entregueEm,
+              created_at: entrega.createdAt,
+              itens_ativos,
+              itens_prontos,
+              pronto_para_despachar,
+            },
             comanda,
-            itens,
+            itens: itensRaw.map((i: any) => ({
+              id: i.id,
+              quantidade: i.quantidade,
+              preco_unitario: i.precoUnitario,
+              observacao: i.observacao,
+              prato_id: i.pratoId,
+              status: i.status,
+              prato_nome: i.prato_nome,
+            })),
           });
         }
 
@@ -348,6 +386,7 @@ export function registerDeliveryRoutes(app: App) {
                 properties: {
                   itens_ativos: { type: "number" },
                   itens_prontos: { type: "number" },
+                  etapa: { type: "string" },
                   pronto_para_despachar: { type: "boolean" },
                 },
                 additionalProperties: true,
@@ -388,7 +427,7 @@ export function registerDeliveryRoutes(app: App) {
         if (!entrega) return reply.code(404).send({ error: "Pedido não encontrado" });
 
         const [comanda] = await db.select().from(schema.comandas).where(eq(schema.comandas.id, entrega.comandaId));
-        const itens = await db
+        const itensRaw = await db
           .select({
             id: schema.pedidos.id,
             quantidade: schema.pedidos.quantidade,
@@ -410,15 +449,15 @@ export function registerDeliveryRoutes(app: App) {
           .where(eq(schema.pedidos.comandaId, entrega.comandaId));
         const pagamentos = await db.select().from(schema.pagamentos).where(eq(schema.pagamentos.comandaId, entrega.comandaId));
 
-        // Bug 1: usar helper calcProntoParaDespachar
-        const pronto_para_despachar = calcProntoParaDespachar(itens, entrega.status);
-        const itens_ativos = itens.filter((i: any) => i.status !== "cancelado").length;
-        const itens_prontos = itens.filter((i: any) => i.status === "pronto").length;
+        const itens_ativos = itensRaw.filter((i: any) => i.status !== "cancelado").length;
+        const itens_prontos = itensRaw.filter((i: any) => i.status === "pronto").length;
+        const etapa = calcEtapa(itensRaw, entrega.status);
+        const pronto_para_despachar = etapa === "pronto_para_despachar";
 
         // Informações de cancelamento (vêm dos itens cancelados com registro)
         let cancelamento_info: any = null;
         if (entrega.status === "cancelada") {
-          const itemCancelado = itens.find((i: any) => i.canceladoPorId || i.cancelado_por_id);
+          const itemCancelado = itensRaw.find((i: any) => i.canceladoPorId || i.cancelado_por_id);
           if (itemCancelado) {
             cancelamento_info = {
               cancelado_por_nome: itemCancelado.canceladoPorNome || itemCancelado.cancelado_por_nome || null,
@@ -426,7 +465,7 @@ export function registerDeliveryRoutes(app: App) {
               cancelado_em: itemCancelado.canceladoEm || itemCancelado.cancelado_em || null,
               motivo_cancelamento: itemCancelado.motivoCancelamento || itemCancelado.motivo_cancelamento || null,
               motivo_cancelamento_detalhe: itemCancelado.motivoCancelamentoDetalhe || itemCancelado.motivo_cancelamento_detalhe || null,
-              houve_perda: itens.some((i: any) => i.canceladoAposInicio || i.cancelado_apos_inicio),
+              houve_perda: itensRaw.some((i: any) => i.canceladoAposInicio || i.cancelado_apos_inicio),
             };
           }
           // Extrair estorno_info do pagamento cancelado
@@ -470,7 +509,7 @@ export function registerDeliveryRoutes(app: App) {
             motivo_nao_pode_cancelar = "Este pedido já foi pago. Só gerente ou administrador pode cancelar e registrar o estorno.";
           }
         } else {
-          const itensAtivosLocal = itens.filter((i: any) => i.status !== "cancelado");
+          const itensAtivosLocal = itensRaw.filter((i: any) => i.status !== "cancelado");
           const itensIniciadosLocal = itensAtivosLocal.filter((i: any) => i.status === "em_preparo" || i.status === "pronto");
           const entregaSaiuLocal = entrega.status === "saiu_entrega";
 
@@ -484,10 +523,57 @@ export function registerDeliveryRoutes(app: App) {
         }
 
         return reply.code(200).send({
-          entrega: { ...entrega, itens_ativos, itens_prontos, pronto_para_despachar, cancelamento_info },
+          entrega: {
+            id: entrega.id,
+            status: entrega.status,
+            etapa,
+            cliente_nome: entrega.clienteNome,
+            cliente_telefone: entrega.clienteTelefone,
+            endereco: entrega.endereco,
+            complemento: entrega.complemento,
+            bairro: entrega.bairro,
+            cidade: entrega.cidade,
+            cep: entrega.cep,
+            referencia: entrega.referencia,
+            taxa_entrega: entrega.taxaEntrega,
+            tempo_estimado: entrega.tempoEstimado,
+            observacao: entrega.observacao,
+            entregador_nome: entrega.entregadorNome,
+            entregador_telefone: entrega.entregadorTelefone,
+            saiu_em: entrega.saiuEm,
+            entregue_em: entrega.entregueEm,
+            created_at: entrega.createdAt,
+            itens_ativos,
+            itens_prontos,
+            pronto_para_despachar,
+            cancelamento_info,
+          },
           comanda,
-          itens,
-          pagamentos,
+          itens: itensRaw.map((i: any) => ({
+            id: i.id,
+            quantidade: i.quantidade,
+            preco_unitario: i.precoUnitario,
+            observacao: i.observacao,
+            prato_id: i.pratoId,
+            status: i.status,
+            prato_nome: i.prato_nome,
+            cancelado_em: i.canceladoEm,
+            cancelado_por_id: i.canceladoPorId,
+            cancelado_por_nome: i.canceladoPorNome,
+            cancelado_por_role: i.canceladoPorRole,
+            motivo_cancelamento: i.motivoCancelamento,
+            motivo_cancelamento_detalhe: i.motivoCancelamentoDetalhe,
+            cancelado_apos_inicio: i.canceladoAposInicio,
+          })),
+          pagamentos: pagamentos.map((p: any) => ({
+            id: p.id,
+            valor: p.valor,
+            forma_pagamento: p.formaPagamento,
+            status: p.status,
+            troco: p.troco,
+            referencia: p.referencia,
+            confirmado_em: p.confirmadoEm,
+          })),
           pode_cancelar,
           motivo_nao_pode_cancelar,
           exige_estorno,
