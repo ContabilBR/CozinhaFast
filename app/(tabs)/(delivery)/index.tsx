@@ -98,6 +98,7 @@ export default function DeliveryScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filtro, setFiltro] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchPedidos = useCallback(async () => {
     try {
@@ -116,8 +117,11 @@ export default function DeliveryScreen() {
       const data = await apiGet<{ pedidos: Entrega[] }>(path);
       console.log("[Delivery] Pedidos received:", data.pedidos?.length ?? 0);
       setPedidos(data.pedidos || []);
-    } catch (err) {
-      console.error("Erro ao buscar delivery:", err);
+      setError(null);
+    } catch (err: any) {
+      const msg = err?.body?.error || err?.message || "Erro ao carregar pedidos";
+      console.error("[Delivery] Erro ao buscar pedidos:", msg, err);
+      setError(msg);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -191,6 +195,15 @@ export default function DeliveryScreen() {
       </View>
       {loading ? (
         <View style={{ padding: 16 }}><CardSkeleton /><CardSkeleton /><CardSkeleton /></View>
+      ) : error ? (
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 12 }}>
+          <Ionicons name="alert-circle-outline" size={40} color="#EF4444" />
+          <Text style={{ fontSize: 15, fontWeight: "600", color: COLORS.text, textAlign: "center" }}>Erro ao carregar pedidos</Text>
+          <Text style={{ fontSize: 13, color: COLORS.textSecondary, textAlign: "center" }}>{error}</Text>
+          <Pressable onPress={() => { console.log("[Delivery] Retry button pressed"); setLoading(true); fetchPedidos(); }} style={{ backgroundColor: COLORS.primary, borderRadius: 10, paddingHorizontal: 20, paddingVertical: 10 }}>
+            <Text style={{ color: "white", fontWeight: "600" }}>Tentar novamente</Text>
+          </Pressable>
+        </View>
       ) : (
         <FlatList
           data={pedidosExibidos}

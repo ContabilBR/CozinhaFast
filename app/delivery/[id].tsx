@@ -585,7 +585,7 @@ export default function DeliveryDetalhes() {
                     {cancelConfirmacaoEstorno && <Text style={{ color: "white", fontSize: 14, fontWeight: "700" }}>✓</Text>}
                   </View>
                   <Text style={{ flex: 1, fontSize: 13, color: COLORS.text }}>
-                    {`Confirmo que R$ ${(data.valor_estorno || 0).toFixed(2)} será ou foi devolvido ao cliente`}
+                    {`Confirmo que R$ ${Number(data.valor_estorno || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} será ou foi devolvido ao cliente`}
                   </Text>
                 </Pressable>
               </View>

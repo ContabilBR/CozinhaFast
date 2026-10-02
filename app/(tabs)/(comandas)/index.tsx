@@ -24,6 +24,7 @@ interface ApiComanda {
   mesa_numero: number;
   mesa_capacidade?: number;
   status: string;
+  tipo?: string;
   total: number;
   item_count?: number;
   items_count?: number;
@@ -155,8 +156,9 @@ export default function ComandasScreen() {
     console.log("[Comandas] Fetching comandas from /api/comandas");
     try {
       const res = await apiGet<any>("/api/comandas");
-      const list: ApiComanda[] = Array.isArray(res) ? res : (res.comandas || []);
-      console.log("[Comandas] Loaded", list.length, "comandas");
+      const raw: ApiComanda[] = Array.isArray(res) ? res : (res.comandas || []);
+      const list = raw.filter((c) => c.tipo !== "delivery");
+      console.log("[Comandas] Loaded", raw.length, "comandas,", list.length, "após filtrar delivery");
       list.forEach((comanda) => console.log('comanda data:', JSON.stringify(comanda)));
       setComandas(list);
       setError("");
