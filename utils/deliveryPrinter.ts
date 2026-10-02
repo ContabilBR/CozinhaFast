@@ -192,8 +192,16 @@ export function formatViaEntrega(params: ViaEntregaParams): string {
     if (formaLower === "dinheiro") {
       lines.push(center("Forma: Dinheiro"));
       if (pag.trocoParaRef) {
-        lines.push(removeAcentos(pag.trocoParaRef));
-        lines.push(center("Levar troco"));
+        // Parse "Troco para R$ X,XX" or "Troco para R$ X.XX"
+        const match = pag.trocoParaRef.match(/[\d.,]+/);
+        const trocoParaVal = match ? parseFloat(match[0].replace(",", ".")) : 0;
+        const trocoDevolver = trocoParaVal > 0 ? trocoParaVal - params.total : 0;
+        lines.push(removeAcentos("Cliente paga com " + formatMoney(trocoParaVal)));
+        if (trocoDevolver > 0) {
+          lines.push(removeAcentos("Levar troco de " + formatMoney(trocoDevolver)));
+        } else {
+          lines.push(center("Levar troco"));
+        }
       }
     } else if (formaLower === "pix") {
       lines.push(center("Forma: Pix"));
@@ -269,22 +277,32 @@ export async function imprimirViaDelivery(texto: string): Promise<"bluetooth" | 
         return "bluetooth";
       }
       console.log("[deliveryPrinter] Bluetooth print failed, falling back to PDF");
-    }
 
-    // Fallback: PDF via expo-print + sharing
-    console.log("[deliveryPrinter] Generating PDF fallback");
-    const escaped = texto
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
-    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/></head><body style="font-family:monospace;font-size:13px;line-height:1.4;white-space:pre;width:280px;background:#fff;color:#000;padding:8px;margin:0;">${escaped}</body></html>`;
-    const { uri: tempUri } = await Print.printToFileAsync({ html, base64: false });
-    console.log("[deliveryPrinter] PDF generated at:", tempUri);
-    const dest = (FileSystem.cacheDirectory ?? "") + "via_delivery_" + Date.now() + ".pdf";
-    await FileSystem.copyAsync({ from: tempUri, to: dest });
-    await Sharing.shareAsync(dest, { mimeType: "application/pdf", dialogTitle: "Via de entrega" });
-    console.log("[deliveryPrinter] PDF shared successfully");
-    return "fallback";
+      // Native fallback: PDF file + sharing
+      const escaped = texto
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/></head><body style="font-family:monospace;font-size:13px;line-height:1.4;white-space:pre;width:280px;background:#fff;color:#000;padding:8px;margin:0;">${escaped}</body></html>`;
+      const { uri: tempUri } = await Print.printToFileAsync({ html, base64: false });
+      console.log("[deliveryPrinter] PDF generated at:", tempUri);
+      const dest = (FileSystem.cacheDirectory ?? "") + "via_delivery_" + Date.now() + ".pdf";
+      await FileSystem.copyAsync({ from: tempUri, to: dest });
+      await Sharing.shareAsync(dest, { mimeType: "application/pdf", dialogTitle: "Via de entrega" });
+      console.log("[deliveryPrinter] PDF shared successfully");
+      return "fallback";
+    } else {
+      // Web: use browser print dialog directly
+      console.log("[deliveryPrinter] Web platform — using browser print dialog");
+      const escaped = texto
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/></head><body style="font-family:monospace;font-size:13px;line-height:1.4;white-space:pre;width:280px;background:#fff;color:#000;padding:8px;margin:0;">${escaped}</body></html>`;
+      await Print.printAsync({ html });
+      console.log("[deliveryPrinter] Browser print dialog opened");
+      return "fallback";
+    }
   } catch (err) {
     console.error("[deliveryPrinter] imprimirViaDelivery error:", err);
     return "erro";

@@ -269,7 +269,7 @@ export default function DeliveryDetalhes() {
   const confirmarEntrega = () => {
     console.log("[DeliveryDetalhes] Confirmar entrega pressed for order:", id);
     const pagPrevisto = data?.pagamentos?.find((p: any) => p.status === "pendente" || p.status === "confirmado");
-    const formaRaw = pagPrevisto?.formaPagamento || "dinheiro";
+    const formaRaw = pagPrevisto?.forma_pagamento || "dinheiro";
     const FORMA_PARA_CURTA: Record<string, string> = {
       "cartão de crédito": "credito",
       "cartão de débito": "debito",
@@ -351,7 +351,7 @@ export default function DeliveryDetalhes() {
 
   const e = data.entrega;
   // Usar o campo "etapa" que vem do servidor; fallback para status da entrega
-  const etapaAtual: string = data.etapa || e.status || "pendente";
+  const etapaAtual: string = e.etapa || e.status || "pendente";
   const currentIdx = ETAPA_FLOW.indexOf(etapaAtual as Etapa);
   const total = parseFloat(data.comanda?.total || "0");
 
