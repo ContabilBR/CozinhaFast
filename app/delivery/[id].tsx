@@ -38,6 +38,10 @@ export default function DeliveryDetalhes() {
   const [cancelMotivo, setCancelMotivo] = useState("");
   const [cancelDetalhe, setCancelDetalhe] = useState("");
   const [cancelando, setCancelando] = useState(false);
+  const [cancelFormaEstorno, setCancelFormaEstorno] = useState("");
+  const [cancelDetalheEstorno, setCancelDetalheEstorno] = useState("");
+  const [cancelObsEstorno, setCancelObsEstorno] = useState("");
+  const [cancelConfirmacaoEstorno, setCancelConfirmacaoEstorno] = useState(false);
   const [showConfirmarModal, setShowConfirmarModal] = useState(false);
   const [confirmarForma, setConfirmarForma] = useState<string>("");
   const [confirmarValorRecebido, setConfirmarValorRecebido] = useState("");
@@ -124,17 +128,30 @@ export default function DeliveryDetalhes() {
   const confirmarCancelamento = async () => {
     if (!cancelMotivo) return;
     if (cancelMotivo === "outro" && !cancelDetalhe.trim()) return;
-    console.log("[DeliveryDetalhes] Confirming cancellation for order:", id, "motivo:", cancelMotivo);
+    if (data?.exige_estorno) {
+      if (!cancelFormaEstorno) return;
+      if (cancelFormaEstorno === "outra" && !cancelDetalheEstorno.trim()) return;
+      if (!cancelConfirmacaoEstorno) return;
+    }
+    console.log("[DeliveryDetalhes] Confirming cancellation for order:", id, "motivo:", cancelMotivo, "exige_estorno:", data?.exige_estorno, "forma_estorno:", cancelFormaEstorno);
     setCancelando(true);
     try {
-      await apiPut("/api/delivery/pedidos/" + id + "/cancelar", {
+      const body: any = {
         motivo: cancelMotivo,
         detalhe: cancelDetalhe.trim() || undefined,
-      });
+      };
+      if (data?.exige_estorno) {
+        body.confirmar_estorno = true;
+        body.forma_devolucao = cancelFormaEstorno;
+        if (cancelFormaEstorno === "outra") body.detalhe_devolucao = cancelDetalheEstorno.trim();
+        if (cancelObsEstorno.trim()) body.observacao_estorno = cancelObsEstorno.trim();
+      }
+      console.log("[DeliveryDetalhes] PUT /api/delivery/pedidos/" + id + "/cancelar", body);
+      await apiPut("/api/delivery/pedidos/" + id + "/cancelar", body);
       console.log("[DeliveryDetalhes] Order cancelled successfully:", id);
       setShowCancelModal(false);
-      setCancelMotivo("");
-      setCancelDetalhe("");
+      setCancelMotivo(""); setCancelDetalhe("");
+      setCancelFormaEstorno(""); setCancelDetalheEstorno(""); setCancelObsEstorno(""); setCancelConfirmacaoEstorno(false);
       await fetch();
     } catch (err: any) {
       console.error("[DeliveryDetalhes] Error cancelling order:", err);
@@ -292,6 +309,14 @@ export default function DeliveryDetalhes() {
                 <Text style={{ fontSize: 12, fontWeight: "600", color: "#EF4444" }}>⚠ Houve perda de comida registrada</Text>
               </View>
             )}
+            {e.cancelamento_info?.estorno_info && (
+              <View style={{ backgroundColor: "#FEF2F2", borderRadius: 6, padding: 8, marginTop: 8, borderWidth: 0.5, borderColor: "#FECACA" }}>
+                <Text style={{ fontSize: 12, fontWeight: "700", color: "#EF4444", marginBottom: 4 }}>Estorno manual registrado</Text>
+                <Text style={{ fontSize: 12, color: "#7F1D1D" }}>
+                  {e.cancelamento_info.estorno_info.referencia_completa}
+                </Text>
+              </View>
+            )}
           </View>
         )}
 
@@ -434,6 +459,20 @@ export default function DeliveryDetalhes() {
           <View style={{ backgroundColor: COLORS.background, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 40 }}>
             <Text style={{ fontSize: 18, fontWeight: "700", color: COLORS.text, marginBottom: 16 }}>Cancelar pedido</Text>
 
+            {data?.exige_estorno && (
+              <View style={{ backgroundColor: "#FEE2E2", borderRadius: 8, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: "#FECACA" }}>
+                <Text style={{ color: "#991B1B", fontSize: 13, fontWeight: "700", marginBottom: 4 }}>
+                  ⚠ Este pedido já foi pago
+                </Text>
+                <Text style={{ color: "#7F1D1D", fontSize: 13 }}>
+                  {`Valor: ${formatCurrency(data.valor_estorno || 0)}${data.forma_pagamento_original ? ` (${data.forma_pagamento_original})` : ""}`}
+                </Text>
+                <Text style={{ color: "#7F1D1D", fontSize: 12, marginTop: 4 }}>
+                  Cancelar exige devolver o valor ao cliente. O aplicativo não devolve o dinheiro: faça a devolução por fora e registre aqui como foi feita.
+                </Text>
+              </View>
+            )}
+
             {/* Aviso de consequências */}
             {(() => {
               if (!data) return null;
@@ -493,22 +532,90 @@ export default function DeliveryDetalhes() {
               </View>
             )}
 
+            {data?.exige_estorno && (
+              <View style={{ marginTop: 12 }}>
+                <Text style={{ fontSize: 14, fontWeight: "600", color: COLORS.text, marginBottom: 8 }}>Como o valor será devolvido *</Text>
+                {([
+                  { key: "pix", label: "Pix" },
+                  { key: "dinheiro", label: "Dinheiro" },
+                  { key: "estorno_cartao", label: "Estorno no cartão" },
+                  { key: "outra", label: "Outra forma" },
+                ] as const).map(({ key, label }) => (
+                  <Pressable
+                    key={key}
+                    onPress={() => { console.log("[DeliveryDetalhes] Cancel forma estorno selected:", key); setCancelFormaEstorno(key); }}
+                    style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: COLORS.border }}
+                  >
+                    <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: cancelFormaEstorno === key ? "#EF4444" : COLORS.border, backgroundColor: cancelFormaEstorno === key ? "#EF4444" : "transparent", marginRight: 10 }} />
+                    <Text style={{ fontSize: 14, color: COLORS.text }}>{label}</Text>
+                  </Pressable>
+                ))}
+
+                {cancelFormaEstorno === "outra" && (
+                  <View style={{ marginTop: 8 }}>
+                    <Text style={{ fontSize: 13, color: COLORS.text, marginBottom: 4 }}>Descreva a forma *</Text>
+                    <TextInput
+                      value={cancelDetalheEstorno}
+                      onChangeText={setCancelDetalheEstorno}
+                      placeholder="Ex: transferência bancária"
+                      placeholderTextColor={COLORS.textTertiary}
+                      maxLength={300}
+                      style={{ borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, padding: 10, color: COLORS.text, fontSize: 14 }}
+                    />
+                  </View>
+                )}
+
+                <View style={{ marginTop: 10 }}>
+                  <Text style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 4 }}>Observação (opcional)</Text>
+                  <TextInput
+                    value={cancelObsEstorno}
+                    onChangeText={setCancelObsEstorno}
+                    placeholder="Ex: comprovante #123"
+                    placeholderTextColor={COLORS.textTertiary}
+                    maxLength={300}
+                    style={{ borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, padding: 10, color: COLORS.text, fontSize: 14 }}
+                  />
+                </View>
+
+                <Pressable
+                  onPress={() => { console.log("[DeliveryDetalhes] Cancel confirmacao estorno toggled:", !cancelConfirmacaoEstorno); setCancelConfirmacaoEstorno(!cancelConfirmacaoEstorno); }}
+                  style={{ flexDirection: "row", alignItems: "center", marginTop: 12, gap: 10 }}
+                >
+                  <View style={{ width: 22, height: 22, borderRadius: 4, borderWidth: 2, borderColor: cancelConfirmacaoEstorno ? "#EF4444" : COLORS.border, backgroundColor: cancelConfirmacaoEstorno ? "#EF4444" : "transparent", justifyContent: "center", alignItems: "center" }}>
+                    {cancelConfirmacaoEstorno && <Text style={{ color: "white", fontSize: 14, fontWeight: "700" }}>✓</Text>}
+                  </View>
+                  <Text style={{ flex: 1, fontSize: 13, color: COLORS.text }}>
+                    {`Confirmo que R$ ${(data.valor_estorno || 0).toFixed(2)} será ou foi devolvido ao cliente`}
+                  </Text>
+                </Pressable>
+              </View>
+            )}
+
             {/* Botões */}
-            <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
-              <Pressable
-                onPress={() => { console.log("[DeliveryDetalhes] Cancel modal dismissed"); setShowCancelModal(false); setCancelMotivo(""); setCancelDetalhe(""); }}
-                style={{ flex: 1, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, padding: 14, alignItems: "center" }}
-              >
-                <Text style={{ color: COLORS.text, fontWeight: "500" }}>Voltar</Text>
-              </Pressable>
-              <Pressable
-                onPress={confirmarCancelamento}
-                disabled={cancelando || !cancelMotivo || (cancelMotivo === "outro" && !cancelDetalhe.trim())}
-                style={{ flex: 2, backgroundColor: cancelando || !cancelMotivo || (cancelMotivo === "outro" && !cancelDetalhe.trim()) ? COLORS.textTertiary : "#EF4444", borderRadius: 10, padding: 14, alignItems: "center" }}
-              >
-                {cancelando ? <ActivityIndicator color="white" size="small" /> : <Text style={{ color: "white", fontWeight: "600" }}>Confirmar cancelamento</Text>}
-              </Pressable>
-            </View>
+            {(() => {
+              const cancelBtnDisabled = cancelando
+                || !cancelMotivo
+                || (cancelMotivo === "outro" && !cancelDetalhe.trim())
+                || (data?.exige_estorno && (!cancelFormaEstorno || (cancelFormaEstorno === "outra" && !cancelDetalheEstorno.trim()) || !cancelConfirmacaoEstorno));
+              const cancelBtnLabel = data?.exige_estorno ? "Cancelar e registrar estorno" : "Confirmar cancelamento";
+              return (
+                <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
+                  <Pressable
+                    onPress={() => { console.log("[DeliveryDetalhes] Cancel modal dismissed"); setShowCancelModal(false); setCancelMotivo(""); setCancelDetalhe(""); setCancelFormaEstorno(""); setCancelDetalheEstorno(""); setCancelObsEstorno(""); setCancelConfirmacaoEstorno(false); }}
+                    style={{ flex: 1, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, padding: 14, alignItems: "center" }}
+                  >
+                    <Text style={{ color: COLORS.text, fontWeight: "500" }}>Voltar</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={confirmarCancelamento}
+                    disabled={cancelBtnDisabled}
+                    style={{ flex: 2, backgroundColor: cancelBtnDisabled ? COLORS.textTertiary : "#EF4444", borderRadius: 10, padding: 14, alignItems: "center" }}
+                  >
+                    {cancelando ? <ActivityIndicator color="white" size="small" /> : <Text style={{ color: "white", fontWeight: "600" }}>{cancelBtnLabel}</Text>}
+                  </Pressable>
+                </View>
+              );
+            })()}
           </View>
         </View>
       </Modal>
