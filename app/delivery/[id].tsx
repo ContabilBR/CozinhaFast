@@ -81,7 +81,14 @@ export default function DeliveryDetalhes() {
   const confirmarEntrega = () => {
     console.log("[DeliveryDetalhes] Confirmar entrega pressed for order:", id);
     const pagPrevisto = data?.pagamentos?.find((p: any) => p.status === "pendente" || p.status === "confirmado");
-    setConfirmarForma(pagPrevisto?.metodo || "dinheiro");
+    const formaRaw = pagPrevisto?.formaPagamento || "dinheiro";
+    const FORMA_PARA_CURTA: Record<string, string> = {
+      "cartão de crédito": "credito",
+      "cartão de débito": "debito",
+      pix: "pix",
+      dinheiro: "dinheiro",
+    };
+    setConfirmarForma(FORMA_PARA_CURTA[formaRaw] ?? formaRaw);
     setConfirmarValorRecebido("");
     setShowConfirmarModal(true);
   };
@@ -246,11 +253,11 @@ export default function DeliveryDetalhes() {
             <View style={{ backgroundColor: COLORS.surface, borderRadius: 10, padding: 12, marginBottom: 10 }}>
               <Text style={{ fontSize: 12, fontWeight: "600", color: COLORS.textSecondary, marginBottom: 6, textTransform: "uppercase" }}>Pagamento</Text>
               <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                <Text style={{ fontSize: 13, color: COLORS.text }}>{formaLabel[pag.metodo] || pag.metodo}</Text>
+                <Text style={{ fontSize: 13, color: COLORS.text }}>{formaLabel[pag.formaPagamento] || pag.formaPagamento}</Text>
                 <Text style={{ fontSize: 13, fontWeight: "600", color: COLORS.text }}>{formatCurrency(parseFloat(pag.valor || "0"))}</Text>
               </View>
               {pag.status === "confirmado" && (
-                <Text style={{ fontSize: 11, color: "#22C55E", marginTop: 2 }}>✓ Pago{pag.confirmado_em ? ` em ${new Date(pag.confirmado_em).toLocaleString("pt-BR")}` : ""}</Text>
+                <Text style={{ fontSize: 11, color: "#22C55E", marginTop: 2 }}>✓ Pago{pag.confirmadoEm ? ` em ${new Date(pag.confirmadoEm).toLocaleString("pt-BR")}` : ""}</Text>
               )}
               {pag.status === "pendente" && (
                 <Text style={{ fontSize: 11, color: "#F59E0B", marginTop: 2 }}>Aguardando pagamento na entrega</Text>
@@ -297,7 +304,7 @@ export default function DeliveryDetalhes() {
               <Text style={{ fontSize: 12, fontWeight: "600", color: "#22C55E", marginBottom: 8, textTransform: "uppercase" }}>Pedido encerrado</Text>
               {pag && (
                 <>
-                  <Text style={{ fontSize: 13, color: "#166534" }}>Forma: {formaLabel[pag.metodo] || pag.metodo}</Text>
+                  <Text style={{ fontSize: 13, color: "#166534" }}>Forma: {formaLabel[pag.formaPagamento] || pag.formaPagamento}</Text>
                   <Text style={{ fontSize: 13, color: "#166534", marginTop: 2 }}>Valor cobrado: {formatCurrency(parseFloat(pag.valor || "0"))}</Text>
                   {pag.referencia?.startsWith("Troco:") && (
                     <Text style={{ fontSize: 13, color: "#166534", marginTop: 2 }}>{pag.referencia}</Text>
@@ -534,7 +541,7 @@ export default function DeliveryDetalhes() {
 
                   {jaFoiPago ? (
                     <View style={{ backgroundColor: "#D1FAE5", borderRadius: 8, padding: 10, marginBottom: 16 }}>
-                      <Text style={{ color: "#065F46", fontWeight: "600" }}>✓ Pedido já pago ({formaLabel[pag.metodo] || pag.metodo})</Text>
+                      <Text style={{ color: "#065F46", fontWeight: "600" }}>✓ Pedido já pago ({formaLabel[pag.formaPagamento] || pag.formaPagamento})</Text>
                     </View>
                   ) : (
                     <>
