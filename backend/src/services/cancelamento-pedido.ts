@@ -149,6 +149,17 @@ export async function cancelarPedido(
       .set({ subtotal: subtotal.toString(), total: total.toFixed(2) })
       .where(eq(schema.comandas.id, comandaId));
 
+    // Bug 4: Se for delivery, atualizar o valor do pagamento pendente para refletir o novo total
+    if (comanda.tipo === "delivery") {
+      await tx
+        .update(schema.pagamentos)
+        .set({ valor: total.toFixed(2) })
+        .where(and(
+          eq(schema.pagamentos.comandaId, comandaId),
+          eq(schema.pagamentos.status, "pendente" as any)
+        ));
+    }
+
     // Nome do prato, só para o aviso em tempo real
     let pratoNome: string | null = null;
     if (pedido.pratoId) {

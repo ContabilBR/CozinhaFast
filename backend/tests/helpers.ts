@@ -1,6 +1,6 @@
 import { afterAll } from "bun:test";
 
-const BASE_URL = process.env.TEST_BASE_URL || "http://localhost:3001";
+const BASE_URL = process.env.TEST_BASE_URL || "http://localhost:8083";
 
 /**
  * Strip Content-Type: application/json when there's no body.

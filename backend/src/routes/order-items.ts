@@ -19,13 +19,6 @@ interface UpdatePedidoStatusBody {
   status: string;
 }
 
-// Helper function to normalize decimal values (comma to dot)
-function normalizeDecimal(value: any): number {
-  if (typeof value === 'number') return value;
-  if (typeof value === 'string') return parseFloat(value.replace(',', '.'));
-  return value;
-}
-
 export function registerOrderItemRoutes(app: App) {
   // GET /api/pedidos - List all pedidos for authenticated user
   app.fastify.get<{ Querystring: { comanda_id?: string } }>(
@@ -90,16 +83,13 @@ export function registerOrderItemRoutes(app: App) {
 
         let whereCondition;
         if (comandaIdFilter) {
-          // comanda_id filter: return all pedidos for that comanda within the tenant
           whereCondition = and(
             tenantCondition,
             eq(schema.pedidos.comandaId, comandaIdFilter)
           );
         } else if (isManager) {
-          // Manager: all pedidos for the restaurant
           whereCondition = tenantCondition;
         } else {
-          // Garcom: only their own comandas, scoped to tenant
           whereCondition = and(
             tenantCondition,
             eq(schema.comandas.garcomId, authUserId)
@@ -219,7 +209,6 @@ export function registerOrderItemRoutes(app: App) {
 
         app.logger.info({ comandaId, pratoId, restauranteId }, "Creating pedido");
 
-        // Look up prato to get price
         const prato = await app.db
           .select()
           .from(schema.pratos)
@@ -230,7 +219,6 @@ export function registerOrderItemRoutes(app: App) {
           return reply.code(404).send({ error: "Prato not found" });
         }
 
-        // Check if comanda exists
         const comanda = await app.db
           .select()
           .from(schema.comandas)
@@ -258,7 +246,6 @@ export function registerOrderItemRoutes(app: App) {
           })
           .returning();
 
-        // Update comanda total
         const subtotalResult = await app.db
           .select({
             subtotal: sql<string>`COALESCE(SUM(quantidade * preco_unitario) FILTER (WHERE status <> 'cancelado'), 0)`,
@@ -285,7 +272,6 @@ export function registerOrderItemRoutes(app: App) {
 
         app.logger.info({ pedidoId: pedido.id }, "Pedido created successfully");
 
-        // Publish realtime event
         try {
           realtimeHub.publish(restauranteId, {
             type: "pedido.created",
@@ -467,40 +453,64 @@ export function registerOrderItemRoutes(app: App) {
           return reply.code(409).send({ error: "Item cancelado não pode mudar de status." });
         }
 
-        // Verificar se é delivery e se a entrega já saiu/foi entregue/cancelada
-        try {
-          const [comanda] = await app.db
-            .select({ tipo: schema.comandas.tipo, id: schema.comandas.id })
-            .from(schema.comandas)
-            .where(eq(schema.comandas.id, existing[0].comandaId));
+        // Bug 6: verificar se é delivery e se a entrega já saiu/foi entregue/cancelada
+        // Este check fica ANTES da transação
+        let entregaDelivery: { id: string; status: string; clienteNome: string } | null = null;
+        let comandaTipo: string | null = null;
 
-          if (comanda?.tipo === "delivery") {
-            const [entrega] = await app.db
-              .select({ status: schema.entregas.status })
-              .from(schema.entregas)
-              .where(eq(schema.entregas.comandaId, existing[0].comandaId))
-              .orderBy(desc(schema.entregas.createdAt))
-              .limit(1);
+        const [comandaCheck] = await app.db
+          .select({ tipo: schema.comandas.tipo, id: schema.comandas.id })
+          .from(schema.comandas)
+          .where(eq(schema.comandas.id, existing[0].comandaId));
 
-            if (entrega && ["saiu_entrega", "entregue", "cancelada"].includes(entrega.status)) {
-              return reply.code(409).send({ error: `Não é possível alterar itens de um delivery que já ${entrega.status === "saiu_entrega" ? "saiu para entrega" : entrega.status === "entregue" ? "foi entregue" : "foi cancelado"}.` });
+        if (comandaCheck?.tipo === "delivery") {
+          comandaTipo = "delivery";
+          const [entregaCheck] = await app.db
+            .select({ id: schema.entregas.id, status: schema.entregas.status, clienteNome: schema.entregas.clienteNome })
+            .from(schema.entregas)
+            .where(eq(schema.entregas.comandaId, existing[0].comandaId))
+            .orderBy(desc(schema.entregas.createdAt))
+            .limit(1);
+
+          if (entregaCheck) {
+            if (["saiu_entrega", "entregue", "cancelada"].includes(entregaCheck.status)) {
+              return reply.code(409).send({ error: `Não é possível alterar itens de um delivery que já ${entregaCheck.status === "saiu_entrega" ? "saiu para entrega" : entregaCheck.status === "entregue" ? "foi entregue" : "foi cancelado"}.` });
             }
+            entregaDelivery = entregaCheck;
           }
-        } catch (checkErr) {
-          app.logger.warn({ err: checkErr }, "Failed to check delivery status before item update");
         }
 
-        const [updated] = await app.db
-          .update(schema.pedidos)
-          .set({ status: request.body.status as any })
-          .where(eq(schema.pedidos.id, request.params.id))
-          .returning();
+        const novoStatus = request.body.status;
+
+        // Bug 6a: Transação única para atualizar item + avanço automático da entrega
+        const updated = await (app.db as any).transaction(async (tx: any) => {
+          const [updatedItem] = await tx
+            .update(schema.pedidos)
+            .set({ status: novoStatus as any })
+            .where(eq(schema.pedidos.id, request.params.id))
+            .returning();
+
+          // Avanço automático: pendente → preparando quando item entra em preparo ou fica pronto
+          if (
+            comandaTipo === "delivery" &&
+            entregaDelivery &&
+            (novoStatus === "em_preparo" || novoStatus === "pronto") &&
+            entregaDelivery.status === "pendente"
+          ) {
+            await tx
+              .update(schema.entregas)
+              .set({ status: "preparando" as any })
+              .where(eq(schema.entregas.id, entregaDelivery.id));
+            // Atualizar o status local para os eventos realtime abaixo
+            entregaDelivery = { ...entregaDelivery, status: "preparando" };
+          }
+
+          return updatedItem;
+        });
 
         app.logger.info({ pedidoId: updated.id }, "Pedido status updated successfully");
 
-        // Publish realtime event, enriched with mesa/prato info so clients
-        // (e.g. the garcom-facing "prato pronto" notification) don't need a
-        // follow-up fetch just to render something useful.
+        // Eventos realtime ficam FORA da transação (falha de evento não reverte a operação)
         try {
           const restauranteId = requireTenant(session);
 
@@ -540,60 +550,39 @@ export function registerOrderItemRoutes(app: App) {
           app.logger.error({ err }, "Failed to publish pedido.status_changed event");
         }
 
-        // Efeitos colaterais para delivery
+        // Eventos de delivery (status_changed e pronto) fora da transação
         try {
-          const [comanda] = await app.db
-            .select({ tipo: schema.comandas.tipo, id: schema.comandas.id })
-            .from(schema.comandas)
-            .where(eq(schema.comandas.id, updated.comandaId));
+          if (comandaTipo === "delivery" && entregaDelivery) {
+            // Publicar mudança de status da entrega se avançou para preparando
+            if (novoStatus === "em_preparo" || novoStatus === "pronto") {
+              realtimeHub.publish(restauranteIdAtual, {
+                type: "delivery.status_changed",
+                entityId: updated.comandaId,
+                occurredAt: new Date().toISOString(),
+                payload: { comanda_id: updated.comandaId, tipo: "delivery", status: entregaDelivery.status, cliente_nome: entregaDelivery.clienteNome },
+              });
+            }
 
-          if (comanda?.tipo === "delivery") {
-            const [entrega] = await app.db
-              .select({ id: schema.entregas.id, status: schema.entregas.status, clienteNome: schema.entregas.clienteNome })
-              .from(schema.entregas)
-              .where(eq(schema.entregas.comandaId, updated.comandaId))
-              .orderBy(desc(schema.entregas.createdAt))
-              .limit(1);
-
-            if (entrega) {
-              // Avanço automático: pendente → preparando quando primeiro item entra em preparo
-              if (request.body.status === "em_preparo" && entrega.status === "pendente") {
-                await app.db.update(schema.entregas)
-                  .set({ status: "preparando" as any })
-                  .where(eq(schema.entregas.id, entrega.id));
-                try {
-                  realtimeHub.publish(restauranteIdAtual, {
-                    type: "delivery.status_changed",
-                    entityId: updated.comandaId,
-                    occurredAt: new Date().toISOString(),
-                    payload: { comanda_id: updated.comandaId, tipo: "delivery", status: "preparando", cliente_nome: entrega.clienteNome },
-                  });
-                } catch {}
-              }
-
-              // Evento delivery.pronto quando último item ativo fica pronto
-              if (request.body.status === "pronto") {
-                const todosItens = await app.db
-                  .select({ status: schema.pedidos.status })
-                  .from(schema.pedidos)
-                  .where(eq(schema.pedidos.comandaId, updated.comandaId));
-                const ativos = todosItens.filter((i: any) => i.status !== "cancelado");
-                const prontos = ativos.filter((i: any) => i.status === "pronto");
-                if (ativos.length > 0 && prontos.length === ativos.length) {
-                  try {
-                    realtimeHub.publish(restauranteIdAtual, {
-                      type: "delivery.pronto",
-                      entityId: updated.comandaId,
-                      occurredAt: new Date().toISOString(),
-                      payload: { comanda_id: updated.comandaId, entrega_id: entrega.id, cliente_nome: entrega.clienteNome },
-                    });
-                  } catch {}
-                }
+            // Evento delivery.pronto quando último item ativo fica pronto
+            if (novoStatus === "pronto") {
+              const todosItens = await app.db
+                .select({ status: schema.pedidos.status })
+                .from(schema.pedidos)
+                .where(eq(schema.pedidos.comandaId, updated.comandaId));
+              const ativos = todosItens.filter((i: any) => i.status !== "cancelado");
+              const prontos = ativos.filter((i: any) => i.status === "pronto");
+              if (ativos.length > 0 && prontos.length === ativos.length) {
+                realtimeHub.publish(restauranteIdAtual, {
+                  type: "delivery.pronto",
+                  entityId: updated.comandaId,
+                  occurredAt: new Date().toISOString(),
+                  payload: { comanda_id: updated.comandaId, entrega_id: entregaDelivery.id, cliente_nome: entregaDelivery.clienteNome },
+                });
               }
             }
           }
         } catch (deliveryErr) {
-          app.logger.warn({ err: deliveryErr }, "Failed to process delivery side effects");
+          app.logger.warn({ err: deliveryErr }, "Failed to publish delivery realtime events");
         }
 
         return reply.code(200).send({
@@ -784,6 +773,17 @@ export function registerOrderItemRoutes(app: App) {
           return reply.code(409).send({ error: "Item cancelado não pode ser alterado." });
         }
 
+        // Bug 6b: bloquear mudança de status em itens de delivery pela rota genérica
+        if (request.body.status !== undefined) {
+          const [cmdCheck] = await app.db
+            .select({ tipo: schema.comandas.tipo })
+            .from(schema.comandas)
+            .where(eq(schema.comandas.id, existing[0].comandaId));
+          if (cmdCheck?.tipo === "delivery") {
+            return reply.code(409).send({ error: "Para alterar o status de um item de delivery use PUT /api/pedidos/:id/status." });
+          }
+        }
+
         const pedido = existing[0];
         const updates: any = {};
 
@@ -803,7 +803,6 @@ export function registerOrderItemRoutes(app: App) {
           .where(eq(schema.pedidos.id, request.params.id))
           .returning();
 
-        // Recalculate and update parent comanda's total
         const subtotalResult = await app.db
           .select({
             subtotal: sql<string>`COALESCE(SUM(quantidade * preco_unitario) FILTER (WHERE status <> 'cancelado'), 0)`,
@@ -830,7 +829,6 @@ export function registerOrderItemRoutes(app: App) {
 
         app.logger.info({ pedidoId: updated.id }, "Pedido updated successfully");
 
-        // Publish realtime event if status changed
         try {
           const restauranteId = requireTenant(session);
           if (request.body.status !== undefined && request.body.status !== pedido.status) {
@@ -900,7 +898,6 @@ export function registerOrderItemRoutes(app: App) {
 
         app.logger.info({ pedidoId: request.params.id, restauranteId }, "Deleting pedido");
 
-        // Step a: Fetch the pedido (somente do restaurante de quem chama)
         const existing = await app.db
           .select()
           .from(schema.pedidos)
@@ -912,7 +909,6 @@ export function registerOrderItemRoutes(app: App) {
 
         const pedido = existing[0];
 
-        // Step b: Fetch prato nome
         let pratoNome: string | null = null;
         if (pedido.pratoId) {
           const pratoResult = await app.db
@@ -925,10 +921,8 @@ export function registerOrderItemRoutes(app: App) {
           }
         }
 
-        // Step c: Delete the pedido
         await app.db.delete(schema.pedidos).where(eq(schema.pedidos.id, request.params.id));
 
-        // Publish realtime event for pedido.deleted
         try {
           realtimeHub.publish(restauranteId, {
             type: "pedido.deleted",
@@ -940,7 +934,6 @@ export function registerOrderItemRoutes(app: App) {
           app.logger.debug({ err: pubErr }, "Failed to publish pedido.deleted event");
         }
 
-        // Step d: Recalculate and update parent comanda's total
         const subtotalResult = await app.db
           .select({
             subtotal: sql<string>`COALESCE(SUM(quantidade * preco_unitario) FILTER (WHERE status <> 'cancelado'), 0)`,
@@ -965,7 +958,6 @@ export function registerOrderItemRoutes(app: App) {
           .set({ subtotal: subtotal.toString(), total: newTotal })
           .where(eq(schema.comandas.id, pedido.comandaId));
 
-        // Step e: Check remaining pedidos count
         const remainingPedidos = await app.db
           .select()
           .from(schema.pedidos)
@@ -973,9 +965,7 @@ export function registerOrderItemRoutes(app: App) {
 
         const remainingCount = remainingPedidos.length;
 
-        // Step f: If no more pedidos, archive the comanda and pedido
         if (remainingCount === 0) {
-          // Fetch the comanda with denormalized mesa_numero
           const comandaInfo = await app.db
             .select({
               id: schema.comandas.id,
@@ -993,7 +983,6 @@ export function registerOrderItemRoutes(app: App) {
           if (comandaInfo.length) {
             const comanda = comandaInfo[0];
 
-            // Archive comanda and pedido using Drizzle ORM
             await app.db.insert(schema.comandasHistorico).values({
               id: comanda.id,
               mesaId: comanda.mesaId,

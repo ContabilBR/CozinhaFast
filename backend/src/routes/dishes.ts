@@ -362,7 +362,7 @@ export function registerDishRoutes(app: App) {
 
         const imagemCriacao = resolverImagemUrlEntrada(request.body.imagemUrl ?? request.body.imagem_url);
         if (!imagemCriacao.ok) {
-          return reply.code(400).send({ error: imagemCriacao.erro });
+          return reply.code(400).send({ error: (imagemCriacao as any).erro });
         }
 
         const normalizedPreco = normalizeDecimal(request.body.preco);
@@ -662,7 +662,7 @@ export function registerDishRoutes(app: App) {
           existing[0].imagemUrl
         );
         if (!imagemEdicao.ok) {
-          return reply.code(400).send({ error: imagemEdicao.erro });
+          return reply.code(400).send({ error: (imagemEdicao as any).erro });
         }
         if (imagemEdicao.valor !== undefined) updates.imagemUrl = imagemEdicao.valor;
 

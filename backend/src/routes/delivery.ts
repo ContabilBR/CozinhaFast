@@ -6,6 +6,26 @@ import * as schema from "../db/schema/schema.js";
 import { realtimeHub } from "../realtime/hub.js";
 import { totalDelivery, subtotalDaComanda } from "../services/total-comanda.js";
 
+// Normaliza formas curtas enviadas pelo frontend para os valores aceitos pelo banco
+const FORMA_PAGAMENTO_MAP: Record<string, string> = {
+  credito: "cartão de crédito",
+  debito: "cartão de débito",
+  pix: "pix",
+  dinheiro: "dinheiro",
+  "cartão de crédito": "cartão de crédito",
+  "cartão de débito": "cartão de débito",
+};
+function normalizarForma(forma: string): string {
+  return FORMA_PAGAMENTO_MAP[forma] ?? forma;
+}
+
+// Calcula se o pedido está pronto para despacho
+function calcProntoParaDespachar(itens: { status: string }[], entregaStatus: string): boolean {
+  const itens_ativos = itens.filter((i) => i.status !== "cancelado").length;
+  const itens_prontos = itens.filter((i) => i.status === "pronto").length;
+  return itens_ativos > 0 && itens_prontos === itens_ativos && ["pendente", "preparando"].includes(entregaStatus);
+}
+
 interface DeliveryBody {
   cliente_nome: string;
   cliente_telefone: string;
@@ -20,7 +40,7 @@ interface DeliveryBody {
   observacao?: string;
   pagamento: {
     momento: "ja_pago" | "na_entrega";
-    forma: "pix" | "credito" | "debito" | "dinheiro";
+    forma: "pix" | "credito" | "debito" | "dinheiro" | "cartão de crédito" | "cartão de débito";
     troco_para?: number;
   };
   itens: Array<{ prato_id: string; quantidade: number; observacao?: string }>;
@@ -56,7 +76,7 @@ export function registerDeliveryRoutes(app: App) {
               required: ["momento", "forma"],
               properties: {
                 momento: { type: "string", enum: ["ja_pago", "na_entrega"] },
-                forma: { type: "string", enum: ["pix", "credito", "debito", "dinheiro"] },
+                forma: { type: "string", enum: ["pix", "credito", "debito", "dinheiro", "cartão de crédito", "cartão de débito"] },
                 troco_para: { type: "number" },
               },
             },
@@ -175,11 +195,14 @@ export function registerDeliveryRoutes(app: App) {
             ? `Troco para R$ ${body.pagamento.troco_para.toFixed(2)}`
             : null;
 
+          // Bug 3: normalizar forma antes de gravar
+          const formaGravar = normalizarForma(body.pagamento.forma);
+
           await tx.insert(schema.pagamentos).values({
             comandaId: comanda.id,
             restauranteId: restauranteId as any,
             valor: totalPedido.toFixed(2),
-            formaPagamento: body.pagamento.forma as any,
+            formaPagamento: formaGravar as any,
             status: body.pagamento.momento === "ja_pago" ? "confirmado" : "pendente",
             confirmadoEm: body.pagamento.momento === "ja_pago" ? new Date() : null,
             referencia: referenciaPag,
@@ -282,12 +305,10 @@ export function registerDeliveryRoutes(app: App) {
             .leftJoin(schema.pratos, eq(schema.pedidos.pratoId, schema.pratos.id))
             .where(eq(schema.pedidos.comandaId, entrega.comandaId));
 
+          // Bug 1: usar helper calcProntoParaDespachar
+          const pronto_para_despachar = calcProntoParaDespachar(itens, entrega.status);
           const itens_ativos = itens.filter((i: any) => i.status !== "cancelado").length;
           const itens_prontos = itens.filter((i: any) => i.status === "pronto").length;
-          const pronto_para_despachar =
-            itens_ativos > 0 &&
-            itens_prontos === itens_ativos &&
-            ["pendente", "preparando"].includes(entrega.status);
 
           pedidos.push({
             entrega: { ...entrega, itens_ativos, itens_prontos, pronto_para_despachar },
@@ -386,12 +407,10 @@ export function registerDeliveryRoutes(app: App) {
           .where(eq(schema.pedidos.comandaId, entrega.comandaId));
         const pagamentos = await db.select().from(schema.pagamentos).where(eq(schema.pagamentos.comandaId, entrega.comandaId));
 
+        // Bug 1: usar helper calcProntoParaDespachar
+        const pronto_para_despachar = calcProntoParaDespachar(itens, entrega.status);
         const itens_ativos = itens.filter((i: any) => i.status !== "cancelado").length;
         const itens_prontos = itens.filter((i: any) => i.status === "pronto").length;
-        const pronto_para_despachar =
-          itens_ativos > 0 &&
-          itens_prontos === itens_ativos &&
-          ["pendente", "preparando"].includes(entrega.status);
 
         // Informações de cancelamento (vêm dos itens cancelados com registro)
         let cancelamento_info: any = null;
@@ -423,7 +442,8 @@ export function registerDeliveryRoutes(app: App) {
           motivo_nao_pode_cancelar = "Não é possível cancelar uma entrega já entregue.";
         } else if (entrega.status === "cancelada") {
           motivo_nao_pode_cancelar = "Esta entrega já foi cancelada.";
-        } else if (pagamentos.length > 0) {
+        } else if (pagamentos.some((p: any) => p.status === "confirmado")) {
+          // Bug 2: só bloqueia se houver pagamento CONFIRMADO (não pendente)
           motivo_nao_pode_cancelar = "A comanda já tem pagamento confirmado. Procure o gerente para estorno.";
         } else {
           const itensAtivosLocal = itens.filter((i: any) => i.status !== "cancelado");
@@ -514,18 +534,12 @@ export function registerDeliveryRoutes(app: App) {
           return reply.code(409).send({ error: "Para cancelar um pedido de delivery use PUT /api/delivery/pedidos/:id/cancelar (motivo obrigatório)." });
         }
 
-        // Sequência válida
-        const SEQUENCIA = ["pendente", "preparando", "saiu_entrega", "entregue"];
-        const idxAtual = SEQUENCIA.indexOf(entrega.status);
-        const idxNovo = SEQUENCIA.indexOf(status);
-
-        if (idxNovo === -1) return reply.code(400).send({ error: "Status inválido." });
-        if (idxNovo !== idxAtual + 1) {
-          return reply.code(409).send({ error: `Não é possível passar de "${entrega.status}" para "${status}". A sequência correta é: ${SEQUENCIA.join(" → ")}.` });
-        }
-
-        // Ao despachar: entregador_nome obrigatório + todos os itens ativos prontos
+        // Bug 1: para saiu_entrega, aceitar tanto "pendente" quanto "preparando" como status atual
         if (status === "saiu_entrega") {
+          if (!["pendente", "preparando"].includes(entrega.status)) {
+            return reply.code(409).send({ error: `Não é possível despachar uma entrega com status "${entrega.status}". O pedido precisa estar em "pendente" ou "preparando".` });
+          }
+
           if (!entregador_nome?.trim()) {
             return reply.code(400).send({ error: "O nome de quem vai entregar é obrigatório para despachar." });
           }
@@ -539,6 +553,15 @@ export function registerDeliveryRoutes(app: App) {
           }
           if (prontos.length < ativos.length) {
             return reply.code(409).send({ error: `Ainda há itens em preparo. ${prontos.length} de ${ativos.length} itens prontos.` });
+          }
+        } else {
+          // Para outros status futuros, manter verificação de sequência
+          const SEQUENCIA = ["pendente", "preparando", "saiu_entrega", "entregue"];
+          const idxAtual = SEQUENCIA.indexOf(entrega.status);
+          const idxNovo = SEQUENCIA.indexOf(status);
+          if (idxNovo === -1) return reply.code(400).send({ error: "Status inválido." });
+          if (idxNovo !== idxAtual + 1) {
+            return reply.code(409).send({ error: `Não é possível passar de "${entrega.status}" para "${status}". A sequência correta é: ${SEQUENCIA.join(" → ")}.` });
           }
         }
 
@@ -772,7 +795,7 @@ export function registerDeliveryRoutes(app: App) {
         body: {
           type: "object",
           properties: {
-            forma_pagamento: { type: "string", enum: ["pix", "credito", "debito", "dinheiro"] },
+            forma_pagamento: { type: "string", enum: ["pix", "credito", "debito", "dinheiro", "cartão de crédito", "cartão de débito"] },
             valor_recebido: { type: "number" },
           },
         },
@@ -841,7 +864,7 @@ export function registerDeliveryRoutes(app: App) {
 
           // 5) Processar pagamento
           if (pagPendente) {
-            const formaReal = forma_pagamento || pagPendente.formaPagamento;
+            const formaReal = normalizarForma(forma_pagamento || pagPendente.formaPagamento);
             if (formaReal === "dinheiro") {
               if (valor_recebido === undefined || valor_recebido === null) {
                 return { erro: "Informe o valor recebido do cliente para pagamento em dinheiro.", code: 400 };
@@ -870,6 +893,11 @@ export function registerDeliveryRoutes(app: App) {
               ));
             if (!pagConfirmado) {
               return { erro: "O pedido não está pago. Registre o pagamento antes de confirmar a entrega.", code: 409 };
+            }
+            // Bug 5: verificar se o valor pago bate com o total atual
+            const valorPago = parseFloat(pagConfirmado.valor);
+            if (Math.abs(valorPago - totalDue) > 0.01) {
+              return { erro: `O valor pago (R$ ${valorPago.toFixed(2)}) difere do total atual do pedido (R$ ${totalDue.toFixed(2)}). Verifique com o gerente antes de confirmar a entrega.`, code: 409 };
             }
           }
 
