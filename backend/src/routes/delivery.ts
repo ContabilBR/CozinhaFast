@@ -385,7 +385,7 @@ export function registerDeliveryRoutes(app: App) {
         const restauranteId = requireTenant(authUser);
 
         const [entrega] = await db.select().from(schema.entregas).where(and(eq(schema.entregas.id, request.params.id), eq(schema.entregas.restauranteId, restauranteId)));
-        if (!entrega) return reply.code(404).send({ error: "Entrega não encontrada" });
+        if (!entrega) return reply.code(404).send({ error: "Pedido não encontrado" });
 
         const [comanda] = await db.select().from(schema.comandas).where(eq(schema.comandas.id, entrega.comandaId));
         const itens = await db
@@ -704,7 +704,7 @@ export function registerDeliveryRoutes(app: App) {
             .from(schema.comandas)
             .where(and(eq(schema.comandas.id, entrega.comandaId), eq(schema.comandas.restauranteId, restauranteId)))
             .for("update");
-          if (!comanda) return { erro: "Comanda não encontrada", code: 404 };
+          if (!comanda) return { erro: "Pedido não encontrado", code: 404 };
 
           // 4) Verificar pagamento confirmado
           const pagamentos = await tx.select()
@@ -931,7 +931,7 @@ export function registerDeliveryRoutes(app: App) {
             .from(schema.comandas)
             .where(and(eq(schema.comandas.id, entrega.comandaId), eq(schema.comandas.restauranteId, restauranteId)))
             .for("update");
-          if (!comanda) return { erro: "Comanda não encontrada", code: 404 };
+          if (!comanda) return { erro: "Pedido não encontrado", code: 404 };
 
           // 3) Calcular total
           const totalDue = await totalDelivery(tx, comanda.id);

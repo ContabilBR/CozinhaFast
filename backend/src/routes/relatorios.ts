@@ -1,5 +1,5 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
-import { eq, sum, count, gte, lt, ne, and, sql } from "drizzle-orm";
+import { eq, sum, count, gte, lt, and, sql, not } from "drizzle-orm";
 import * as schema from "../db/schema/schema.js";
 import type { App } from "../index.js";
 import { requireAuth as customRequireAuth, requireTenant, requireRole } from "../utils/auth.js";
@@ -224,17 +224,18 @@ export function registerRelatoriosRoutes(app: App) {
           .from(schema.mesas)
           .where(and(
             eq(schema.mesas.restauranteId, tenantId as any),
-            ne(schema.mesas.status, "disponivel")
+            not(eq(schema.mesas.status, "disponivel"))
           ));
         const mesasOcupadas = mesasOcupadasResult[0]?.count || 0;
 
-        // Comandas abertas — estado atual, sem filtro
+        // Comandas abertas — estado atual, sem filtro (excluding delivery)
         const comandasAbertasResult = await app.db
           .select({ count: count() })
           .from(schema.comandas)
           .where(and(
             eq(schema.comandas.restauranteId, tenantId as any),
-            eq(schema.comandas.status, "aberta")
+            eq(schema.comandas.status, "aberta"),
+            not(eq(schema.comandas.tipo, "delivery"))
           ));
         const comandasAbertas = comandasAbertasResult[0]?.count || 0;
 
@@ -349,7 +350,7 @@ export function registerRelatoriosRoutes(app: App) {
           .where(eq(schema.pedidosHistorico.restauranteId, tenantId as any));
         const totalOrders = (totalPedidosResult[0]?.count || 0) + (totalPedidosHist[0]?.count || 0);
 
-        // Open orders (same as comandasAbertas)
+        // Open orders (same as comandasAbertas - excluding delivery)
         const openOrders = comandasAbertas;
 
         // Ticket médio no período - baseado nas comandas fechadas dentro do intervalo selecionado

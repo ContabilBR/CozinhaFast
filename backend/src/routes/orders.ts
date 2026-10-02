@@ -110,14 +110,14 @@ export function registerOrderRoutes(app: App) {
 
         const restauranteId = requireTenant(authUser);
 
-        // Add WHERE clause conditionally based on role — always filter by tenant
+        // Add WHERE clause conditionally based on role — always filter by tenant and exclude delivery
         if (!isManager) {
-          sqlQuery = sql`${sqlQuery} WHERE c.restaurante_id = ${restauranteId}::uuid AND c.garcom_id = ${authUserId}`;
+          sqlQuery = sql`${sqlQuery} WHERE c.restaurante_id = ${restauranteId}::uuid AND c.garcom_id = ${authUserId} AND c.tipo <> 'delivery'`;
           if (request.query.status) {
             sqlQuery = sql`${sqlQuery} AND c.status = ${request.query.status}`;
           }
         } else {
-          sqlQuery = sql`${sqlQuery} WHERE c.restaurante_id = ${restauranteId}::uuid`;
+          sqlQuery = sql`${sqlQuery} WHERE c.restaurante_id = ${restauranteId}::uuid AND c.tipo <> 'delivery'`;
           if (request.query.status) {
             sqlQuery = sql`${sqlQuery} AND c.status = ${request.query.status}`;
           }
@@ -417,6 +417,7 @@ export function registerOrderRoutes(app: App) {
             status: schema.comandas.status,
             total: schema.comandas.total,
             createdAt: schema.comandas.createdAt,
+            tipo: schema.comandas.tipo,
           })
           .from(schema.comandas)
           .leftJoin(schema.mesas, eq(schema.mesas.id, schema.comandas.mesaId))
@@ -427,6 +428,10 @@ export function registerOrderRoutes(app: App) {
         }
 
         const c = comandas[0];
+
+        if (c.tipo === 'delivery') {
+          return reply.code(400).send({ error: "Este é um pedido de delivery. Use a tela de Delivery." });
+        }
 
         // Get pedidos with prato details
         const pedidos_data = await app.db
@@ -775,6 +780,19 @@ export function registerOrderRoutes(app: App) {
         // Parâmetros com valores padrão; a gorjeta é lida como número
         const gorjetaValue = parseFloat((request.body?.gorjeta?.toString()) ?? "0");
         const numPessoas = request.body?.num_pessoas ?? 0;
+
+        // Check if this is a delivery order early to provide specific error messages
+        const comandaCheck = await app.db
+          .select({ tipo: schema.comandas.tipo })
+          .from(schema.comandas)
+          .where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)));
+
+        if (comandaCheck.length > 0 && comandaCheck[0].tipo === 'delivery') {
+          if (gorjetaValue > 0) {
+            return reply.code(400).send({ error: "Pedido de delivery não tem gorjeta nem taxa de serviço. A taxa de entrega já faz parte do total." });
+          }
+          return reply.code(400).send({ error: "Pedido de delivery não pode ser fechado por aqui. Use a tela de Delivery." });
+        }
 
         // Toda a regra de fechamento vive no módulo services/fechamento-comanda.ts
         const resultado = await fecharComanda(app, {

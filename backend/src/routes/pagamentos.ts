@@ -40,8 +40,9 @@ export function registerPagamentoRoutes(app: App) {
         const restauranteId = requireTenant(authUser);
 
         // Verificar se comanda existe e pertence ao tenant
-        const comanda = await db.select({ id: schema.comandas.id, status: schema.comandas.status, total: schema.comandas.total }).from(schema.comandas).where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)));
+        const comanda = await db.select({ id: schema.comandas.id, status: schema.comandas.status, total: schema.comandas.total, tipo: schema.comandas.tipo }).from(schema.comandas).where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)));
         if (!comanda.length) return reply.code(404).send({ error: "Comanda não encontrada" });
+        if (comanda[0].tipo === 'delivery') return reply.code(400).send({ error: "Este é um pedido de delivery. Use a tela de Delivery." });
         if (comanda[0].status !== "aberta") return reply.code(400).send({ error: "Comanda não está aberta" });
 
         const { forma_pagamento, valor, troco, referencia } = request.body;
@@ -106,8 +107,9 @@ export function registerPagamentoRoutes(app: App) {
         if (!authUser) return;
         const restauranteId = requireTenant(authUser);
 
-        const comanda = await db.select({ id: schema.comandas.id }).from(schema.comandas).where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)));
+        const comanda = await db.select({ id: schema.comandas.id, tipo: schema.comandas.tipo }).from(schema.comandas).where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)));
         if (!comanda.length) return reply.code(404).send({ error: "Comanda não encontrada" });
+        if (comanda[0].tipo === 'delivery') return reply.code(400).send({ error: "Este é um pedido de delivery. Use a tela de Delivery." });
 
         const pagamentos = await db.select().from(schema.pagamentos).where(eq(schema.pagamentos.comandaId, request.params.id));
 
@@ -174,8 +176,9 @@ export function registerPagamentoRoutes(app: App) {
         const restauranteId = requireTenant(authUser);
 
         // Verificar comanda
-        const comanda = await db.select({ id: schema.comandas.id, status: schema.comandas.status, total: schema.comandas.total }).from(schema.comandas).where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)));
+        const comanda = await db.select({ id: schema.comandas.id, status: schema.comandas.status, total: schema.comandas.total, tipo: schema.comandas.tipo }).from(schema.comandas).where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)));
         if (!comanda.length) return reply.code(404).send({ error: "Comanda não encontrada" });
+        if (comanda[0].tipo === 'delivery') return reply.code(400).send({ error: "Este é um pedido de delivery. Use a tela de Delivery." });
 
         const totalComanda = await subtotalDaComanda(db, request.params.id);
         const gorjeta = request.body.gorjeta || 0;
