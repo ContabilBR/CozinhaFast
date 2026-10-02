@@ -6,6 +6,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { apiGet, apiPut } from "@/utils/api";
 import { formatCurrency, formatRelativeTime } from "@/utils/helpers";
+import { formatViaEntrega, formatEtiquetaLacre, imprimirViaDelivery } from "@/utils/deliveryPrinter";
+import { useAuth } from "@/contexts/AuthContext";
+import * as Print from "expo-print";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
 
 const STATUS_FLOW = ["pendente", "preparando", "saiu_entrega", "entregue"];
 const STATUS_LABELS: Record<string, string> = { pendente: "Pendente", preparando: "Preparando", saiu_entrega: "Saiu para entrega", entregue: "Entregue", cancelada: "Cancelada" };
@@ -28,6 +33,7 @@ export default function DeliveryDetalhes() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
+  const { user: authUser } = useAuth();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
@@ -45,6 +51,8 @@ export default function DeliveryDetalhes() {
   const [showConfirmarModal, setShowConfirmarModal] = useState(false);
   const [confirmarForma, setConfirmarForma] = useState<string>("");
   const [confirmarValorRecebido, setConfirmarValorRecebido] = useState("");
+  const [imprimindo, setImprimindo] = useState(false);
+  const [perguntarImpressao, setPerguntarImpressao] = useState(false);
 
   const fetch = useCallback(async () => {
     console.log("[DeliveryDetalhes] Fetching delivery order:", id);
@@ -57,6 +65,155 @@ export default function DeliveryDetalhes() {
   }, [id]);
 
   useEffect(() => { fetch(); }, [fetch]);
+
+  const buildViaParams = (pedidoData: any) => {
+    const e = pedidoData.entrega;
+    const pag = pedidoData.pagamentos?.[0];
+    const jaFoiPago = pag?.status === "confirmado";
+    const formaRaw: string = pag?.forma_pagamento || pag?.formaPagamento || "dinheiro";
+
+    let trocoParaRef: string | undefined;
+    let troco: number | undefined;
+    const ref: string = pag?.referencia || "";
+    if (ref.startsWith("Troco")) {
+      trocoParaRef = ref;
+      if (jaFoiPago && ref.startsWith("Troco:")) {
+        const match = ref.match(/[\d,.]+/);
+        if (match) {
+          troco = parseFloat(match[0].replace(",", "."));
+        }
+      }
+    }
+
+    const itensAtivos = (pedidoData.itens || []).filter((i: any) => i.status !== "cancelado");
+    const subtotal = itensAtivos.reduce((acc: number, item: any) => {
+      return acc + parseFloat(item.preco_unitario || item.precoUnitario || "0") * (item.quantidade || 1);
+    }, 0);
+
+    let horarioLimite: string | undefined;
+    if (e.tempo_estimado && e.created_at) {
+      const base = new Date(e.created_at);
+      if (!isNaN(base.getTime())) {
+        const minutos = parseInt(String(e.tempo_estimado), 10);
+        if (!isNaN(minutos)) {
+          const limite = new Date(base.getTime() + minutos * 60 * 1000);
+          const hh = String(limite.getHours()).padStart(2, "0");
+          const mm = String(limite.getMinutes()).padStart(2, "0");
+          horarioLimite = `${hh}:${mm}`;
+        }
+      }
+    }
+
+    const codigo: string = pedidoData.comanda?.codigo || (e.id || "").slice(0, 6);
+    const criadoEm: string = pedidoData.comanda?.created_at || e.created_at || new Date().toISOString();
+    const total = parseFloat(pedidoData.comanda?.total || "0");
+    const taxaEntrega = parseFloat(e.taxa_entrega || e.taxaEntrega || "0");
+
+    return {
+      restaurante: "CozinhaFast Pro",
+      codigo,
+      criadoEm,
+      horarioLimite,
+      clienteNome: e.cliente_nome || "",
+      clienteTelefone: e.cliente_telefone || undefined,
+      endereco: e.endereco || undefined,
+      bairro: e.bairro || undefined,
+      complemento: e.complemento || undefined,
+      cep: e.cep || undefined,
+      referencia: e.referencia || undefined,
+      observacaoGeral: e.observacao || undefined,
+      itens: (pedidoData.itens || []).map((item: any) => ({
+        quantidade: item.quantidade || 1,
+        nome: item.prato_nome || "Item",
+        preco: parseFloat(item.preco_unitario || item.precoUnitario || "0"),
+        observacao: item.observacao || undefined,
+        cancelado: item.status === "cancelado",
+      })),
+      subtotal,
+      taxaEntrega,
+      total,
+      pagamento: {
+        jaFoiPago,
+        forma: formaRaw,
+        trocoParaRef,
+        troco,
+      },
+      entregadorNome: e.entregador_nome || undefined,
+      saiuEm: e.saiu_em || undefined,
+    };
+  };
+
+  const handleImprimir = async (tipo: "via" | "etiqueta") => {
+    if (!data) return;
+    console.log("[DeliveryDetalhes] handleImprimir pressed, tipo:", tipo, "order:", id);
+    setImprimindo(true);
+    try {
+      const params = buildViaParams(data);
+      const texto = tipo === "via"
+        ? formatViaEntrega(params)
+        : formatEtiquetaLacre({
+            codigo: params.codigo,
+            clienteNome: params.clienteNome,
+            bairro: params.bairro,
+            pagamento: { jaFoiPago: params.pagamento.jaFoiPago, total: params.total },
+          });
+      console.log("[DeliveryDetalhes] Calling imprimirViaDelivery, tipo:", tipo);
+      const resultado = await imprimirViaDelivery(texto);
+      console.log("[DeliveryDetalhes] imprimirViaDelivery result:", resultado);
+      if (resultado === "bluetooth") {
+        Alert.alert("Impressão", "Via enviada para a impressora.");
+      } else if (resultado === "fallback") {
+        // Sharing já abriu — nada a fazer
+      } else {
+        Alert.alert(
+          "Impressora não respondeu",
+          "Não foi possível enviar para a impressora Bluetooth.",
+          [
+            {
+              text: "Tentar de novo",
+              onPress: () => {
+                console.log("[DeliveryDetalhes] Retry print pressed, tipo:", tipo);
+                handleImprimir(tipo);
+              },
+            },
+            {
+              text: "Imprimir pelo aparelho",
+              onPress: async () => {
+                console.log("[DeliveryDetalhes] Fallback PDF print pressed, tipo:", tipo);
+                const params2 = buildViaParams(data);
+                const texto2 =
+                  tipo === "via"
+                    ? formatViaEntrega(params2)
+                    : formatEtiquetaLacre({
+                        codigo: params2.codigo,
+                        clienteNome: params2.clienteNome,
+                        bairro: params2.bairro,
+                        pagamento: { jaFoiPago: params2.pagamento.jaFoiPago, total: params2.total },
+                      });
+                const escaped = texto2
+                  .replace(/&/g, "&amp;")
+                  .replace(/</g, "&lt;")
+                  .replace(/>/g, "&gt;");
+                const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/></head><body style="font-family:monospace;font-size:13px;line-height:1.4;white-space:pre;width:280px;background:#fff;color:#000;padding:8px;margin:0;">${escaped}</body></html>`;
+                try {
+                  const { uri } = await Print.printToFileAsync({ html, base64: false });
+                  const dest = (FileSystem.cacheDirectory ?? "") + "via_delivery_" + Date.now() + ".pdf";
+                  await FileSystem.copyAsync({ from: uri, to: dest });
+                  await Sharing.shareAsync(dest, { mimeType: "application/pdf", dialogTitle: "Via de entrega" });
+                  console.log("[DeliveryDetalhes] Fallback PDF shared successfully");
+                } catch (err) {
+                  console.error("[DeliveryDetalhes] Fallback PDF error:", err);
+                }
+              },
+            },
+            { text: "Cancelar", style: "cancel" },
+          ]
+        );
+      }
+    } finally {
+      setImprimindo(false);
+    }
+  };
 
   const despachar = async () => {
     if (!entregadorNome.trim()) return;
@@ -73,6 +230,7 @@ export default function DeliveryDetalhes() {
       setEntregadorNome("");
       setEntregadorTelefone("");
       await fetch();
+      setPerguntarImpressao(true);
     } catch (err: any) {
       console.error("[DeliveryDetalhes] Error dispatching order:", err);
       const msg = err?.body?.error || err?.message || "Erro ao despachar";
@@ -427,6 +585,30 @@ export default function DeliveryDetalhes() {
               </View>
             )}
 
+            {/* Botões de impressão */}
+            {authUser?.role !== "cozinheiro" && (
+              <View style={{ gap: 8 }}>
+                <Pressable
+                  onPress={() => { console.log("[DeliveryDetalhes] Imprimir via pressed"); handleImprimir("via"); }}
+                  disabled={imprimindo}
+                  style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderWidth: 1, borderColor: COLORS.primary, borderRadius: 12, padding: 14 }}
+                >
+                  <Ionicons name="print-outline" size={18} color={COLORS.primary} />
+                  <Text style={{ color: COLORS.primary, fontSize: 14, fontWeight: "500" }}>
+                    {imprimindo ? "Imprimindo..." : "Imprimir via de entrega"}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => { console.log("[DeliveryDetalhes] Imprimir etiqueta pressed"); handleImprimir("etiqueta"); }}
+                  disabled={imprimindo}
+                  style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, padding: 12 }}
+                >
+                  <Ionicons name="pricetag-outline" size={16} color={COLORS.textSecondary} />
+                  <Text style={{ color: COLORS.textSecondary, fontSize: 13 }}>Imprimir etiqueta de lacre</Text>
+                </Pressable>
+              </View>
+            )}
+
             {/* Cancelar */}
             {(() => {
               const podeCancelar = data?.pode_cancelar;
@@ -723,6 +905,35 @@ export default function DeliveryDetalhes() {
                 </>
               );
             })()}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal de pergunta de impressão pós-despacho */}
+      <Modal
+        visible={perguntarImpressao}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPerguntarImpressao(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center", padding: 24 }}>
+          <View style={{ backgroundColor: COLORS.background, borderRadius: 16, padding: 20, width: "100%" }}>
+            <Text style={{ fontSize: 16, fontWeight: "700", color: COLORS.text, marginBottom: 8 }}>Imprimir via de entrega?</Text>
+            <Text style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 16 }}>O pedido foi despachado. Deseja imprimir a via agora?</Text>
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <Pressable
+                onPress={() => { console.log("[DeliveryDetalhes] Impressao pos-despacho: agora nao"); setPerguntarImpressao(false); }}
+                style={{ flex: 1, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, padding: 12, alignItems: "center" }}
+              >
+                <Text style={{ color: COLORS.text }}>Agora não</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => { console.log("[DeliveryDetalhes] Impressao pos-despacho: imprimir"); setPerguntarImpressao(false); handleImprimir("via"); }}
+                style={{ flex: 2, backgroundColor: COLORS.primary, borderRadius: 10, padding: 12, alignItems: "center" }}
+              >
+                <Text style={{ color: "white", fontWeight: "600" }}>Imprimir</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       </Modal>
