@@ -193,8 +193,9 @@ export function registerDeliveryRoutes(app: App) {
           const totalPedido = await totalDelivery(tx, comanda.id);
 
           if (body.pagamento.momento === "na_entrega" && body.pagamento.forma === "dinheiro" && body.pagamento.troco_para !== undefined) {
-            if (body.pagamento.troco_para < totalPedido) {
-              throw new Error(`TROCO_INSUFICIENTE:O valor de troco (R$ ${body.pagamento.troco_para.toFixed(2)}) é menor que o total do pedido (R$ ${totalPedido.toFixed(2)}).`);
+            const trocoPara = body.pagamento.troco_para;
+            if (Math.round(trocoPara * 100) < Math.round(totalPedido * 100)) {
+              throw new Error(`TROCO_INSUFICIENTE: O valor de troco (R$ ${trocoPara.toFixed(2)}) é menor que o total do pedido (R$ ${totalPedido.toFixed(2)}).`);
             }
           }
 
@@ -1038,10 +1039,10 @@ export function registerDeliveryRoutes(app: App) {
               if (valor_recebido === undefined || valor_recebido === null) {
                 return { erro: "Informe o valor recebido do cliente para pagamento em dinheiro.", code: 400 };
               }
-              if (valor_recebido < totalDue) {
+              if (Math.round(valor_recebido * 100) < Math.round(totalDue * 100)) {
                 return { erro: `Valor recebido (R$ ${valor_recebido.toFixed(2)}) é menor que o total (R$ ${totalDue.toFixed(2)}).`, code: 400 };
               }
-              troco = parseFloat((valor_recebido - totalDue).toFixed(2));
+              troco = Math.round((valor_recebido - totalDue) * 100) / 100;
             }
             await tx.update(schema.pagamentos)
               .set({
