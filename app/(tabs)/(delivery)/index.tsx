@@ -20,6 +20,7 @@ interface Entrega {
     endereco: string;
     bairro?: string;
     status: string;
+    etapa: string;
     taxa_entrega: string;
     created_at: string;
   };
@@ -33,6 +34,7 @@ interface Entrega {
 const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
   pendente: { label: "Pendente", bg: "#FEE2E2", text: "#991B1B" },
   preparando: { label: "Preparando", bg: "#FEF3C7", text: "#92400E" },
+  pronto_para_despachar: { label: "Pronto para despachar", bg: "#D1FAE5", text: "#065F46" },
   saiu_entrega: { label: "Saiu entrega", bg: "#DBEAFE", text: "#1E40AF" },
   entregue: { label: "Entregue", bg: "#D1FAE5", text: "#065F46" },
   cancelada: { label: "Cancelada", bg: "#F3F4F6", text: "#6B7280" },
@@ -51,8 +53,14 @@ function DeliveryCard({ item, onPress, index }: { item: Entrega; onPress: () => 
   }, [index, opacity, translateY]);
 
   const e = item.entrega;
-  const statusCfg = STATUS_CONFIG[e.status] || STATUS_CONFIG.pendente;
+  const etapa = e.etapa || e.status;
+  const statusCfg = STATUS_CONFIG[etapa] || STATUS_CONFIG[e.status] || STATUS_CONFIG.pendente;
   const total = parseFloat(item.comanda?.total || "0");
+
+  const isProntoParaDespachar = etapa === "pronto_para_despachar";
+  const showProgress = !isProntoParaDespachar && item.itens_ativos > 0 && e.status !== "saiu_entrega" && e.status !== "entregue" && e.status !== "cancelada";
+
+  const checkLabel = "✓ Pronto para despachar";
 
   return (
     <Animated.View style={{ opacity, transform: [{ translateY }] }}>
@@ -61,27 +69,36 @@ function DeliveryCard({ item, onPress, index }: { item: Entrega; onPress: () => 
           <View style={{ flex: 1, marginRight: 10 }}>
             <Text style={{ fontSize: 15, fontWeight: "600", color: COLORS.text }}>{e.cliente_nome}</Text>
             <Text style={{ fontSize: 12, color: COLORS.textSecondary, marginTop: 3 }} numberOfLines={1}>
-              <Ionicons name="location-outline" size={12} /> {e.endereco}{e.bairro ? " - " + e.bairro : ""}
+              <Ionicons name="location-outline" size={12} />
+              {" "}
+              {e.endereco}
+              {e.bairro ? " - " + e.bairro : ""}
             </Text>
           </View>
           <View style={{ alignItems: "flex-end" }}>
             <View style={{ backgroundColor: statusCfg.bg, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 12 }}>
-              <Text style={{ fontSize: 11, fontWeight: "600", color: statusCfg.text }}>{statusCfg.label}</Text>
+              <Text style={{ fontSize: 11, fontWeight: "600", color: statusCfg.text }}>
+                {isProntoParaDespachar ? checkLabel : statusCfg.label}
+              </Text>
             </View>
-            {item.pronto_para_despachar && (
-              <View style={{ backgroundColor: "#D1FAE5", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12, marginTop: 6 }}>
-                <Text style={{ fontSize: 11, fontWeight: "700", color: "#065F46" }}>✓ Pronto para despachar</Text>
-              </View>
-            )}
-            {!item.pronto_para_despachar && item.itens_ativos > 0 && e.status !== "saiu_entrega" && e.status !== "entregue" && e.status !== "cancelada" && (
+            {showProgress && (
               <Text style={{ fontSize: 12, color: COLORS.textSecondary, marginTop: 4 }}>
-                {item.itens_prontos} de {item.itens_ativos} itens prontos
+                {item.itens_prontos}
+                {" de "}
+                {item.itens_ativos}
+                {" itens prontos"}
               </Text>
             )}
           </View>
         </View>
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 10, paddingTop: 10, borderTopWidth: 0.5, borderTopColor: COLORS.surfaceSecondary }}>
-          <Text style={{ fontSize: 13, color: COLORS.textSecondary }}>{item.itens?.length || 0} {(item.itens?.length || 0) === 1 ? "item" : "itens"} • {formatRelativeTime(e.created_at)}</Text>
+          <Text style={{ fontSize: 13, color: COLORS.textSecondary }}>
+            {item.itens?.length || 0}
+            {" "}
+            {(item.itens?.length || 0) === 1 ? "item" : "itens"}
+            {" • "}
+            {formatRelativeTime(e.created_at)}
+          </Text>
           <Text style={{ fontSize: 15, fontWeight: "600", color: COLORS.primary }}>{formatCurrency(total)}</Text>
         </View>
       </AnimatedPressable>
@@ -148,11 +165,16 @@ export default function DeliveryScreen() {
     { key: "encerrados", label: "Encerrados" },
   ];
 
-  // Apply client-side filters
+  // Apply client-side filters and sorting
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
   const pedidosExibidos = (() => {
     if (filtro === "prontos") {
-      return pedidos.filter((p) => p.pronto_para_despachar === true);
+      const filtered = pedidos.filter((p) => p.entrega.etapa === "pronto_para_despachar");
+      // Prontos: mais antigos primeiro
+      return [...filtered].sort((a, b) =>
+        new Date(a.entrega.created_at).getTime() - new Date(b.entrega.created_at).getTime()
+      );
     }
     if (filtro === "encerrados") {
       return pedidos.filter((p) => {
@@ -162,7 +184,17 @@ export default function DeliveryScreen() {
     }
     if (filtro === null) {
       // "Todos" excludes fully closed orders (entregue + comanda fechada)
-      return pedidos.filter((p) => !(p.entrega.status === "entregue" && p.comanda?.status === "fechada"));
+      const filtered = pedidos.filter((p) => !(p.entrega.status === "entregue" && p.comanda?.status === "fechada"));
+      // Sort: prontos para despachar first (oldest first among them), then rest (server order)
+      return [...filtered].sort((a, b) => {
+        const aPronte = a.pronto_para_despachar ? 1 : 0;
+        const bPronte = b.pronto_para_despachar ? 1 : 0;
+        if (aPronte !== bPronte) return bPronte - aPronte;
+        if (a.pronto_para_despachar) {
+          return new Date(a.entrega.created_at).getTime() - new Date(b.entrega.created_at).getTime();
+        }
+        return 0;
+      });
     }
     return pedidos;
   })();
@@ -173,9 +205,16 @@ export default function DeliveryScreen() {
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
           <View>
             <Text style={{ fontSize: 22, fontWeight: "700", color: COLORS.text }}>Delivery</Text>
-            <Text style={{ fontSize: 13, color: COLORS.textSecondary, marginTop: 2 }}>{pedidosExibidos.length} pedido{pedidosExibidos.length !== 1 ? "s" : ""}</Text>
+            <Text style={{ fontSize: 13, color: COLORS.textSecondary, marginTop: 2 }}>
+              {pedidosExibidos.length}
+              {" pedido"}
+              {pedidosExibidos.length !== 1 ? "s" : ""}
+            </Text>
           </View>
-          <Pressable onPress={() => { console.log("[Delivery] Novo pedido button pressed"); router.push("/delivery/novo"); }} style={{ backgroundColor: COLORS.primary, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <Pressable
+            onPress={() => { console.log("[Delivery] Novo pedido button pressed"); router.push("/delivery/novo"); }}
+            style={{ backgroundColor: COLORS.primary, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, flexDirection: "row", alignItems: "center", gap: 6 }}
+          >
             <Ionicons name="add" size={18} color="white" />
             <Text style={{ color: "white", fontSize: 14, fontWeight: "600" }}>Novo</Text>
           </Pressable>
@@ -187,7 +226,10 @@ export default function DeliveryScreen() {
           keyExtractor={(item) => item.key || "todos"}
           style={{ marginTop: 12 }}
           renderItem={({ item: f }) => (
-            <Pressable onPress={() => { console.log("[Delivery] Filter selected:", f.key ?? "todos"); setFiltro(f.key); }} style={{ backgroundColor: filtro === f.key ? COLORS.primary : COLORS.primaryMuted, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, marginRight: 8 }}>
+            <Pressable
+              onPress={() => { console.log("[Delivery] Filter selected:", f.key ?? "todos"); setFiltro(f.key); }}
+              style={{ backgroundColor: filtro === f.key ? COLORS.primary : COLORS.primaryMuted, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, marginRight: 8 }}
+            >
               <Text style={{ fontSize: 13, fontWeight: "500", color: filtro === f.key ? "white" : COLORS.primary }}>{f.label}</Text>
             </Pressable>
           )}
@@ -200,7 +242,10 @@ export default function DeliveryScreen() {
           <Ionicons name="alert-circle-outline" size={40} color="#EF4444" />
           <Text style={{ fontSize: 15, fontWeight: "600", color: COLORS.text, textAlign: "center" }}>Erro ao carregar pedidos</Text>
           <Text style={{ fontSize: 13, color: COLORS.textSecondary, textAlign: "center" }}>{error}</Text>
-          <Pressable onPress={() => { console.log("[Delivery] Retry button pressed"); setLoading(true); fetchPedidos(); }} style={{ backgroundColor: COLORS.primary, borderRadius: 10, paddingHorizontal: 20, paddingVertical: 10 }}>
+          <Pressable
+            onPress={() => { console.log("[Delivery] Retry button pressed"); setLoading(true); fetchPedidos(); }}
+            style={{ backgroundColor: COLORS.primary, borderRadius: 10, paddingHorizontal: 20, paddingVertical: 10 }}
+          >
             <Text style={{ color: "white", fontWeight: "600" }}>Tentar novamente</Text>
           </Pressable>
         </View>
@@ -209,9 +254,27 @@ export default function DeliveryScreen() {
           data={pedidosExibidos}
           keyExtractor={(item) => item.entrega.id}
           contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { console.log("[Delivery] Pull-to-refresh triggered"); setRefreshing(true); fetchPedidos(); }} tintColor={COLORS.primary} />}
-          renderItem={({ item, index }) => (<DeliveryCard item={item} index={index} onPress={() => { console.log("[Delivery] Card pressed, id:", item.entrega.id); router.push("/delivery/" + item.entrega.id); }} />)}
-          ListEmptyComponent={<View style={{ alignItems: "center", paddingTop: 60 }}><Ionicons name="bicycle-outline" size={48} color={COLORS.textTertiary} /><Text style={{ fontSize: 16, color: COLORS.textSecondary, marginTop: 12 }}>Nenhum pedido delivery</Text><Text style={{ fontSize: 13, color: COLORS.textTertiary, marginTop: 4 }}>Toque em "Novo" para criar</Text></View>}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => { console.log("[Delivery] Pull-to-refresh triggered"); setRefreshing(true); fetchPedidos(); }}
+              tintColor={COLORS.primary}
+            />
+          }
+          renderItem={({ item, index }) => (
+            <DeliveryCard
+              item={item}
+              index={index}
+              onPress={() => { console.log("[Delivery] Card pressed, id:", item.entrega.id); router.push(("/delivery/" + item.entrega.id) as any); }}
+            />
+          )}
+          ListEmptyComponent={
+            <View style={{ alignItems: "center", paddingTop: 60 }}>
+              <Ionicons name="bicycle-outline" size={48} color={COLORS.textTertiary} />
+              <Text style={{ fontSize: 16, color: COLORS.textSecondary, marginTop: 12 }}>Nenhum pedido delivery</Text>
+              <Text style={{ fontSize: 13, color: COLORS.textTertiary, marginTop: 4 }}>Toque em "Novo" para criar</Text>
+            </View>
+          }
         />
       )}
     </View>

@@ -81,3 +81,65 @@ export function usePratoProntoCount(enabled: boolean = true): number {
 
   return count;
 }
+
+/**
+ * Number of delivery pedidos with etapa "pronto_para_despachar".
+ * Refreshed on mount, foreground, delivery realtime events, and every 30s.
+ */
+export function useDeliveryProntoCount(enabled: boolean = true): number {
+  const { user } = useAuth();
+  const [count, setCount] = useState(0);
+  const mountedRef = useRef(true);
+
+  const active = enabled && !!user;
+
+  const fetchCount = useCallback(async () => {
+    if (!active) return;
+    try {
+      const data = await apiGet<{ pedidos: Array<{ pronto_para_despachar?: boolean; entrega?: { etapa?: string } }> }>("/api/delivery/pedidos");
+      if (!mountedRef.current) return;
+      const prontos = (data.pedidos || []).filter(
+        (p) => p.pronto_para_despachar === true || p.entrega?.etapa === "pronto_para_despachar"
+      ).length;
+      setCount(prontos);
+    } catch {
+      // Keep the last known count rather than flashing to 0 on a transient error.
+    }
+  }, [active]);
+
+  const handleRealtimeEvent = useCallback(
+    (event: RealtimeEvent) => {
+      if (event.type?.startsWith("delivery.")) {
+        fetchCount();
+      }
+    },
+    [fetchCount]
+  );
+
+  useRealtime({ onEvent: handleRealtimeEvent, enabled: active });
+
+  useEffect(() => {
+    mountedRef.current = true;
+
+    if (!active) {
+      setCount(0);
+      return;
+    }
+
+    fetchCount();
+
+    const subscription = AppState.addEventListener("change", (state: AppStateStatus) => {
+      if (state === "active") fetchCount();
+    });
+
+    const interval = setInterval(fetchCount, POLL_INTERVAL_MS);
+
+    return () => {
+      mountedRef.current = false;
+      subscription.remove();
+      clearInterval(interval);
+    };
+  }, [active, fetchCount]);
+
+  return count;
+}

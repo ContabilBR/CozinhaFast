@@ -855,6 +855,10 @@ export default function CozinhaScreen() {
   const [avisoCancelamento, setAvisoCancelamento] = useState<{ texto: string; aposInicio: boolean } | null>(null);
   const avisoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Aviso de delivery completo (apenas para cozinheiro)
+  const [avisoDeliveryCompleto, setAvisoDeliveryCompleto] = useState<string | null>(null);
+  const avisoDeliveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleRealtimeEvent = useCallback((event?: RealtimeEvent) => {
@@ -894,20 +898,6 @@ export default function CozinhaScreen() {
     }
 
     if (event?.type === "delivery.pronto") {
-      const role = (authUser?.role || "").toLowerCase();
-      if (!["cozinheiro", "kitchen"].includes(role)) {
-        const nome = event.payload?.cliente_nome ?? "";
-        const comandaId = event.payload?.comanda_id;
-        console.log("[Cozinha] delivery.pronto event — cliente:", nome, "comanda:", comandaId);
-        Alert.alert(
-          "Delivery pronto",
-          `Delivery de ${nome} pronto para despachar`,
-          [
-            { text: "Fechar", style: "cancel" },
-            { text: "Ver pedido", onPress: () => { console.log("[Cozinha] Ver pedido pressed for comanda:", comandaId); router.push("/delivery/" + comandaId); } },
-          ]
-        );
-      }
       setTimeout(() => fetchComandas(), 300);
       return;
     }
@@ -962,6 +952,35 @@ export default function CozinhaScreen() {
       await apiPut(`/api/pedidos/${id}/status`, { status });
       console.log("[Cozinha] Status updated, refreshing comandas");
       await fetchComandas();
+
+      // Se marcou como pronto, verificar se todos os itens ativos da comanda estão prontos
+      if (status === "pronto") {
+        const role = (authUser?.role || "").toLowerCase();
+        const isCozinheiro = role === "cozinheiro" || role === "kitchen";
+        if (isCozinheiro) {
+          // Encontrar a comanda que contém este pedido
+          const comanda = comandas.find((c) =>
+            (Array.isArray(c.pedidos) ? c.pedidos : []).some((p) => p.id === id)
+          );
+          if (comanda && isDelivery(comanda)) {
+            const pedidosAtivos = (Array.isArray(comanda.pedidos) ? comanda.pedidos : []).filter(
+              (p) => p.status === "pendente" || p.status === "em_preparo"
+            );
+            // Após o fetch, o pedido marcado como pronto não deve mais estar em pendente/em_preparo
+            // Se não há mais ativos, todos estão prontos
+            if (pedidosAtivos.length === 0) {
+              const nomeCliente = comanda.entrega_cliente_nome ?? "";
+              const avisoText = nomeCliente
+                ? `Delivery de ${nomeCliente} completo. Atendente avisado.`
+                : "Delivery completo. Atendente avisado.";
+              console.log("[Cozinha] Delivery completo:", avisoText);
+              setAvisoDeliveryCompleto(avisoText);
+              if (avisoDeliveryTimerRef.current) clearTimeout(avisoDeliveryTimerRef.current);
+              avisoDeliveryTimerRef.current = setTimeout(() => setAvisoDeliveryCompleto(null), 5000);
+            }
+          }
+        }
+      }
     } catch (e: any) {
       console.error("[Cozinha] Status update error:", e);
       const msg = e?.body?.error || e?.message || "Erro ao atualizar status";
@@ -1363,6 +1382,30 @@ export default function CozinhaScreen() {
           <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 15, color: "#fff" }}>Item cancelado</Text>
           <Text style={{ fontFamily: "Outfit_500Medium", fontSize: 14, color: "#fff", marginTop: 2 }}>
             {avisoCancelamento.texto}
+          </Text>
+        </Pressable>
+      ) : null}
+
+      {/* Aviso de delivery completo (cozinheiro) */}
+      {avisoDeliveryCompleto ? (
+        <Pressable
+          onPress={() => setAvisoDeliveryCompleto(null)}
+          style={{
+            position: "absolute",
+            top: insets.top + 8,
+            left: 12,
+            right: 12,
+            zIndex: 200,
+            elevation: 10,
+            backgroundColor: "#22C55E",
+            borderRadius: 14,
+            paddingVertical: 12,
+            paddingHorizontal: 14,
+          }}
+        >
+          <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 15, color: "#fff" }}>Delivery pronto</Text>
+          <Text style={{ fontFamily: "Outfit_500Medium", fontSize: 14, color: "#fff", marginTop: 2 }}>
+            {avisoDeliveryCompleto}
           </Text>
         </Pressable>
       ) : null}
