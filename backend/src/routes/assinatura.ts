@@ -2,7 +2,6 @@ import { eq } from "drizzle-orm";
 import type { FastifyRequest, FastifyReply } from "fastify";
 import type { App } from "../index.js";
 import { requireAuth as customRequireAuth, requireTenant, requireRole } from "../utils/auth.js";
-import { verifyAsaasWebhook } from "../utils/webhook-auth.js";
 import * as schema from "../db/schema/schema.js";
 
 // === Plans Definition ===
@@ -264,80 +263,6 @@ export function registerAssinaturaRoutes(app: App) {
       } catch (err) {
         app.logger.error({ err }, "Erro ao cancelar assinatura");
         return reply.code(500).send({ error: "Erro interno do servidor" });
-      }
-    }
-  );
-
-  // POST /api/webhooks/asaas/assinatura — Asaas webhook (public)
-  app.fastify.post(
-    "/api/webhooks/asaas/assinatura",
-    {
-      schema: {
-        description: "Asaas webhook for subscription events",
-        tags: ["webhooks"],
-        body: {
-          type: "object",
-          properties: {
-            event: { type: "string" },
-            data: { type: "object" },
-            payment: { type: "object" },
-          },
-        },
-        response: {
-          200: {
-            type: "object",
-            properties: {
-              received: { type: "boolean" },
-            },
-          },
-          400: {
-            type: "object",
-            properties: {
-              error: { type: "string" },
-            },
-          },
-        },
-      },
-    },
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      app.logger.debug({ body: request.body }, "POST /api/webhooks/asaas/assinatura");
-      try {
-        if (!verifyAsaasWebhook(request, reply, app.logger)) return;
-        const body = request.body as any;
-        const event = body?.event;
-        const payment = body?.payment;
-
-        if (!event || !payment) {
-          app.logger.debug({ event, payment }, "Webhook missing event or payment");
-          return reply.code(200).send({ received: true });
-        }
-
-        app.logger.info({ event, externalReference: payment.externalReference }, "Asaas webhook received");
-
-        const externalRef = payment.externalReference;
-        if (!externalRef?.startsWith("sub_")) {
-          app.logger.debug({ externalRef }, "Webhook external reference does not start with 'sub_'");
-          return reply.code(200).send({ received: true });
-        }
-
-        const restauranteId = externalRef.replace("sub_", "");
-
-        if (event === "PAYMENT_OVERDUE") {
-          await db.update(schema.restaurante).set({
-            assinaturaStatus: "inadimplente",
-          }).where(eq(schema.restaurante.id, restauranteId));
-          app.logger.info({ restauranteId }, "Subscription marked as overdue");
-        } else if (event === "PAYMENT_CONFIRMED" || event === "PAYMENT_RECEIVED") {
-          await db.update(schema.restaurante).set({
-            assinaturaStatus: "ativa",
-          }).where(eq(schema.restaurante.id, restauranteId));
-          app.logger.info({ restauranteId }, "Subscription marked as active");
-        }
-
-        return reply.code(200).send({ received: true });
-      } catch (err) {
-        app.logger.error({ err }, "Erro ao processar webhook Asaas");
-        return reply.code(200).send({ received: true });
       }
     }
   );

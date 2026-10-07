@@ -2553,29 +2553,4 @@ describe("API Integration Tests", () => {
     );
     await expectStatus(res, 400, 403, 404);
   });
-
-  // ==================== Webhooks ====================
-  test("Post Asaas webhook subscription returns 200 or 204", async () => {
-    const res = await api("/api/webhooks/asaas/assinatura", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        event: "subscription.updated",
-        data: {
-          id: "test-subscription-id",
-          status: "ACTIVE",
-        },
-      }),
-    });
-    await expectStatus(res, 200, 204);
-  });
-
-  test("Post Asaas webhook subscription with empty body returns 200 or 204 or 400", async () => {
-    const res = await api("/api/webhooks/asaas/assinatura", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
-    await expectStatus(res, 200, 204, 400);
-  });
 });
