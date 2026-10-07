@@ -385,4 +385,77 @@ describe("Tenant Isolation Tests", () => {
     });
     expect(res.status).toBe(200);
   });
+
+  // ==================== Garçons ====================
+  let garcomBId: string;
+  let garcomBEmail: string;
+
+  test("Restaurant B creates a garcom", async () => {
+    garcomBEmail = `garcom-b-${Date.now()}@test.com`;
+    const res = await api("/api/garcons", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenB}` },
+      body: JSON.stringify({ name: "Garcom B", email: garcomBEmail, password: "SenhaForte789!" }),
+    });
+    expect(res.status).toBe(201);
+    const data = await res.json();
+    garcomBId = data.id;
+    expect(garcomBId).toBeDefined();
+  });
+
+  test("GET /api/garcons with token A does not return garcom from restaurant B", async () => {
+    const res = await api("/api/garcons", { headers: { Authorization: `Bearer ${tokenA}` } });
+    expect(res.status).toBe(200);
+    const lista = await res.json();
+    expect(lista.some((g: any) => g.id === garcomBId || g.email === garcomBEmail)).toBe(false);
+  });
+
+  test("GET /api/garcons with token B returns its own garcom", async () => {
+    const res = await api("/api/garcons", { headers: { Authorization: `Bearer ${tokenB}` } });
+    expect(res.status).toBe(200);
+    const lista = await res.json();
+    expect(lista.some((g: any) => g.id === garcomBId)).toBe(true);
+  });
+
+  test("GET /api/usuarios/garcons with token A does not return garcom from restaurant B", async () => {
+    const res = await api("/api/usuarios/garcons", { headers: { Authorization: `Bearer ${tokenA}` } });
+    expect(res.status).toBe(200);
+    const lista = await res.json();
+    expect(lista.some((g: any) => g.email === garcomBEmail)).toBe(false);
+  });
+
+  test("Restaurant A cannot PUT garcom from restaurant B", async () => {
+    const res = await api(`/api/garcons/${garcomBId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenA}` },
+      body: JSON.stringify({ name: "Tentativa A" }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  test("Restaurant A cannot DELETE garcom from restaurant B", async () => {
+    const res = await api(`/api/garcons/${garcomBId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${tokenA}` },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  test("check-email does not reveal the name of a person from another restaurant", async () => {
+    const res = await api(`/api/garcons/check-email?email=${encodeURIComponent(garcomBEmail)}`, {
+      headers: { Authorization: `Bearer ${tokenA}` },
+    });
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.exists).toBe(true);
+    expect(data.nome).toBeNull();
+  });
+
+  test("Restaurant B can still DELETE its own garcom (and cleans up after the test)", async () => {
+    const res = await api(`/api/garcons/${garcomBId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${tokenB}` },
+    });
+    expect(res.status).toBe(204);
+  });
 });
