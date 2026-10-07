@@ -13,6 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
+import { PasswordInput } from "@/components/PasswordInput";
 import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { UserRole } from "@/types";
 import { apiPost } from "@/utils/api";
@@ -156,12 +157,11 @@ export default function NovoUsuarioScreen() {
           </FormField>
 
           <FormField label="Senha *">
-            <TextInput
+            <PasswordInput
               value={senha}
               onChangeText={setSenha}
               placeholder="Senha"
               placeholderTextColor={COLORS.textTertiary}
-              secureTextEntry
               autoCapitalize="none"
               autoCorrect={false}
               keyboardType="default"
@@ -170,12 +170,11 @@ export default function NovoUsuarioScreen() {
           </FormField>
 
           <FormField label="Confirmar Senha *">
-            <TextInput
+            <PasswordInput
               value={confirmarSenha}
               onChangeText={setConfirmarSenha}
               placeholder="Repita a senha"
               placeholderTextColor={COLORS.textTertiary}
-              secureTextEntry
               autoCapitalize="none"
               autoCorrect={false}
               keyboardType="default"

@@ -14,6 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
+import { PasswordInput } from "@/components/PasswordInput";
 import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { UserRole } from "@/types";
 import { apiGet, apiPut, apiDelete } from "@/utils/api";
@@ -213,12 +214,11 @@ export default function EditarUsuarioScreen() {
           </FormField>
 
           <FormField label="Nova senha (opcional)">
-            <TextInput
+            <PasswordInput
               value={senha}
               onChangeText={setSenha}
               placeholder="Deixe em branco para manter"
               placeholderTextColor={COLORS.textTertiary}
-              secureTextEntry
               autoCapitalize="none"
               autoCorrect={false}
               keyboardType="default"

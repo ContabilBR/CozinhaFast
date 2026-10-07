@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { PasswordInput } from "@/components/PasswordInput";
 import { useAuth } from "@/contexts/AuthContext";
 import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { CardSkeleton } from "@/components/SkeletonLoader";
@@ -438,12 +439,11 @@ export default function UsuariosScreen() {
               <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 14, color: COLORS.text }}>
                 {editingUser ? "Nova senha (opcional)" : "Senha *"}
               </Text>
-              <TextInput
+              <PasswordInput
                 value={senha}
                 onChangeText={setSenha}
                 placeholder={editingUser ? "Deixe em branco para manter" : "Senha"}
                 placeholderTextColor={COLORS.textTertiary}
-                secureTextEntry
                 style={inputStyle}
               />
             </View>

@@ -15,6 +15,7 @@ import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
+import { PasswordInput } from "@/components/PasswordInput";
 import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { CardSkeleton } from "@/components/SkeletonLoader";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -732,12 +733,11 @@ export default function GestaoGarconsScreen() {
               <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 14, color: COLORS.text }}>
                 {editingGarcom ? "Nova senha (opcional)" : "Senha *"}
               </Text>
-              <TextInput
+              <PasswordInput
                 value={senha}
                 onChangeText={setSenha}
                 placeholder={editingGarcom ? "Deixe em branco para manter" : "Senha"}
                 placeholderTextColor={COLORS.textTertiary}
-                secureTextEntry
                 style={inputStyle}
               />
             </View>
@@ -747,12 +747,11 @@ export default function GestaoGarconsScreen() {
                 <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 14, color: COLORS.text }}>
                   {editingGarcom ? "Confirmar nova senha" : "Confirmar Senha *"}
                 </Text>
-                <TextInput
+                <PasswordInput
                   value={confirmarSenha}
                   onChangeText={setConfirmarSenha}
                   placeholder="Repita a senha"
                   placeholderTextColor={COLORS.textTertiary}
-                  secureTextEntry
                   style={inputStyle}
                 />
                 {confirmarSenha.length > 0 && senha.length > 0 ? (
