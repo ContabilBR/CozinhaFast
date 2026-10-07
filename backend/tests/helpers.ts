@@ -2,6 +2,18 @@ import { afterAll } from "bun:test";
 
 const BASE_URL = process.env.TEST_BASE_URL || "http://localhost:8083";
 
+// Trava de segurança: estes testes CRIAM usuários, garçons e restaurantes de verdade.
+// Rodar contra o backend publicado polui o banco de produção (já aconteceu: milhares de
+// contas @example.com). Só roda contra servidor remoto com confirmação explícita.
+const ENDERECO_LOCAL = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/i;
+if (!ENDERECO_LOCAL.test(BASE_URL) && process.env.ALLOW_REMOTE_TESTS !== "true") {
+  throw new Error(
+    `Recusando rodar os testes contra ${BASE_URL}: não é um servidor local e eles gravam dados reais. ` +
+    `Use um backend local com banco de desenvolvimento. Se tiver CERTEZA de que o banco alvo é de teste, ` +
+    `defina ALLOW_REMOTE_TESTS=true.`
+  );
+}
+
 /**
  * Strip Content-Type: application/json when there's no body.
  */
