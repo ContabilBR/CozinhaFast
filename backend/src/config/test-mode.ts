@@ -5,9 +5,14 @@ import * as bcryptjs from 'bcryptjs';
 import { randomUUID } from 'crypto';
 
 // Test Mode Configuration
-export const TEST_MODE = process.env.TEST_MODE !== 'false'; // Default: true
+// Desligado por padrão: só liga com TEST_MODE=true explícito e nunca em produção.
+// O admin de teste é superadmin (ver isSuperAdmin em utils/auth.ts), então um
+// default ligado expõe a plataforma inteira. Em produção, use SUPERADMIN_EMAILS.
+export const TEST_MODE =
+  process.env.TEST_MODE === 'true' && process.env.NODE_ENV !== 'production';
 export const TEST_ADMIN_EMAIL = 'admingeral@gmail.com';
-export const TEST_ADMIN_PASSWORD = '123456';
+// Sem senha padrão no código: defina TEST_ADMIN_PASSWORD para o seed funcionar.
+export const TEST_ADMIN_PASSWORD = process.env.TEST_ADMIN_PASSWORD ?? '';
 export const TEST_ADMIN_NOME = 'Admin Geral';
 export const TEST_RESTAURANTE_NOME = 'Plataforma (interno)';
 
@@ -18,6 +23,11 @@ export const TEST_RESTAURANTE_NOME = 'Plataforma (interno)';
 export async function seedTestAdmin(app: App): Promise<void> {
   if (!TEST_MODE) {
     app.logger.info('Test mode disabled, skipping test admin seed');
+    return;
+  }
+
+  if (!TEST_ADMIN_PASSWORD) {
+    app.logger.warn('Test mode enabled but TEST_ADMIN_PASSWORD is not set, skipping test admin seed');
     return;
   }
 

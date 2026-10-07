@@ -242,7 +242,7 @@ export function registerSuperAdminRoutes(app: App) {
           !responsavelEmail ||
           !responsavelSenha
         ) {
-          app.logger.warn({ body: request.body }, "Missing required fields");
+          app.logger.warn({ campos: Object.keys((request.body as any) ?? {}) }, "Missing required fields");
           return reply
             .code(400)
             .send({ error: "Missing required fields" });
@@ -347,7 +347,7 @@ export function registerSuperAdminRoutes(app: App) {
         });
       } catch (err) {
         app.logger.error(
-          { err, responsavelEmail, body: request.body },
+          { err, responsavelEmail, campos: Object.keys((request.body as any) ?? {}) },
           "Failed to create restaurant"
         );
         throw err;

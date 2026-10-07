@@ -98,7 +98,7 @@ export function registerRestauranteSignupRoutes(app: App) {
 
         // 1. Validate required fields
         if (!nome || !adminNome || !adminEmail || !adminSenha) {
-          app.logger.warn({ body: request.body }, "Sign up failed: missing required fields");
+          app.logger.warn({ campos: Object.keys((request.body as any) ?? {}) }, "Sign up failed: missing required fields");
           return reply.code(400).send({ error: "nome, adminNome, adminEmail, adminSenha are required" });
         }
 
@@ -197,7 +197,7 @@ export function registerRestauranteSignupRoutes(app: App) {
           return reply.code(409).send({ error: "Email already exists" });
         }
 
-        app.logger.error({ err: error, adminEmail, body: request.body }, "Failed to create restaurante signup");
+        app.logger.error({ err: error, adminEmail, campos: Object.keys((request.body as any) ?? {}) }, "Failed to create restaurante signup");
         return reply.code(500).send({ error: "Internal server error" });
       }
     }

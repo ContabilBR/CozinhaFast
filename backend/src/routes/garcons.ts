@@ -267,7 +267,7 @@ export function registerGarconRoutes(app: App) {
           created_at: now.toISOString(),
         });
       } catch (error) {
-        app.logger.error({ err: error, body: request.body }, "Failed to create garcon");
+        app.logger.error({ err: error, campos: Object.keys((request.body as any) ?? {}) }, "Failed to create garcon");
         return reply.code(500).send({ error: "Internal server error" });
       }
     }

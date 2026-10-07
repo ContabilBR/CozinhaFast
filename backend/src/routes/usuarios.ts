@@ -175,7 +175,7 @@ export function registerUsuariosRoutes(app: App) {
           createdAt: usuario.createdAt.toISOString(),
         });
       } catch (error) {
-        app.logger.error({ err: error, body: request.body }, "Failed to create usuario");
+        app.logger.error({ err: error, campos: Object.keys((request.body as any) ?? {}) }, "Failed to create usuario");
         return reply.code(500).send({ error: "Internal server error" });
       }
     }

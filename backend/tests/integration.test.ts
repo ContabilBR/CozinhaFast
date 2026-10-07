@@ -1871,7 +1871,7 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 200, 403);
   });
 
-  test("Upgrade subscription returns 200 or 400 or 403 or 500 or 502", async () => {
+  test("Upgrade subscription returns 501 (contratação online desabilitada) or 400 or 403 or 500", async () => {
     const res = await authenticatedApi("/api/assinatura/upgrade", authToken, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1881,7 +1881,7 @@ describe("API Integration Tests", () => {
         cpf_cnpj: "12345678901234",
       }),
     });
-    await expectStatus(res, 200, 400, 403, 500, 502);
+    await expectStatus(res, 501, 400, 403, 500);
   });
 
   test("Cancel subscription returns 200 or 400 or 403 or 500", async () => {

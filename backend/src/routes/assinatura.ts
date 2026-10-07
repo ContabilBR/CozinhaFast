@@ -165,6 +165,7 @@ export function registerAssinaturaRoutes(app: App) {
           401: { type: "object", properties: { error: { type: "string" } } },
           403: { type: "object", properties: { error: { type: "string" } } },
           502: { type: "object", properties: { error: { type: "string" } } },
+          501: { type: "object", properties: { error: { type: "string" } } },
           500: { type: "object", properties: { error: { type: "string" } } },
         },
       },
@@ -178,35 +179,12 @@ export function registerAssinaturaRoutes(app: App) {
         if (!requireRole(authUser, ["administrador", "admin", "superadmin", "super_admin"], reply)) return;
         const restauranteId = requireTenant(authUser);
 
-        const { plano, email, cpf_cnpj } = request.body;
-
-        if (!["basico", "profissional", "enterprise"].includes(plano)) {
-          return reply.code(400).send({ error: "Plano inválido" });
-        }
-
-        if (!email || !cpf_cnpj) {
-          return reply.code(400).send({ error: "Email e CPF/CNPJ são obrigatórios" });
-        }
-
-        app.logger.info({ restauranteId, plano, email }, "Upgrading subscription");
-
-        const rest = await db.select().from(schema.restaurante).where(eq(schema.restaurante.id, restauranteId));
-        if (!rest.length) return reply.code(404).send({ error: "Restaurante não encontrado" });
-
-        const valor = PLANOS[plano as keyof typeof PLANOS].preco;
-
-        await db.update(schema.restaurante).set({
-          plano,
-          assinaturaStatus: "ativa",
-          trialExpiraEm: null,
-        }).where(eq(schema.restaurante.id, restauranteId));
-
-        app.logger.info({ restauranteId, plano }, "Subscription upgraded successfully");
-        return reply.code(200).send({
-          success: true,
-          plano,
-          assinatura_id: null,
-          valor_mensal: valor,
+        // A cobrança (Asaas) ainda não está integrada. Antes, este endpoint ativava o
+        // plano pago sem cobrar nada. Enquanto não houver cobrança real, a troca de plano
+        // é feita pelo superadmin (PATCH /api/superadmin/restaurantes/:id/assinatura).
+        app.logger.warn({ restauranteId, plano: request.body?.plano }, "Upgrade solicitado, mas a contratação online não está habilitada");
+        return reply.code(501).send({
+          error: "Contratação online ainda não disponível. Entre em contato com o suporte para trocar de plano.",
         });
       } catch (err) {
         app.logger.error({ err }, "Erro ao fazer upgrade");
