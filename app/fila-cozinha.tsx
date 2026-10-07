@@ -31,6 +31,8 @@ interface ComandaPedido {
   status: string;
   observacao: string | null;
   created_at: string;
+  iniciado_em: string | null;
+  pronto_em: string | null;
 }
 
 interface Comanda {
@@ -65,9 +67,16 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 function isAtrasado(pedido: ComandaPedido): boolean {
+  if (pedido.status !== "em_preparo") return false;
   const target = pedido.tempo_preparo_min ?? DEFAULT_TEMPO_PREPARO_MIN;
-  const diffMin = Math.floor((Date.now() - new Date(pedido.created_at).getTime()) / 60000);
-  return (pedido.status === "pendente" || pedido.status === "em_preparo") && diffMin > target;
+  const ref = pedido.iniciado_em ?? pedido.created_at;
+  const diffMin = Math.floor((Date.now() - new Date(ref).getTime()) / 60000);
+  return diffMin > target;
+}
+
+function getPedidoDiffMin(pedido: ComandaPedido): number {
+  const ref = pedido.iniciado_em ?? pedido.created_at;
+  return Math.floor((Date.now() - new Date(ref).getTime()) / 60000);
 }
 
 type FilterKey = "todos" | "pendente" | "em_preparo" | "atrasados";
@@ -380,6 +389,13 @@ export default function FilaCozinhaScreen() {
             const temAtivo = item.pedidos.some(p => p.status === "pendente" || p.status === "em_preparo");
             const prazoTexto = prazo ? prazo.texto : "";
             const prazoAtrasadoText = prazo ? "Delivery atrasado há " + Math.abs(prazo.minutosRestantes) + " min — URGENTE" : "";
+            const emPreparoPedidos = item.pedidos.filter(p => p.status === "em_preparo");
+            const oldestEmPreparoRef = emPreparoPedidos.reduce<string | null>((oldest, p) => {
+              const ref = p.iniciado_em ?? p.created_at;
+              if (!oldest) return ref;
+              return new Date(ref).getTime() < new Date(oldest).getTime() ? ref : oldest;
+            }, null);
+            const cardElapsed = oldestEmPreparoRef ? formatElapsed(oldestEmPreparoRef) : null;
 
             return (
               <View
@@ -474,12 +490,14 @@ export default function FilaCozinhaScreen() {
                       )}
                     </View>
                   </View>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                    <Clock size={11} color={COLORS.textSecondary} />
-                    <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 11, color: COLORS.textSecondary }}>
-                      {formatElapsed(item.created_at)}
-                    </Text>
-                  </View>
+                  {cardElapsed !== null && (
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                      <Clock size={11} color={hasAtrasado ? "#EF4444" : COLORS.textSecondary} />
+                      <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 11, color: hasAtrasado ? "#EF4444" : COLORS.textSecondary }}>
+                        {cardElapsed}
+                      </Text>
+                    </View>
+                  )}
                 </View>
 
                 {/* Delivery observation box */}
@@ -522,12 +540,13 @@ export default function FilaCozinhaScreen() {
                 >
                   {item.pedidos.map((pedido) => {
                     const atrasado = isAtrasado(pedido);
-                    const diffMin = Math.floor((Date.now() - new Date(pedido.created_at).getTime()) / 60000);
+                    const isEmPreparo = pedido.status === "em_preparo";
+                    const diffMin = isEmPreparo ? getPedidoDiffMin(pedido) : 0;
                     const target = pedido.tempo_preparo_min ?? DEFAULT_TEMPO_PREPARO_MIN;
                     const badgeColor = atrasado ? "#EF4444" : (STATUS_COLORS[pedido.status] ?? "#94A3B8");
                     const badgeLabel = atrasado
                       ? `Atrasado · ${diffMin}/${target} min`
-                      : pedido.status === "em_preparo"
+                      : isEmPreparo
                       ? `Em preparo · ${diffMin}/${target} min`
                       : (STATUS_LABELS[pedido.status] ?? pedido.status);
 

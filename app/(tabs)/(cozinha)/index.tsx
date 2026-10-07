@@ -53,6 +53,8 @@ interface ComandaPedido {
   status: string;
   observacao: string | null;
   created_at: string;
+  iniciado_em: string | null;
+  pronto_em: string | null;
 }
 
 interface Comanda {
@@ -120,12 +122,17 @@ const ACTIVE_STATUSES = ["pendente", "em_preparo", "pronto"];
 
 const DEFAULT_TEMPO_PREPARO_MIN = 15;
 
-function getPedidoUrgencia(pedido: { created_at: string; tempo_preparo_min: number | null }) {
+function getPedidoUrgencia(pedido: { status: string; iniciado_em: string | null; created_at: string; tempo_preparo_min: number | null }) {
   const targetMin = pedido.tempo_preparo_min ?? DEFAULT_TEMPO_PREPARO_MIN;
-  const diffMin = Math.floor((Date.now() - new Date(pedido.created_at).getTime()) / 60000);
-  const isUrgent = diffMin >= targetMin;
-  const isWarning = !isUrgent && diffMin >= targetMin * 0.7;
-  return { diffMin, targetMin, isUrgent, isWarning };
+  if (pedido.status === "pendente") {
+    return { diffMin: 0, targetMin, isUrgent: false, isWarning: false, isPendente: true };
+  }
+  const ref = pedido.iniciado_em ?? pedido.created_at;
+  const diffMin = Math.floor((Date.now() - new Date(ref).getTime()) / 60000);
+  const isEmPreparo = pedido.status === "em_preparo";
+  const isUrgent = isEmPreparo && diffMin > targetMin;
+  const isWarning = isEmPreparo && !isUrgent && diffMin >= targetMin * 0.7;
+  return { diffMin, targetMin, isUrgent, isWarning, isPendente: false };
 }
 
 function KitchenTicketCard({
@@ -154,20 +161,28 @@ function KitchenTicketCard({
     (p) => ACTIVE_STATUSES.includes(p.status)
   );
 
-  const itemUrgencias = activePedidos.map((p) => getPedidoUrgencia(p));
-  const isUrgent = itemUrgencias.some((u) => u.isUrgent);
-  const isWarning = !isUrgent && itemUrgencias.some((u) => u.isWarning);
+  const itemUrgencias = activePedidos.map((p) => ({ pedido: p, urgencia: getPedidoUrgencia(p) }));
+  const emPreparoUrgencias = itemUrgencias.filter((u) => u.pedido.status === "em_preparo");
+  const isUrgent = emPreparoUrgencias.some((u) => u.urgencia.isUrgent);
+  const isWarning = !isUrgent && emPreparoUrgencias.some((u) => u.urgencia.isWarning);
   const borderColor = isUrgent ? "#EF444460" : isWarning ? "#F59E0B60" : COLORS.border;
 
-  const oldestCreatedAt = activePedidos.reduce<string | null>((oldest, p) => {
-    if (!oldest) return p.created_at;
-    return new Date(p.created_at).getTime() < new Date(oldest).getTime() ? p.created_at : oldest;
+  const maxEmPreparoDiffMin = emPreparoUrgencias.reduce<number | null>((max, u) => {
+    if (max === null) return u.urgencia.diffMin;
+    return u.urgencia.diffMin > max ? u.urgencia.diffMin : max;
   }, null);
+  const emPreparoRef = emPreparoUrgencias.reduce<string | null>((oldest, u) => {
+    const ref = u.pedido.iniciado_em ?? u.pedido.created_at;
+    if (!oldest) return ref;
+    return new Date(ref).getTime() < new Date(oldest).getTime() ? ref : oldest;
+  }, null);
+  const elapsed = emPreparoRef ? formatElapsed(emPreparoRef) : null;
 
-  const diffMin = oldestCreatedAt
-    ? Math.floor((Date.now() - new Date(oldestCreatedAt).getTime()) / 60000)
-    : 0;
-  const elapsed = formatElapsed(oldestCreatedAt ?? undefined);
+  const urgentItems = emPreparoUrgencias.filter((u) => u.urgencia.isUrgent);
+  const urgentBannerParts = urgentItems.map(
+    (u) => `${u.pedido.quantidade}x ${u.pedido.prato_nome} (${u.urgencia.diffMin}/${u.urgencia.targetMin} min)`
+  );
+  const urgentBannerText = urgentBannerParts.length > 0 ? "Atrasado: " + urgentBannerParts.join(", ") : "";
 
   const comandaCode = item.id.slice(-6).toUpperCase();
   const comandaLabel = "#" + comandaCode;
@@ -175,8 +190,6 @@ function KitchenTicketCard({
   const pendentesCount = activePedidos.filter((p) => p.status === "pendente").length;
   const emPreparoCount = activePedidos.filter((p) => p.status === "em_preparo").length;
   const prontoCount = activePedidos.filter((p) => p.status === "pronto").length;
-
-  const urgentBannerText = "Aguardando há " + diffMin + " min — URGENTE";
 
   const cardTitle = tituloCartao(item);
 
@@ -251,7 +264,7 @@ function KitchenTicketCard({
         )}
 
         {/* Urgency banner */}
-        {isUrgent && (
+        {isUrgent && urgentBannerText !== "" && (
           <View style={{ backgroundColor: "#EF444415", paddingHorizontal: 16, paddingVertical: 6 }}>
             <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 11, color: "#EF4444" }}>
               {urgentBannerText}
@@ -317,18 +330,20 @@ function KitchenTicketCard({
 
           {/* Right: elapsed + urgency dot */}
           <View style={{ alignItems: "flex-end", gap: 4 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-              <Clock size={12} color={isUrgent ? "#EF4444" : isWarning ? "#F59E0B" : COLORS.textSecondary} />
-              <Text
-                style={{
-                  fontFamily: "Outfit_600SemiBold",
-                  fontSize: 12,
-                  color: isUrgent ? "#EF4444" : isWarning ? "#F59E0B" : COLORS.textSecondary,
-                }}
-              >
-                {elapsed}
-              </Text>
-            </View>
+            {elapsed !== null && (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                <Clock size={12} color={isUrgent ? "#EF4444" : isWarning ? "#F59E0B" : COLORS.textSecondary} />
+                <Text
+                  style={{
+                    fontFamily: "Outfit_600SemiBold",
+                    fontSize: 12,
+                    color: isUrgent ? "#EF4444" : isWarning ? "#F59E0B" : COLORS.textSecondary,
+                  }}
+                >
+                  {elapsed}
+                </Text>
+              </View>
+            )}
             {(isUrgent || isWarning) && (
               <View
                 style={{
@@ -387,9 +402,17 @@ function KitchenTicketCard({
             const isUpdating = updatingId === pedido.id;
             const pedidoUrgencia = getPedidoUrgencia(pedido);
 
-            const badgeColor = isPronto ? "#22C55E" : isEmPreparo ? "#F59E0B" : "#94A3B8";
+            const badgeColor = isPronto
+              ? "#22C55E"
+              : isEmPreparo && pedidoUrgencia.isUrgent
+              ? "#EF4444"
+              : isEmPreparo
+              ? "#F59E0B"
+              : "#94A3B8";
             const badgeLabel = isPronto
               ? "Pronto"
+              : isEmPreparo && pedidoUrgencia.isUrgent
+              ? `Atrasado · ${pedidoUrgencia.diffMin}/${pedidoUrgencia.targetMin} min`
               : isEmPreparo
               ? `Em preparo · ${pedidoUrgencia.diffMin}/${pedidoUrgencia.targetMin} min`
               : "Pendente";
@@ -1025,7 +1048,17 @@ export default function CozinhaScreen() {
       if (filtroTipo === "delivery") return isDelivery(c);
       return true;
     })
-    .sort((a, b) => getOldestActivePedidoTime(a) - getOldestActivePedidoTime(b));
+    .sort((a, b) => {
+      const aHasUrgent = (Array.isArray(a.pedidos) ? a.pedidos : []).some(
+        (p) => getPedidoUrgencia(p).isUrgent
+      );
+      const bHasUrgent = (Array.isArray(b.pedidos) ? b.pedidos : []).some(
+        (p) => getPedidoUrgencia(p).isUrgent
+      );
+      if (aHasUrgent && !bHasUrgent) return -1;
+      if (!aHasUrgent && bHasUrgent) return 1;
+      return getOldestActivePedidoTime(a) - getOldestActivePedidoTime(b);
+    });
 
   const filteredComandas = comandas
     .filter((c) => {
