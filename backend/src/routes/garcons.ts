@@ -1,5 +1,5 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
-import { eq, or, sql } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { user as userTable, account as accountTable } from "../db/schema/auth-schema.js";
 import * as schema from "../db/schema/schema.js";
 import type { App } from "../index.js";
@@ -7,6 +7,7 @@ import { randomUUID } from "crypto";
 import * as bcrypt from "bcrypt";
 import { requireAuth as customRequireAuth, requireRole, requireTenant } from "../utils/auth.js";
 import { resolveGarcomId } from "../utils/garcom.js";
+import { contaDoRestaurante } from "../utils/garcons-tenant.js";
 
 interface CreateGarconBody {
   name: string;
@@ -51,14 +52,15 @@ export function registerGarconRoutes(app: App) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const session = await customRequireAuth(app, request, reply);
       if (!session) return;
+      const restauranteId = requireTenant(session);
 
       try {
-        app.logger.info({}, "Listing all garcons");
+        app.logger.info({ restauranteId }, "Listing garcons of the restaurante");
 
         const garcons = await app.db
           .select()
           .from(userTable)
-          .where(eq(userTable.role, "garcom"));
+          .where(and(eq(userTable.role, "garcom"), contaDoRestaurante(app, restauranteId)));
 
         return reply.code(200).send(
           garcons.map((u) => ({
@@ -127,6 +129,7 @@ export function registerGarconRoutes(app: App) {
           .select({
             id: schema.usuarios.id,
             nome: schema.usuarios.nome,
+            restauranteId: schema.usuarios.restauranteId,
           })
           .from(schema.usuarios)
           .where(sql`LOWER(${schema.usuarios.email}) = LOWER(${email})`)
@@ -134,9 +137,12 @@ export function registerGarconRoutes(app: App) {
 
         if (usuario.length > 0) {
           app.logger.info({ email, usuarioId: usuario[0].id }, "Email found in usuarios table");
+          // O e-mail é único na plataforma inteira, então "exists" vale para qualquer restaurante.
+          // Mas o nome só é revelado se a pessoa for do restaurante de quem pergunta.
+          const mesmoRestaurante = usuario[0].restauranteId === authUser.restauranteId;
           return reply.code(200).send({
             exists: true,
-            nome: usuario[0].nome,
+            nome: mesmoRestaurante ? usuario[0].nome : null,
           });
         }
 
@@ -323,18 +329,25 @@ export function registerGarconRoutes(app: App) {
       app.logger.info({ userId: authUser.id, userRole: authUser.role }, "ROLE CHECK DEBUG - garcons write (PUT /api/garcons/:id)");
 
       if (!requireRole(authUser, ["administrador", "gerente", "admin", "manager", "superadmin", "super_admin"], reply)) return;
+      const restauranteId = requireTenant(authUser);
 
       try {
-        app.logger.info({ userId: request.params.id }, "Updating garcon");
+        app.logger.info({ userId: request.params.id, restauranteId }, "Updating garcon");
 
+        // Só encontra garçons do próprio restaurante (404 também para os de outros, sem revelar que existem).
         const existing = await app.db
           .select()
           .from(userTable)
-          .where(eq(userTable.id, request.params.id));
+          .where(and(
+            eq(userTable.id, request.params.id),
+            eq(userTable.role, "garcom"),
+            contaDoRestaurante(app, restauranteId)
+          ));
 
         if (!existing.length) {
           return reply.code(404).send({ error: "Garcon not found" });
         }
+        const emailAntigo = existing[0].email;
 
         const updates: any = {};
         if (request.body.name !== undefined) updates.name = request.body.name;
@@ -359,10 +372,11 @@ export function registerGarconRoutes(app: App) {
             .where(eq(accountTable.userId, request.params.id));
 
           // Update usuarios table (for compatibility)
+          // Usa o e-mail ANTIGO: se o e-mail também foi alterado, o espelho ainda tem o antigo.
           await app.db
             .update(schema.usuarios)
             .set({ senhaHash: hashedPassword })
-            .where(eq(schema.usuarios.email, updated.email));
+            .where(and(eq(schema.usuarios.email, emailAntigo), eq(schema.usuarios.restauranteId, restauranteId)));
 
           app.logger.debug({ userId: updated.id }, "Password updated in both account and usuarios tables");
         }
@@ -411,20 +425,38 @@ export function registerGarconRoutes(app: App) {
       app.logger.info({ userId: authUser.id, userRole: authUser.role }, "ROLE CHECK DEBUG - garcons write (DELETE /api/garcons/:id)");
 
       if (!requireRole(authUser, ["administrador", "gerente", "admin", "manager", "superadmin", "super_admin"], reply)) return;
+      const restauranteId = requireTenant(authUser);
 
       try {
-        app.logger.info({ userId: request.params.id }, "Deleting garcon");
+        app.logger.info({ userId: request.params.id, restauranteId }, "Deleting garcon");
 
         const existing = await app.db
           .select()
           .from(userTable)
-          .where(eq(userTable.id, request.params.id));
+          .where(and(
+            eq(userTable.id, request.params.id),
+            eq(userTable.role, "garcom"),
+            contaDoRestaurante(app, restauranteId)
+          ));
 
         if (!existing.length) {
           return reply.code(404).send({ error: "Garcon not found" });
         }
 
-        await app.db.delete(userTable).where(eq(userTable.id, request.params.id));
+        // Remove a conta (user, com account/session em cascata) E o espelho em usuarios, com as
+        // sessões dele. Antes só a tabela user era limpa e o garçom ainda conseguia logar.
+        await (app.db as any).transaction(async (tx: any) => {
+          const espelhos = await tx
+            .select({ id: schema.usuarios.id })
+            .from(schema.usuarios)
+            .where(and(eq(schema.usuarios.email, existing[0].email), eq(schema.usuarios.restauranteId, restauranteId)));
+          const idsEspelho = espelhos.map((e: any) => e.id);
+          if (idsEspelho.length > 0) {
+            await tx.delete(schema.usuariosSession).where(inArray(schema.usuariosSession.userId, idsEspelho));
+            await tx.delete(schema.usuarios).where(inArray(schema.usuarios.id, idsEspelho));
+          }
+          await tx.delete(userTable).where(eq(userTable.id, request.params.id));
+        });
 
         app.logger.info({ userId: request.params.id }, "Garcon deleted successfully");
 

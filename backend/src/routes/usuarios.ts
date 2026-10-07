@@ -359,9 +359,10 @@ export function registerUsuariosRoutes(app: App) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const session = await customRequireAuth(app, request, reply);
       if (!session) return;
+      const restauranteId = requireTenant(session);
 
       try {
-        app.logger.info({}, "Listing garcons (usuarios with role=garcom)");
+        app.logger.info({ restauranteId }, "Listing garcons (usuarios with role=garcom)");
 
         const garcons = await app.db
           .select({
@@ -371,7 +372,7 @@ export function registerUsuariosRoutes(app: App) {
             role: schema.usuarios.role,
           })
           .from(schema.usuarios)
-          .where(eq(schema.usuarios.role, "garcom"))
+          .where(and(eq(schema.usuarios.role, "garcom"), eq(schema.usuarios.restauranteId, restauranteId)))
           .orderBy(schema.usuarios.nome);
 
         return reply.code(200).send(
