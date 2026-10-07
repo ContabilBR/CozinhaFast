@@ -159,6 +159,8 @@ export const pedidos = pgTable("pedidos", {
   motivoCancelamento: text("motivo_cancelamento"),
   motivoCancelamentoDetalhe: text("motivo_cancelamento_detalhe"),
   canceladoAposInicio: boolean("cancelado_apos_inicio"),
+  iniciadoEm: timestamp("iniciado_em", { withTimezone: true }),
+  prontoEm: timestamp("pronto_em", { withTimezone: true }),
 });
 
 // Pagamentos (Payments)
@@ -263,6 +265,8 @@ export const pedidosHistorico = pgTable("pedidos_historico", {
   motivoCancelamento: text("motivo_cancelamento"),
   motivoCancelamentoDetalhe: text("motivo_cancelamento_detalhe"),
   canceladoAposInicio: boolean("cancelado_apos_inicio"),
+  iniciadoEm: timestamp("iniciado_em", { withTimezone: true }),
+  prontoEm: timestamp("pronto_em", { withTimezone: true }),
 });
 
 // Pagamentos Historico (Archived Payments)

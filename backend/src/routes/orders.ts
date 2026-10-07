@@ -1601,6 +1601,8 @@ export function registerOrderRoutes(app: App) {
                           status: { type: "string" },
                           observacao: { type: "string" },
                           created_at: { type: "string", format: "date-time" },
+                          iniciado_em: { type: "string", format: "date-time", nullable: true },
+                          pronto_em: { type: "string", format: "date-time", nullable: true },
                         },
                         additionalProperties: true,
                       },
@@ -1666,7 +1668,9 @@ export function registerOrderRoutes(app: App) {
             p.quantidade,
             p.status,
             p.observacao,
-            p.created_at
+            p.created_at,
+            p.iniciado_em,
+            p.pronto_em
           FROM pedidos p
           LEFT JOIN pratos pr ON pr.id = p.prato_id
           WHERE p.restaurante_id = ${tenantId}::uuid
@@ -1725,6 +1729,8 @@ export function registerOrderRoutes(app: App) {
               status: p.status,
               observacao: p.observacao || null,
               created_at: p.created_at ? new Date(p.created_at).toISOString() : null,
+              iniciado_em: p.iniciado_em ? new Date(p.iniciado_em).toISOString() : null,
+              pronto_em: p.pronto_em ? new Date(p.pronto_em).toISOString() : null,
             })),
           };
         });

@@ -237,6 +237,8 @@ export async function fecharComanda(
             motivoCancelamento: p.motivoCancelamento,
             motivoCancelamentoDetalhe: p.motivoCancelamentoDetalhe,
             canceladoAposInicio: p.canceladoAposInicio,
+            iniciadoEm: p.iniciadoEm,
+            prontoEm: p.prontoEm,
             archivedAt: closedAt,
             restauranteId,
           }))

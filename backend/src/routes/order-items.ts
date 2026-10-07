@@ -484,9 +484,21 @@ export function registerOrderItemRoutes(app: App) {
 
         // Bug 6a: Transação única para atualizar item + avanço automático da entrega
         const updated = await (app.db as any).transaction(async (tx: any) => {
+          // Prep time tracking: set timestamps based on status transitions
+          const updateSet: any = { status: novoStatus as any };
+
+          if (novoStatus === "em_preparo" && !existing[0].iniciadoEm) {
+            updateSet.iniciadoEm = new Date();
+          } else if (novoStatus === "pronto") {
+            updateSet.prontoEm = new Date();
+          } else if (novoStatus === "pendente") {
+            updateSet.iniciadoEm = null;
+            updateSet.prontoEm = null;
+          }
+
           const [updatedItem] = await tx
             .update(schema.pedidos)
-            .set({ status: novoStatus as any })
+            .set(updateSet)
             .where(eq(schema.pedidos.id, request.params.id))
             .returning();
 

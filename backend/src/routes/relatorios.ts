@@ -267,7 +267,7 @@ export function registerRelatoriosRoutes(app: App) {
           );
         const pedidosEmPreparo = pedidosEmPrepareResult[0]?.count || 0;
 
-        // Pedidos atrasados (status 'pendente' ou 'em_preparo' em comandas abertas, com tempo desde criação > tempo_preparo_min)
+        // Pedidos atrasados (status 'em_preparo' em comandas abertas, com tempo desde iniciado_em > tempo_preparo_min)
         const pedidosAtrasadosResult = await (app.db as any).execute(
           sql`
             SELECT COUNT(*)::integer as count
@@ -275,9 +275,10 @@ export function registerRelatoriosRoutes(app: App) {
             INNER JOIN comandas c ON p.comanda_id = c.id
             LEFT JOIN pratos pr ON p.prato_id = pr.id
             WHERE p.restaurante_id = ${tenantId}::uuid
-              AND p.status IN ('pendente', 'em_preparo')
+              AND p.status = 'em_preparo'
+              AND p.iniciado_em IS NOT NULL
               AND c.status = 'aberta'
-              AND EXTRACT(EPOCH FROM (NOW() - p.created_at)) / 60 > COALESCE(pr.tempo_preparo_min, 15)
+              AND EXTRACT(EPOCH FROM (NOW() - p.iniciado_em)) / 60 > COALESCE(pr.tempo_preparo_min, 15)
           `
         ) as any[];
         const pedidosAtrasados = pedidosAtrasadosResult[0]?.count || 0;

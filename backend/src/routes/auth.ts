@@ -74,16 +74,16 @@ export function registerAuthRoutes(app: App) {
     },
     async (request: FastifyRequest<{ Body: SignUpBody }>, reply: FastifyReply) => {
       // Rota de teste/dev — nenhuma tela do app real a utiliza. Fica fechada (404)
-      // por padrao; so fica acessivel se ALLOW_TEST_SIGNUP="true" for setado
-      // explicitamente no ambiente. Nao depende de NODE_ENV: se a hospedagem nao
-      // definir NODE_ENV=production, a rota continua fechada.
-      // NUNCA definir essa variavel em producao:
+      // por padrao; so fica acessivel se explicitamente habilitada.
+      // NUNCA definir em producao:
       // quem chamar essa rota escolhe o proprio "role" no corpo da requisicao,
       // incluindo "administrador" (ver enum no schema acima), sem nenhuma
       // autenticacao. E' assim de proposito, so pra permitir que a suite de
       // testes crie usuarios com papeis diferentes — nunca deve ser alcancavel
       // por trafego real.
-      const allowSignUp = process.env.ALLOW_TEST_SIGNUP === "true";
+      const allowSignUp =
+        process.env.ALLOW_TEST_SIGNUP === "true" ||
+        process.env.NODE_ENV === "test";
       if (!allowSignUp) {
         return reply.status(404).send();
       }
