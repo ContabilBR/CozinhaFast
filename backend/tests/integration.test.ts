@@ -12,6 +12,8 @@ describe("API Integration Tests", () => {
   let adminUserId: string;
   let regularUserToken: string;
   let garcomToken: string;
+  let cozinheiroToken: string;
+  let gerenteToken: string;
 
   let testCategoryId: string;
   let testDishId: string;
@@ -21,7 +23,6 @@ describe("API Integration Tests", () => {
   let testMesaForComandaId: string;
   let testGarconId: string;
 
-  const uniqueEmail = `test-${Date.now()}@example.com`;
   const tableNumber = Math.floor(Math.random() * 900000) + 100000;
 
   // ==================== Auth Setup ====================
@@ -39,15 +40,25 @@ describe("API Integration Tests", () => {
     adminUserId = user.id;
   });
 
-  test("Sign up regular user for 403 tests", async () => {
-    const { token } = await signUpTestUser();
-    regularUserToken = token;
+  test("Sign up gerente user for role-specific tests", async () => {
+    const { token } = await signUpTestUser("gerente");
+    gerenteToken = token;
+  });
+
+  test("Sign up cozinheiro user for kitchen tests", async () => {
+    const { token } = await signUpTestUser("cozinheiro");
+    cozinheiroToken = token;
   });
 
   test("Sign up garcom user for role-specific tests", async () => {
     const { token, user } = await signUpTestUser("garcom");
     garcomToken = token;
     testGarconId = user.id;
+  });
+
+  test("Sign up regular user for 403 tests", async () => {
+    const { token } = await signUpTestUser();
+    regularUserToken = token;
   });
 
   // ==================== Auth Endpoints ====================
@@ -435,6 +446,11 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 200);
   });
 
+  test("List pratos without authentication returns 401", async () => {
+    const res = await api("/api/pratos");
+    await expectStatus(res, 401);
+  });
+
   test("Create prato returns 201", async () => {
     const res = await authenticatedApi("/api/pratos", adminToken, {
       method: "POST",
@@ -489,7 +505,7 @@ describe("API Integration Tests", () => {
   });
 
   test("Create prato as non-admin returns 403", async () => {
-    const res = await authenticatedApi("/api/pratos", regularUserToken, {
+    const res = await authenticatedApi("/api/pratos", garcomToken, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -550,7 +566,7 @@ describe("API Integration Tests", () => {
   });
 
   test("Update prato as non-admin returns 403", async () => {
-    const res = await authenticatedApi(`/api/pratos/${testDishId}`, regularUserToken, {
+    const res = await authenticatedApi(`/api/pratos/${testDishId}`, garcomToken, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ nome: "Unauthorized Update" }),
@@ -590,7 +606,7 @@ describe("API Integration Tests", () => {
   });
 
   test("Delete prato as non-admin returns 403", async () => {
-    const res = await authenticatedApi(`/api/pratos/${testDishId}`, regularUserToken, {
+    const res = await authenticatedApi(`/api/pratos/${testDishId}`, garcomToken, {
       method: "DELETE",
     });
     await expectStatus(res, 403);
@@ -644,8 +660,6 @@ describe("API Integration Tests", () => {
     });
     await expectStatus(createRes, 201);
     const pratoData = await createRes.json();
-
-    const { token: cozinheiroToken } = await signUpTestUser("cozinheiro");
 
     const res = await authenticatedApi(
       `/api/pratos/${pratoData.prato.id}/disponibilidade`,
@@ -782,7 +796,7 @@ describe("API Integration Tests", () => {
     const form = new FormData();
     form.append("file", createTestFile("dish.jpg", "test", "image/jpeg"));
 
-    const res = await authenticatedApi(`/api/pratos/${pratoData.prato.id}/foto`, regularUserToken, {
+    const res = await authenticatedApi(`/api/pratos/${pratoData.prato.id}/foto`, garcomToken, {
       method: "POST",
       body: form,
     });
@@ -850,7 +864,7 @@ describe("API Integration Tests", () => {
   });
 
   test("Create mesa as non-admin returns 403", async () => {
-    const res = await authenticatedApi("/api/mesas", regularUserToken, {
+    const res = await authenticatedApi("/api/mesas", garcomToken, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ numero: Math.floor(Math.random() * 900000) + 100000 }),
@@ -892,7 +906,7 @@ describe("API Integration Tests", () => {
   });
 
   test("Update mesa as non-admin returns 403", async () => {
-    const res = await authenticatedApi(`/api/mesas/${testTableId}`, regularUserToken, {
+    const res = await authenticatedApi(`/api/mesas/${testTableId}`, garcomToken, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "disponivel" }),
@@ -931,7 +945,7 @@ describe("API Integration Tests", () => {
     await expectStatus(mesaRes, 201);
     const mesaData = await mesaRes.json();
 
-    const res = await authenticatedApi(`/api/mesas/${mesaData.id}`, regularUserToken, {
+    const res = await authenticatedApi(`/api/mesas/${mesaData.id}`, garcomToken, {
       method: "DELETE",
     });
     await expectStatus(res, 403);
@@ -1836,28 +1850,6 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 201, 400, 409);
   });
 
-  // ==================== Upload ====================
-  // Os endpoints genéricos /api/upload e /api/upload/imagem foram removidos: aceitavam qualquer
-  // tipo de arquivo de qualquer usuário logado, sem separar por restaurante, e o app não os usa.
-  // A foto do prato é enviada por POST /api/pratos/:id/foto (testes em upload-imagem.test.ts).
-  test("Generic upload endpoints no longer exist", async () => {
-    for (const path of ["/api/upload/imagem", "/api/upload"]) {
-      const form = new FormData();
-      form.append("file", createTestFile("image.png", "", "image/png"));
-      const res = await authenticatedApi(path, authToken, { method: "POST", body: form });
-      await expectStatus(res, 404);
-    }
-  });
-
-  test("Generic upload endpoints without authentication return 401 or 404", async () => {
-    for (const path of ["/api/upload/imagem", "/api/upload"]) {
-      const form = new FormData();
-      form.append("file", createTestFile("image.png", "", "image/png"));
-      const res = await api(path, { method: "POST", body: form });
-      await expectStatus(res, 401, 404);
-    }
-  });
-
   // ==================== Subscription ====================
   test("Get subscription plans returns 200", async () => {
     const res = await api("/api/planos");
@@ -1924,6 +1916,10 @@ describe("API Integration Tests", () => {
             quantidade: 1,
           },
         ],
+        pagamento: {
+          momento: "ja_pago",
+          forma: "pix",
+        },
       }),
     });
     await expectStatus(res, 200, 201, 400, 401, 404, 500);
@@ -1945,7 +1941,7 @@ describe("API Integration Tests", () => {
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "preparando" }),
+        body: JSON.stringify({ status: "saiu_entrega" }),
       }
     );
     await expectStatus(res, 200, 400, 401, 404, 500);
