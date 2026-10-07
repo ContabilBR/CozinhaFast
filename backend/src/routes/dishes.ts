@@ -1,5 +1,5 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
-import { eq, and, sql, like } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import * as schema from "../db/schema/schema.js";
 import type { App } from "../index.js";
 import { requireAuth as customRequireAuth, requireRole, requireTenant } from "../utils/auth.js";
@@ -189,15 +189,6 @@ export function registerDishRoutes(app: App) {
         const restauranteId = requireTenant(session);
         const { categoria_id, disponivel } = request.query;
         app.logger.info({ categoria_id, disponivel, restauranteId }, "Listing pratos");
-
-        // Cleanup: Remove corrupted base64 values from imagem_url
-        try {
-          await app.db.update(schema.pratos).set({ imagemUrl: null }).where(
-            like(schema.pratos.imagemUrl, "data:%")
-          );
-        } catch (cleanupError) {
-          app.logger.debug({ err: cleanupError }, "Cleanup of corrupted imagem_url values skipped");
-        }
 
         // Build filters - tenant filter always present
         const filters: any[] = [eq(schema.pratos.restauranteId, restauranteId)];
