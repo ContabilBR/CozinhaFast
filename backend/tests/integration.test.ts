@@ -960,33 +960,6 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 404);
   });
 
-  test("Force delete mesa returns 204", async () => {
-    const uniqueNum = Math.floor(Date.now() / 1000) % 900000 + 100000;
-    const res = await authenticatedApi("/api/mesas", adminToken, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ numero: uniqueNum }),
-    });
-    await expectStatus(res, 201);
-    const mesaData = await res.json();
-
-    const forceRes = await authenticatedApi(
-      `/api/mesas/${mesaData.id}/force`,
-      adminToken,
-      { method: "DELETE" }
-    );
-    await expectStatus(forceRes, 204);
-  });
-
-  test("Force delete non-existent mesa returns 404", async () => {
-    const res = await authenticatedApi(
-      "/api/mesas/00000000-0000-0000-0000-000000000000/force",
-      adminToken,
-      { method: "DELETE" }
-    );
-    await expectStatus(res, 404);
-  });
-
   // ==================== Comandas CRUD ====================
   test("Create mesa for comanda operations", async () => {
     const res = await authenticatedApi("/api/mesas", adminToken, {

@@ -340,6 +340,36 @@ export function registerDishRoutes(app: App) {
           return reply.code(404).send({ error: "Nenhum restaurante associado" });
         }
 
+        // Validate preco
+        const precoFloat = parseFloat(request.body.preco);
+        if (isNaN(precoFloat) || precoFloat < 0) {
+          return reply.code(400).send({ error: "Preço inválido: deve ser um número maior ou igual a zero." });
+        }
+
+        // Validate tempoPreparoMinutos if provided
+        if (request.body.tempoPreparoMinutos !== undefined && request.body.tempoPreparoMinutos !== null) {
+          if (!Number.isInteger(request.body.tempoPreparoMinutos) || request.body.tempoPreparoMinutos < 0 || request.body.tempoPreparoMinutos > 600) {
+            return reply.code(400).send({ error: "Tempo de preparo inválido: deve ser um inteiro entre 0 e 600 minutos." });
+          }
+        }
+
+        // Validate categoriaId if provided
+        const categoriaId = request.body.categoriaId ?? request.body.categoria_id;
+        if (categoriaId !== undefined && categoriaId !== null) {
+          const categoria = await app.db
+            .select()
+            .from(schema.categorias)
+            .where(and(
+              eq(schema.categorias.id, categoriaId as any),
+              eq(schema.categorias.restauranteId, restauranteId as any)
+            ))
+            .limit(1);
+
+          if (categoria.length === 0) {
+            return reply.code(400).send({ error: "Categoria não encontrada." });
+          }
+        }
+
         app.logger.info({ nome: request.body.nome, restauranteId }, "Creating prato");
 
         // Validate and normalize fiscal fields
@@ -620,6 +650,39 @@ export function registerDishRoutes(app: App) {
 
       try {
         const restauranteId = requireTenant(authUser);
+
+        // Validate preco if provided
+        if (request.body.preco !== undefined) {
+          const precoFloat = parseFloat(request.body.preco);
+          if (isNaN(precoFloat) || precoFloat < 0) {
+            return reply.code(400).send({ error: "Preço inválido: deve ser um número maior ou igual a zero." });
+          }
+        }
+
+        // Validate tempoPreparoMinutos if provided
+        if (request.body.tempoPreparoMinutos !== undefined && request.body.tempoPreparoMinutos !== null) {
+          if (!Number.isInteger(request.body.tempoPreparoMinutos) || request.body.tempoPreparoMinutos < 0 || request.body.tempoPreparoMinutos > 600) {
+            return reply.code(400).send({ error: "Tempo de preparo inválido: deve ser um inteiro entre 0 e 600 minutos." });
+          }
+        }
+
+        // Validate categoriaId if provided
+        const categoriaIdToValidate = request.body.categoriaId !== undefined ? request.body.categoriaId : request.body.categoria_id;
+        if (categoriaIdToValidate !== undefined && categoriaIdToValidate !== null) {
+          const categoria = await app.db
+            .select()
+            .from(schema.categorias)
+            .where(and(
+              eq(schema.categorias.id, categoriaIdToValidate as any),
+              eq(schema.categorias.restauranteId, restauranteId as any)
+            ))
+            .limit(1);
+
+          if (categoria.length === 0) {
+            return reply.code(400).send({ error: "Categoria não encontrada." });
+          }
+        }
+
         app.logger.info({ pratoId: request.params.id }, "Updating prato");
 
         const existing = await app.db
@@ -884,7 +947,7 @@ export function registerDishRoutes(app: App) {
       const authUser = await customRequireAuth(app, request, reply);
       if (!authUser) return;
 
-      if (!requireRole(authUser, ["administrador", "gerente", "cozinheiro"], reply)) return;
+      if (!requireRole(authUser, ["admin", "administrador", "gerente", "cozinheiro"], reply)) return;
 
       try {
         const restauranteId = requireTenant(authUser);

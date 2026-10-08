@@ -82,20 +82,6 @@ export type App = typeof app;
 
 // Add global error handler for debugging - only catch unexpected errors
 app.fastify.setErrorHandler((error: any, request, reply) => {
-  // Safety check: if reply is already sent, don't try to send again
-  if (reply.sent) {
-    app.logger.error(
-      {
-        err: error,
-        url: request.url,
-        method: request.method,
-        replySent: true,
-      },
-      'Error after reply already sent'
-    );
-    return;
-  }
-
   // Let Fastify handle validation errors (FST_ERR_*) and other framework errors
   if (error.statusCode && error.statusCode < 500) {
     return reply.status(error.statusCode).send({ error: error.message });
@@ -116,11 +102,7 @@ app.fastify.setErrorHandler((error: any, request, reply) => {
   if (error.cause) console.error('Underlying cause:', error.cause);
 
   // Never leak raw SQL, bound params, or driver internals to the client
-  try {
-    reply.status(500).send({ error: 'Erro interno do servidor. Tente novamente em instantes.' });
-  } catch (replyErr) {
-    app.logger.error({ err: replyErr }, 'Failed to send error response');
-  }
+  reply.status(500).send({ error: 'Erro interno do servidor. Tente novamente em instantes.' });
 });
 
 // Ensure a default restaurante exists for authentication
@@ -157,21 +139,6 @@ try {
   app.logger.error({ err: selectErr }, 'Failed to query restaurante table - migrations may not have run');
 }
 
-// Register request/response lifecycle hooks for debugging connection issues
-app.fastify.addHook('onRequest', async (request, reply) => {
-  app.logger.debug(
-    { method: request.method, path: request.url },
-    'Incoming request'
-  );
-});
-
-app.fastify.addHook('onSend', async (request, reply, payload) => {
-  app.logger.debug(
-    { method: request.method, path: request.url, statusCode: reply.statusCode },
-    'Sending response'
-  );
-  return payload;
-});
 
 // Register routes - IMPORTANT: Always use registration functions to avoid circular dependency issues
 // Register custom auth routes FIRST so they take priority

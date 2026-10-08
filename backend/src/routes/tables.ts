@@ -151,6 +151,11 @@ export function registerTableRoutes(app: App) {
 
         const { numero, capacidade = 4, status = "disponivel" } = request.body;
 
+        // Validate numero and capacidade
+        if (!Number.isInteger(numero) || numero <= 0 || !Number.isInteger(capacidade) || capacidade <= 0) {
+          return reply.code(400).send({ error: "Número e capacidade devem ser inteiros maiores que zero." });
+        }
+
         if (!numero) {
           return reply.code(400).send({ error: "numero é obrigatório" });
         }
@@ -334,6 +339,12 @@ export function registerTableRoutes(app: App) {
         const { id } = request.params;
         const { numero, status, capacidade } = request.body;
 
+        // Validate numero and capacidade when provided
+        if ((numero !== undefined && (!Number.isInteger(numero) || numero <= 0)) ||
+            (capacidade !== undefined && (!Number.isInteger(capacidade) || capacidade <= 0))) {
+          return reply.code(400).send({ error: "Número e capacidade devem ser inteiros maiores que zero." });
+        }
+
         app.logger.info({ tenantId, mesaId: id }, "Updating mesa");
 
         // Check mesa belongs to tenant
@@ -349,6 +360,23 @@ export function registerTableRoutes(app: App) {
         if (existingMesa.length === 0) {
           app.logger.warn({ tenantId, mesaId: id }, "Mesa not found");
           return reply.code(404).send({ error: "Mesa não encontrada" });
+        }
+
+        // If setting status to "disponivel", check for open comanda
+        if (status === "disponivel") {
+          const openComanda = await app.db
+            .select()
+            .from(schema.comandas)
+            .where(and(
+              eq(schema.comandas.mesaId, id as any),
+              eq(schema.comandas.status, "aberta" as any)
+            ))
+            .limit(1);
+
+          if (openComanda.length > 0) {
+            app.logger.warn({ tenantId, mesaId: id }, "Cannot set mesa to disponivel with open comanda");
+            return reply.code(409).send({ error: "A mesa tem uma comanda aberta e não pode ficar disponível." });
+          }
         }
 
         // Check for duplicate numero if changing it
@@ -416,6 +444,7 @@ export function registerTableRoutes(app: App) {
           403: { type: "object", properties: { error: { type: "string" } } },
           404: { type: "object", properties: { error: { type: "string" } } },
           400: { type: "object", properties: { error: { type: "string" } } },
+          409: { type: "object", properties: { error: { type: "string" } } },
         },
       },
     },
@@ -463,6 +492,21 @@ export function registerTableRoutes(app: App) {
           return reply.code(404).send({ error: "Mesa não encontrada" });
         }
 
+        // Check for open comanda
+        const openComanda = await app.db
+          .select()
+          .from(schema.comandas)
+          .where(and(
+            eq(schema.comandas.mesaId, id as any),
+            eq(schema.comandas.status, "aberta" as any)
+          ))
+          .limit(1);
+
+        if (openComanda.length > 0) {
+          app.logger.warn({ tenantId, mesaId: id }, "Cannot delete mesa with open comanda");
+          return reply.code(409).send({ error: "Esta mesa tem uma comanda aberta. Feche ou cancele a comanda antes de excluir a mesa." });
+        }
+
         // Delete pedidos associated with this mesa's comandas
         const comandasForMesa = await app.db
           .select()
@@ -494,94 +538,4 @@ export function registerTableRoutes(app: App) {
     }
   );
 
-  // DELETE /api/mesas/:id/force - Force delete a mesa and all associated data
-  app.fastify.delete<{ Params: { id: string } }>(
-    "/api/mesas/:id/force",
-    {
-      schema: {
-        description: "Force delete a mesa and all associated data (requires admin/gerente role)",
-        tags: ["mesas"],
-        params: {
-          type: "object",
-          required: ["id"],
-          properties: {
-            id: { type: "string", format: "uuid" },
-          },
-        },
-        response: {
-          204: { description: "Mesa force deleted successfully" },
-          401: { type: "object", properties: { error: { type: "string" } } },
-          403: { type: "object", properties: { error: { type: "string" } } },
-          404: { type: "object", properties: { error: { type: "string" } } },
-        },
-      },
-    },
-    async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
-      const authUser = await customRequireAuth(app, request, reply);
-      if (!authUser) return;
-
-      try {
-        const tenantId = authUser.restauranteId;
-
-        // Check current database role
-        const authUserProfile = await app.db
-          .select()
-          .from(schema.profiles)
-          .where(and(
-            eq(schema.profiles.userId, authUser.id),
-            eq(schema.profiles.restauranteId, tenantId as any)
-          ))
-          .limit(1);
-
-        const dbRole = authUserProfile.length > 0 ? authUserProfile[0].role?.toLowerCase() : authUser.role?.toLowerCase();
-        const isAdmin = ["admin", "administrador", "gerente"].includes(dbRole ?? "");
-
-        if (!isAdmin) {
-          app.logger.warn({ tenantId }, "User lacks permission to force delete mesa");
-          return reply.code(403).send({ error: "Forbidden" });
-        }
-
-        const { id } = request.params;
-
-        app.logger.info({ tenantId, mesaId: id }, "Force deleting mesa");
-
-        // Check mesa belongs to tenant
-        const mesa = await app.db
-          .select()
-          .from(schema.mesas)
-          .where(and(
-            eq(schema.mesas.id, id as any),
-            eq(schema.mesas.restauranteId, tenantId as any)
-          ))
-          .limit(1);
-
-        if (mesa.length === 0) {
-          app.logger.warn({ tenantId, mesaId: id }, "Mesa not found");
-          return reply.code(404).send({ error: "Mesa não encontrada" });
-        }
-
-        // Delete pedidos associated with this mesa's comandas
-        const comandasForMesa = await app.db
-          .select()
-          .from(schema.comandas)
-          .where(eq(schema.comandas.mesaId, id as any));
-
-        for (const comanda of comandasForMesa) {
-          await app.db.delete(schema.pedidos).where(eq(schema.pedidos.comandaId, comanda.id));
-        }
-
-        // Delete comandas
-        await app.db.delete(schema.comandas).where(eq(schema.comandas.mesaId, id as any));
-
-        // Delete mesa
-        await app.db.delete(schema.mesas).where(eq(schema.mesas.id, id as any));
-
-        app.logger.info({ mesaId: id }, "Mesa force deleted successfully");
-        return reply.code(204).send();
-      } catch (error) {
-        app.logger.error({ err: error }, "Failed to force delete mesa");
-        return reply.code(500).send({ error: "Internal server error" });
-      }
-    }
-  );
 }

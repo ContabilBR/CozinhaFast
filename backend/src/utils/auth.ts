@@ -18,17 +18,12 @@ export async function requireAuth(
   request: FastifyRequest,
   reply: FastifyReply
 ): Promise<AuthContext | null> {
-  let isResponseSent = false;
-
   try {
     const authHeader = request.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       app.logger.warn({ authHeader: authHeader?.substring(0, 20) }, "Missing or invalid authorization header");
-      if (!reply.sent) {
-        isResponseSent = true;
-        reply.status(401).send({ error: "Unauthorized" });
-      }
+      await reply.status(401).send({ error: "Unauthorized" });
       return null;
     }
 
@@ -45,24 +40,12 @@ export async function requireAuth(
         .where(eq(sessionTable.token, token))
         .limit(1);
 
-      const sessionCount = Array.isArray(sessions) ? sessions.length : 0;
-      app.logger.debug({ found: sessionCount }, "Better Auth session table query result");
-
-      if (sessions && Array.isArray(sessions) && sessionCount > 0) {
+      if (sessions && sessions.length > 0) {
         const session = sessions[0];
-        if (!session) {
-          app.logger.warn({ sessionCount }, "Session array returned but first element is null");
-          if (!reply.sent) {
-            isResponseSent = true;
-            reply.status(401).send({ error: "Unauthorized" });
-          }
-          return null;
-        } else if (new Date(session.expiresAt) < new Date()) {
+
+        if (new Date(session.expiresAt) < new Date()) {
           app.logger.warn({ sessionId: session.id, expiresAt: session.expiresAt }, "Session expired");
-          if (!reply.sent) {
-            isResponseSent = true;
-            reply.status(401).send({ error: "Unauthorized" });
-          }
+          await reply.status(401).send({ error: "Unauthorized" });
           return null;
         }
 
@@ -77,7 +60,7 @@ export async function requireAuth(
           const user = users[0];
           let userRole = (user as any).role ?? "garcom";
 
-          // Get or create profile
+          // Get profile
           let profilesList = await app.db
             .select()
             .from(schema.profiles)
@@ -105,27 +88,17 @@ export async function requireAuth(
                 };
               } else {
                 app.logger.warn({ userId: user.id, restauranteId: rid }, "Profile references non-existent restaurante");
-                if (!reply.sent) {
-                  isResponseSent = true;
-                  reply.status(403).send({ error: "Usuário sem vínculo válido com um restaurante. Contate o administrador." });
-                }
+                await reply.status(403).send({ error: "Usuário sem vínculo válido com um restaurante. Contate o administrador." });
                 return null;
               }
             } else {
               app.logger.warn({ userId: user.id }, "Profile exists but has no restauranteId");
-              if (!reply.sent) {
-                isResponseSent = true;
-                reply.status(403).send({ error: "Usuário sem vínculo válido com um restaurante. Contate o administrador." });
-              }
+              await reply.status(403).send({ error: "Usuário sem vínculo válido com um restaurante. Contate o administrador." });
               return null;
             }
           } else {
-            // Sessão válida mas sem perfil — recusar acesso sem criar vínculo automático
             app.logger.warn({ userId: user.id }, "Better Auth user has no profile — denying access");
-            if (!reply.sent) {
-              isResponseSent = true;
-              reply.status(403).send({ error: "Usuário sem vínculo com um restaurante. Contate o administrador." });
-            }
+            await reply.status(403).send({ error: "Usuário sem vínculo com um restaurante. Contate o administrador." });
             return null;
           }
         }
@@ -151,10 +124,7 @@ export async function requireAuth(
 
         if (new Date(usuarioSession.expiresAt) < new Date()) {
           app.logger.warn({ sessionId: usuarioSession.id }, "Custom session expired");
-          if (!reply.sent) {
-            isResponseSent = true;
-            reply.status(401).send({ error: "Unauthorized" });
-          }
+          await reply.status(401).send({ error: "Unauthorized" });
           return null;
         }
 
@@ -184,17 +154,11 @@ export async function requireAuth(
     }
 
     app.logger.warn({ token: token.substring(0, 20) }, "No session found in either table");
-    if (!reply.sent && !isResponseSent) {
-      isResponseSent = true;
-      reply.status(401).send({ error: "Unauthorized" });
-    }
+    await reply.status(401).send({ error: "Unauthorized" });
     return null;
   } catch (error) {
     app.logger.error({ err: error }, "Auth validation failed");
-    if (!reply.sent && !isResponseSent) {
-      isResponseSent = true;
-      reply.status(401).send({ error: "Unauthorized" });
-    }
+    await reply.status(401).send({ error: "Unauthorized" });
     return null;
   }
 }
