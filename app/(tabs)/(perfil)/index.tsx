@@ -31,6 +31,7 @@ export default function PerfilScreen() {
   const { user, signOut } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const listPaddingBottom = insets.bottom + 96;
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
@@ -113,7 +114,7 @@ export default function PerfilScreen() {
       </View>
 
       <ScrollView
-        contentContainerStyle={{ padding: 20, paddingBottom: 120, gap: 20 }}
+        contentContainerStyle={{ padding: 20, paddingBottom: listPaddingBottom, gap: 20 }}
         contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
       >

@@ -360,6 +360,7 @@ export default function MesasScreen() {
   const COLORS = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const listPaddingBottom = insets.bottom + 96;
   const { user } = useAuth();
   const role = user?.role as string | undefined;
 
@@ -598,7 +599,7 @@ export default function MesasScreen() {
 
       {/* Content */}
       {loading ? (
-        <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: 120 }}>
+        <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: listPaddingBottom }}>
           {[0, 1, 2].map((row) => (
             <View key={row} style={{ flexDirection: "row" }}>
               <MesaCardSkeleton />
@@ -675,7 +676,7 @@ export default function MesasScreen() {
         </View>
       ) : (
         <ScrollView
-          contentContainerStyle={{ padding: 6, paddingBottom: 120 }}
+          contentContainerStyle={{ padding: 6, paddingBottom: listPaddingBottom }}
           contentInsetAdjustmentBehavior="automatic"
           refreshControl={
             <RefreshControl

@@ -317,6 +317,7 @@ function PratoCard({
 export default function CardapioScreen() {
   const COLORS = useColors();
   const insets = useSafeAreaInsets();
+  const listPaddingBottom = insets.bottom + 96;
   const { user } = useAuth();
   const [pratos, setPratos] = useState<Prato[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
@@ -612,7 +613,7 @@ export default function CardapioScreen() {
 
       {/* Content */}
       {loading ? (
-        <ScrollView contentContainerStyle={{ paddingTop: 8, paddingBottom: 120 }}>
+        <ScrollView contentContainerStyle={{ paddingTop: 8, paddingBottom: listPaddingBottom }}>
           <SectionSkeleton />
           <SectionSkeleton />
         </ScrollView>
@@ -686,7 +687,7 @@ export default function CardapioScreen() {
       ) : isSearching ? (
         // ── Search results (flat list) ──
         <ScrollView
-          contentContainerStyle={{ paddingTop: 12, paddingBottom: 120 }}
+          contentContainerStyle={{ paddingTop: 12, paddingBottom: listPaddingBottom }}
           keyboardShouldPersistTaps="handled"
         >
           {searchResults.length === 0 ? (
@@ -762,7 +763,7 @@ export default function CardapioScreen() {
         <SectionList
           sections={sections}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingTop: 8, paddingBottom: 120 }}
+          contentContainerStyle={{ paddingTop: 8, paddingBottom: listPaddingBottom }}
           contentInsetAdjustmentBehavior="automatic"
           stickySectionHeadersEnabled={false}
           refreshControl={

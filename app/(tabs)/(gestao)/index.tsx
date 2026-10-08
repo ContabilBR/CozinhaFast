@@ -48,6 +48,7 @@ export default function GestaoScreen() {
   const COLORS = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const listPaddingBottom = insets.bottom + 96;
   const { user } = useAuth();
 
   const role = user?.role;
@@ -101,7 +102,7 @@ export default function GestaoScreen() {
           </View>
         </View>
       </View>
-      <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: listPaddingBottom }} showsVerticalScrollIndicator={false}>
         <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
           {cards.map((card, index) => (
             <View key={card.title} style={{ width: "50%" }}>

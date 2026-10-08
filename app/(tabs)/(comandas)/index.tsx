@@ -146,6 +146,7 @@ export default function ComandasScreen() {
   const COLORS = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const listPaddingBottom = insets.bottom + 96;
 
   const [comandas, setComandas] = useState<ApiComanda[]>([]);
   const [loading, setLoading] = useState(true);
@@ -263,7 +264,7 @@ export default function ComandasScreen() {
             />
           )}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingTop: 16, paddingBottom: 120 }}
+          contentContainerStyle={{ paddingTop: 16, paddingBottom: listPaddingBottom }}
           contentInsetAdjustmentBehavior="automatic"
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={COLORS.primary} />

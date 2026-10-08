@@ -59,6 +59,7 @@ export default function GestaoPratos() {
   const COLORS = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const listPaddingBottom = insets.bottom + 96;
 
   const [pratos, setPratos] = useState<ApiPrato[]>([]);
   const [categorias, setCategorias] = useState<ApiCategoria[]>([]);
@@ -545,7 +546,7 @@ export default function GestaoPratos() {
       ) : (
         <ScrollView
           style={{ flex: 1 }}
-          contentContainerStyle={{ padding: 12, paddingBottom: 120 }}
+          contentContainerStyle={{ padding: 12, paddingBottom: listPaddingBottom }}
           showsVerticalScrollIndicator={false}
         >
           {filteredPratos.length === 0 ? (

@@ -110,6 +110,7 @@ export default function DeliveryScreen() {
   const COLORS = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const listPaddingBottom = insets.bottom + 96;
   const { user } = useAuth();
   const [pedidos, setPedidos] = useState<Entrega[]>([]);
   const [loading, setLoading] = useState(true);
@@ -253,7 +254,7 @@ export default function DeliveryScreen() {
         <FlatList
           data={pedidosExibidos}
           keyExtractor={(item) => item.entrega.id}
-          contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
+          contentContainerStyle={{ padding: 16, paddingBottom: listPaddingBottom }}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}

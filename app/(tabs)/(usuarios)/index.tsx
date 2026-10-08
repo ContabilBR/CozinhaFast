@@ -168,6 +168,7 @@ function UserCard({
 export default function UsuariosScreen() {
   const COLORS = useColors();
   const insets = useSafeAreaInsets();
+  const listPaddingBottom = insets.bottom + 96;
   const { user: authUser } = useAuth();
 
   const role = authUser?.role ?? "";
@@ -338,7 +339,7 @@ export default function UsuariosScreen() {
             <UserCard user={item} index={index} onEdit={openEdit} onDelete={handleDelete} canManage={canManage} />
           )}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingTop: 16, paddingBottom: 120 }}
+          contentContainerStyle={{ paddingTop: 16, paddingBottom: listPaddingBottom }}
           contentInsetAdjustmentBehavior="automatic"
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={COLORS.primary} />
