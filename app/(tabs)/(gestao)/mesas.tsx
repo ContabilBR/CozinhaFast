@@ -8,6 +8,7 @@ import {
   TextInput,
   TouchableOpacity,
   Pressable,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -26,6 +27,7 @@ interface ApiMesa {
   numero: number;
   capacidade: number;
   status: string;
+  comanda_id?: string | null;
 }
 
 const STATUS_OPTIONS = [
@@ -145,9 +147,23 @@ export default function GestaoMesasScreen() {
     }
   };
 
-  const handleDelete = (id: string, numeroMesa: number) => {
-    const nomeMesa = `Mesa ${numeroMesa}`;
-    console.log("[GestaoMesas] Confirmar exclusão:", id, nomeMesa);
+  const handleDelete = (mesa: ApiMesa) => {
+    const nomeMesa = `Mesa ${mesa.numero}`;
+    const isOcupada = mesa.status === "ocupada";
+    const isReservada = mesa.status === "reservada";
+
+    // Pre-flight check: do not even call the server if the table is busy
+    if (isOcupada || isReservada) {
+      const estadoLabel = isOcupada ? "ocupada" : "reservada";
+      Alert.alert(
+        "Não é possível excluir esta mesa",
+        `A Mesa ${mesa.numero} está ${estadoLabel}. Feche ou cancele a comanda, ou libere a mesa, antes de excluí-la.`,
+        [{ text: "OK" }]
+      );
+      return;
+    }
+
+    console.log("[GestaoMesas] Confirmar exclusão:", mesa.id, nomeMesa);
     setConfirmDialog({
       visible: true,
       title: "Excluir mesa?",
@@ -155,13 +171,16 @@ export default function GestaoMesasScreen() {
       confirmLabel: "Excluir",
       onConfirm: async () => {
         closeConfirm();
-        console.log("[GestaoMesas] DELETE /api/mesas/" + id);
+        console.log("[GestaoMesas] DELETE /api/mesas/" + mesa.id);
         try {
-          await apiDelete(`/api/mesas/${id}`);
-          console.log("[GestaoMesas] Mesa excluída:", id);
-          setMesas((prev) => prev.filter((m) => m.id !== id));
+          await apiDelete(`/api/mesas/${mesa.id}`);
+          console.log("[GestaoMesas] Mesa excluída:", mesa.id);
+          setMesas((prev) => prev.filter((m) => m.id !== mesa.id));
         } catch (e: unknown) {
           console.error("[GestaoMesas] Erro ao excluir:", e);
+          const msg = e instanceof Error ? e.message : "Não foi possível excluir a mesa.";
+          Alert.alert("Não é possível excluir esta mesa", msg, [{ text: "OK" }]);
+          await fetchMesas();
         }
       },
     });
@@ -192,11 +211,30 @@ export default function GestaoMesasScreen() {
     console.log("[GestaoMesas] Excluir em lote:", ids);
     setDeleting(true);
     for (const id of ids) {
+      const mesa = mesas.find((m) => m.id === id);
+      if (!mesa) continue;
+      const isOcupada = mesa.status === "ocupada";
+      const isReservada = mesa.status === "reservada";
+      if (isOcupada || isReservada) {
+        const estadoLabel = isOcupada ? "ocupada" : "reservada";
+        Alert.alert(
+          "Não é possível excluir esta mesa",
+          `A Mesa ${mesa.numero} está ${estadoLabel}. Feche ou cancele a comanda, ou libere a mesa, antes de excluí-la.`,
+          [{ text: "OK" }]
+        );
+        continue;
+      }
       try {
         await apiDelete(`/api/mesas/${id}`);
         console.log("[GestaoMesas] Mesa excluída:", id);
       } catch (e: unknown) {
         console.error("[GestaoMesas] Erro ao excluir", id, ":", e);
+        const msg = e instanceof Error ? e.message : "Não foi possível excluir a mesa.";
+        Alert.alert(
+          "Não é possível excluir esta mesa",
+          msg,
+          [{ text: "OK" }]
+        );
       }
     }
     setSelected(new Set());
@@ -559,7 +597,7 @@ export default function GestaoMesasScreen() {
                       <TouchableOpacity
                         onPress={() => {
                           console.log("[GestaoMesas] Excluir pressionado:", item.id);
-                          handleDelete(item.id, item.numero);
+                          handleDelete(item);
                         }}
                         style={{
                           flexDirection: "row",
