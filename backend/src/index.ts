@@ -84,7 +84,7 @@ export type App = typeof app;
 app.fastify.setErrorHandler((error: any, request, reply) => {
   // Let Fastify handle validation errors (FST_ERR_*) and other framework errors
   if (error.statusCode && error.statusCode < 500) {
-    return reply.status(error.statusCode).send({ error: error.message });
+    return reply.code(error.statusCode).send({ error: error.message });
   }
 
   // Log unexpected 5xx errors with full stack trace
@@ -102,7 +102,7 @@ app.fastify.setErrorHandler((error: any, request, reply) => {
   if (error.cause) console.error('Underlying cause:', error.cause);
 
   // Never leak raw SQL, bound params, or driver internals to the client
-  reply.status(500).send({ error: 'Erro interno do servidor. Tente novamente em instantes.' });
+  reply.code(500).send({ error: 'Erro interno do servidor. Tente novamente em instantes.' });
 });
 
 // Ensure a default restaurante exists for authentication

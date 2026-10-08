@@ -199,7 +199,7 @@ export function registerGarconRoutes(app: App) {
 
       app.logger.info({ userId: authUser.id, userRole: authUser.role }, "ROLE CHECK DEBUG - garcons write (POST /api/garcons)");
 
-      if (!requireRole(authUser, ["administrador", "gerente", "admin", "manager", "superadmin", "super_admin"], reply)) return;
+      if (!(await requireRole(authUser, ["administrador", "gerente", "admin", "manager", "superadmin", "super_admin"], reply))) return;
 
       try {
         if (!request.body.name || !request.body.email || !request.body.password) {
@@ -328,7 +328,7 @@ export function registerGarconRoutes(app: App) {
 
       app.logger.info({ userId: authUser.id, userRole: authUser.role }, "ROLE CHECK DEBUG - garcons write (PUT /api/garcons/:id)");
 
-      if (!requireRole(authUser, ["administrador", "gerente", "admin", "manager", "superadmin", "super_admin"], reply)) return;
+      if (!(await requireRole(authUser, ["administrador", "gerente", "admin", "manager", "superadmin", "super_admin"], reply))) return;
       const restauranteId = requireTenant(authUser);
 
       try {
@@ -424,7 +424,7 @@ export function registerGarconRoutes(app: App) {
 
       app.logger.info({ userId: authUser.id, userRole: authUser.role }, "ROLE CHECK DEBUG - garcons write (DELETE /api/garcons/:id)");
 
-      if (!requireRole(authUser, ["administrador", "gerente", "admin", "manager", "superadmin", "super_admin"], reply)) return;
+      if (!(await requireRole(authUser, ["administrador", "gerente", "admin", "manager", "superadmin", "super_admin"], reply))) return;
       const restauranteId = requireTenant(authUser);
 
       try {

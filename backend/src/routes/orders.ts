@@ -1743,6 +1743,12 @@ export function registerOrderRoutes(app: App) {
       schema: {
         description: "Get all comandas for kitchen display system (requires authentication)",
         tags: ["cozinha"],
+        querystring: {
+          type: "object",
+          properties: {
+            ativas: { type: "string", enum: ["true", "false"], description: "Filter only active comandas" },
+          },
+        },
         response: {
           200: {
             type: "object",
@@ -1796,65 +1802,135 @@ export function registerOrderRoutes(app: App) {
         },
       },
     },
-    async (request: FastifyRequest, reply: FastifyReply) => {
+    async (request: FastifyRequest<{ Querystring: { ativas?: string } }>, reply: FastifyReply) => {
       const authUser = await customRequireAuth(app, request, reply);
       if (!authUser) return;
 
       try {
         const tenantId = authUser.restauranteId;
-        app.logger.info({ tenantId }, "Fetching comandas for kitchen display");
+        const filtrarAtivas = (request.query as any).ativas === "true";
+        app.logger.info({ tenantId, filtrarAtivas }, "Fetching comandas for kitchen display");
 
-        // Query to get all comandas for this tenant with garcom info from usuarios table
-        const comandasQuery = sql`
-          SELECT
-            c.id,
-            c.mesa_numero,
-            c.garcom_id,
-            c.status,
-            c.total,
-            c.created_at,
-            c.tipo,
-            COALESCE(u.nome, 'Não informado') as garcom_nome,
-            e.cliente_nome   as entrega_cliente_nome,
-            e.bairro         as entrega_bairro,
-            e.observacao     as entrega_observacao,
-            e.tempo_estimado as entrega_tempo_estimado,
-            e.created_at     as entrega_created_at
-          FROM comandas c
-          LEFT JOIN usuarios u ON u.id::text = c.garcom_id
-          LEFT JOIN LATERAL (
-            SELECT cliente_nome, bairro, observacao, tempo_estimado, created_at
-            FROM entregas
-            WHERE comanda_id = c.id
-              AND restaurante_id = c.restaurante_id
-            ORDER BY created_at DESC
-            LIMIT 1
-          ) e ON true
-          WHERE c.restaurante_id = ${tenantId}::uuid
-          ORDER BY c.created_at DESC
-        `;
+        let comandasQuery;
+        let pedidosQuery;
+
+        if (filtrarAtivas) {
+          // Query for active comandas only
+          comandasQuery = sql`
+            SELECT
+              c.id,
+              c.mesa_numero,
+              c.garcom_id,
+              c.status,
+              c.total,
+              c.created_at,
+              c.tipo,
+              COALESCE(u.nome, 'Não informado') as garcom_nome,
+              e.cliente_nome   as entrega_cliente_nome,
+              e.bairro         as entrega_bairro,
+              e.observacao     as entrega_observacao,
+              e.tempo_estimado as entrega_tempo_estimado,
+              e.created_at     as entrega_created_at
+            FROM comandas c
+            LEFT JOIN usuarios u ON u.id::text = c.garcom_id
+            LEFT JOIN LATERAL (
+              SELECT cliente_nome, bairro, observacao, tempo_estimado, created_at
+              FROM entregas
+              WHERE comanda_id = c.id
+                AND restaurante_id = c.restaurante_id
+              ORDER BY created_at DESC
+              LIMIT 1
+            ) e ON true
+            WHERE c.restaurante_id = ${tenantId}::uuid
+              AND (
+                (c.tipo <> 'delivery' AND c.status = 'aberta')
+                OR
+                (c.tipo = 'delivery' AND EXISTS (
+                  SELECT 1 FROM entregas en
+                  WHERE en.comanda_id = c.id
+                    AND en.restaurante_id = c.restaurante_id
+                    AND en.status NOT IN ('saiu_entrega', 'cancelada', 'entregue')
+                ))
+              )
+              AND EXISTS (
+                SELECT 1 FROM pedidos p2
+                WHERE p2.comanda_id = c.id
+                  AND p2.status IN ('pendente', 'em_preparo', 'pronto')
+              )
+            ORDER BY c.created_at DESC
+          `;
+
+          // Query for active pedidos only
+          pedidosQuery = sql`
+            SELECT
+              p.id,
+              p.comanda_id,
+              COALESCE(pr.nome, 'Prato') as prato_nome,
+              pr.tempo_preparo_min,
+              p.quantidade,
+              p.status,
+              p.observacao,
+              p.created_at,
+              p.iniciado_em,
+              p.pronto_em
+            FROM pedidos p
+            LEFT JOIN pratos pr ON pr.id = p.prato_id
+            WHERE p.restaurante_id = ${tenantId}::uuid
+              AND p.status IN ('pendente', 'em_preparo', 'pronto')
+            ORDER BY p.created_at ASC
+          `;
+        } else {
+          // Query to get all comandas for this tenant with garcom info from usuarios table
+          comandasQuery = sql`
+            SELECT
+              c.id,
+              c.mesa_numero,
+              c.garcom_id,
+              c.status,
+              c.total,
+              c.created_at,
+              c.tipo,
+              COALESCE(u.nome, 'Não informado') as garcom_nome,
+              e.cliente_nome   as entrega_cliente_nome,
+              e.bairro         as entrega_bairro,
+              e.observacao     as entrega_observacao,
+              e.tempo_estimado as entrega_tempo_estimado,
+              e.created_at     as entrega_created_at
+            FROM comandas c
+            LEFT JOIN usuarios u ON u.id::text = c.garcom_id
+            LEFT JOIN LATERAL (
+              SELECT cliente_nome, bairro, observacao, tempo_estimado, created_at
+              FROM entregas
+              WHERE comanda_id = c.id
+                AND restaurante_id = c.restaurante_id
+              ORDER BY created_at DESC
+              LIMIT 1
+            ) e ON true
+            WHERE c.restaurante_id = ${tenantId}::uuid
+            ORDER BY c.created_at DESC
+          `;
+
+          // Query to get all pedidos for this tenant with prato names
+          pedidosQuery = sql`
+            SELECT
+              p.id,
+              p.comanda_id,
+              COALESCE(pr.nome, 'Prato') as prato_nome,
+              pr.tempo_preparo_min,
+              p.quantidade,
+              p.status,
+              p.observacao,
+              p.created_at,
+              p.iniciado_em,
+              p.pronto_em
+            FROM pedidos p
+            LEFT JOIN pratos pr ON pr.id = p.prato_id
+            WHERE p.restaurante_id = ${tenantId}::uuid
+            ORDER BY p.created_at ASC
+          `;
+        }
 
         const comandasResult = await (app.db as any).execute(comandasQuery) as any[];
-
-        // Query to get all pedidos for this tenant with prato names
-        const pedidosQuery = sql`
-          SELECT
-            p.id,
-            p.comanda_id,
-            COALESCE(pr.nome, 'Prato') as prato_nome,
-            pr.tempo_preparo_min,
-            p.quantidade,
-            p.status,
-            p.observacao,
-            p.created_at,
-            p.iniciado_em,
-            p.pronto_em
-          FROM pedidos p
-          LEFT JOIN pratos pr ON pr.id = p.prato_id
-          WHERE p.restaurante_id = ${tenantId}::uuid
-          ORDER BY p.created_at ASC
-        `;
-
         const pedidosResult = await (app.db as any).execute(pedidosQuery) as any[];
 
         // Group pedidos by comanda_id for efficient lookup

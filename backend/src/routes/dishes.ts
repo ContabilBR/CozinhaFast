@@ -328,7 +328,7 @@ export function registerDishRoutes(app: App) {
       const authUser = await customRequireAuth(app, request, reply);
       if (!authUser) return;
 
-      if (!requireRole(authUser, ["admin", "administrador", "gerente"], reply)) return;
+      if (!(await requireRole(authUser, ["admin", "administrador", "gerente"], reply))) return;
 
       try {
         if (!request.body.nome || !request.body.preco) {
@@ -646,7 +646,7 @@ export function registerDishRoutes(app: App) {
       const authUser = await customRequireAuth(app, request, reply);
       if (!authUser) return;
 
-      if (!requireRole(authUser, ["admin", "administrador", "gerente"], reply)) return;
+      if (!(await requireRole(authUser, ["admin", "administrador", "gerente"], reply))) return;
 
       try {
         const restauranteId = requireTenant(authUser);
@@ -818,7 +818,7 @@ export function registerDishRoutes(app: App) {
       const authUser = await customRequireAuth(app, request, reply);
       if (!authUser) return;
 
-      if (!requireRole(authUser, ["admin", "administrador", "gerente", "cozinheiro"], reply)) return;
+      if (!(await requireRole(authUser, ["admin", "administrador", "gerente", "cozinheiro"], reply))) return;
 
       if (typeof request.body?.disponivel !== "boolean") {
         return reply.code(400).send({ error: "disponivel (boolean) is required" });
@@ -886,7 +886,7 @@ export function registerDishRoutes(app: App) {
       const authUser = await customRequireAuth(app, request, reply);
       if (!authUser) return;
 
-      if (!requireRole(authUser, ["admin", "administrador", "gerente"], reply)) return;
+      if (!(await requireRole(authUser, ["admin", "administrador", "gerente"], reply))) return;
 
       try {
         const restauranteId = requireTenant(authUser);
@@ -947,7 +947,7 @@ export function registerDishRoutes(app: App) {
       const authUser = await customRequireAuth(app, request, reply);
       if (!authUser) return;
 
-      if (!requireRole(authUser, ["admin", "administrador", "gerente", "cozinheiro"], reply)) return;
+      if (!(await requireRole(authUser, ["admin", "administrador", "gerente", "cozinheiro"], reply))) return;
 
       try {
         const restauranteId = requireTenant(authUser);

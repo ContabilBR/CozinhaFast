@@ -37,7 +37,7 @@ export function registerPagamentoRoutes(app: App) {
       try {
         const authUser = await customRequireAuth(app, request, reply);
         if (!authUser) return;
-        if (!requireRole(authUser, ["garcom", "gerente", "administrador", "admin"], reply)) return;
+        if (!(await requireRole(authUser, ["garcom", "gerente", "administrador", "admin"], reply))) return;
         const restauranteId = requireTenant(authUser);
 
         // Verificar se comanda existe e pertence ao tenant
@@ -147,7 +147,7 @@ export function registerPagamentoRoutes(app: App) {
       try {
         const authUser = await customRequireAuth(app, request, reply);
         if (!authUser) return;
-        if (!requireRole(authUser, ["garcom", "gerente", "administrador", "admin"], reply)) return;
+        if (!(await requireRole(authUser, ["garcom", "gerente", "administrador", "admin"], reply))) return;
         const restauranteId = requireTenant(authUser);
 
         const pagamento = await db.select().from(schema.pagamentos).where(and(eq(schema.pagamentos.id, request.params.id), eq(schema.pagamentos.restauranteId, restauranteId)));

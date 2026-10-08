@@ -121,7 +121,7 @@ export function registerDeliveryRoutes(app: App) {
       try {
         const authUser = await customRequireAuth(app, request, reply);
         if (!authUser) return;
-        if (!requireRole(authUser, ["garcom", "gerente", "administrador", "admin", "superadmin", "super_admin"], reply)) return;
+        if (!(await requireRole(authUser, ["garcom", "gerente", "administrador", "admin", "superadmin", "super_admin"], reply))) return;
         const restauranteId = requireTenant(authUser);
         const body = request.body;
 
@@ -651,7 +651,7 @@ export function registerDeliveryRoutes(app: App) {
       try {
         const authUser = await customRequireAuth(app, request, reply);
         if (!authUser) return;
-        if (!requireRole(authUser, ["garcom", "gerente", "administrador", "admin", "superadmin", "super_admin"], reply)) return;
+        if (!(await requireRole(authUser, ["garcom", "gerente", "administrador", "admin", "superadmin", "super_admin"], reply))) return;
         const restauranteId = requireTenant(authUser);
 
         if (request.body.status === "entregue") {

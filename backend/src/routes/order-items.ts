@@ -668,7 +668,7 @@ export function registerOrderItemRoutes(app: App) {
       if (!session) return;
 
       // Cozinheiro não cancela item: só garçom e papéis gerenciais
-      if (!requireRole(session, ROLES_ATENDIMENTO, reply)) return;
+      if (!(await requireRole(session, ROLES_ATENDIMENTO, reply))) return;
 
       try {
         const restauranteId = requireTenant(session);

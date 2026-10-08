@@ -23,7 +23,7 @@ export async function requireAuth(
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       app.logger.warn({ authHeader: authHeader?.substring(0, 20) }, "Missing or invalid authorization header");
-      await reply.status(401).send({ error: "Unauthorized" });
+      await reply.code(401).send({ error: "Unauthorized" });
       return null;
     }
 
@@ -45,7 +45,7 @@ export async function requireAuth(
 
         if (new Date(session.expiresAt) < new Date()) {
           app.logger.warn({ sessionId: session.id, expiresAt: session.expiresAt }, "Session expired");
-          await reply.status(401).send({ error: "Unauthorized" });
+          await reply.code(401).send({ error: "Unauthorized" });
           return null;
         }
 
@@ -88,17 +88,17 @@ export async function requireAuth(
                 };
               } else {
                 app.logger.warn({ userId: user.id, restauranteId: rid }, "Profile references non-existent restaurante");
-                await reply.status(403).send({ error: "Usuário sem vínculo válido com um restaurante. Contate o administrador." });
+                await reply.code(403).send({ error: "Usuário sem vínculo válido com um restaurante. Contate o administrador." });
                 return null;
               }
             } else {
               app.logger.warn({ userId: user.id }, "Profile exists but has no restauranteId");
-              await reply.status(403).send({ error: "Usuário sem vínculo válido com um restaurante. Contate o administrador." });
+              await reply.code(403).send({ error: "Usuário sem vínculo válido com um restaurante. Contate o administrador." });
               return null;
             }
           } else {
             app.logger.warn({ userId: user.id }, "Better Auth user has no profile — denying access");
-            await reply.status(403).send({ error: "Usuário sem vínculo com um restaurante. Contate o administrador." });
+            await reply.code(403).send({ error: "Usuário sem vínculo com um restaurante. Contate o administrador." });
             return null;
           }
         }
@@ -124,7 +124,7 @@ export async function requireAuth(
 
         if (new Date(usuarioSession.expiresAt) < new Date()) {
           app.logger.warn({ sessionId: usuarioSession.id }, "Custom session expired");
-          await reply.status(401).send({ error: "Unauthorized" });
+          await reply.code(401).send({ error: "Unauthorized" });
           return null;
         }
 
@@ -154,21 +154,21 @@ export async function requireAuth(
     }
 
     app.logger.warn({ token: token.substring(0, 20) }, "No session found in either table");
-    await reply.status(401).send({ error: "Unauthorized" });
+    await reply.code(401).send({ error: "Unauthorized" });
     return null;
   } catch (error) {
     app.logger.error({ err: error }, "Auth validation failed");
-    await reply.status(401).send({ error: "Unauthorized" });
+    await reply.code(401).send({ error: "Unauthorized" });
     return null;
   }
 }
 
-export function requireRole(
+export async function requireRole(
   authUserOrUser: AuthContext | any,
   allowedRolesOrProfile?: string[] | any,
   allowedRolesOrReply?: string[] | FastifyReply,
   reply?: FastifyReply
-): boolean {
+): Promise<boolean> {
   let userRole: string;
   let actualReply: FastifyReply;
 
@@ -179,7 +179,7 @@ export function requireRole(
     const normalizedUserRole = userRole?.toLowerCase() ?? "";
     const normalizedAllowedRoles = allowedRoles.map(r => r.toLowerCase());
     if (!normalizedAllowedRoles.includes(normalizedUserRole)) {
-      actualReply.code(403).send({ error: "Você não tem permissão para esta ação." });
+      await actualReply.code(403).send({ error: "Você não tem permissão para esta ação." });
       return false;
     }
   } else {
@@ -189,7 +189,7 @@ export function requireRole(
     const normalizedUserRole = userRole?.toLowerCase() ?? "";
     const normalizedAllowedRoles = allowedRoles.map(r => r.toLowerCase());
     if (!normalizedAllowedRoles.includes(normalizedUserRole)) {
-      actualReply.code(403).send({ error: "Você não tem permissão para esta ação." });
+      await actualReply.code(403).send({ error: "Você não tem permissão para esta ação." });
       return false;
     }
   }
@@ -232,12 +232,12 @@ export function requireSuperAdmin(
   const userEmail = (request as any).userEmail;
 
   if (!userEmail) {
-    reply.status(401).send({ error: 'Não autenticado' });
+    reply.code(401).send({ error: 'Não autenticado' });
     return false;
   }
 
   if (!isSuperAdmin(userEmail)) {
-    reply.status(403).send({ error: 'Acesso restrito a Super Admin' });
+    reply.code(403).send({ error: 'Acesso restrito a Super Admin' });
     return false;
   }
 

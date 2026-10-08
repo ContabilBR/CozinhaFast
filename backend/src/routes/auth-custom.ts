@@ -83,13 +83,13 @@ export function registerCustomAuthRoutes(app: App) {
     // Check if test admin login is disabled
     if (!TEST_MODE && email.toLowerCase().trim() === TEST_ADMIN_EMAIL.toLowerCase()) {
       app.logger.warn({ email }, 'Test admin login attempt when test mode is disabled');
-      return reply.status(403).send({ error: 'Acesso desativado.' });
+      return reply.code(403).send({ error: 'Acesso desativado.' });
     }
 
     // Validate input
     if (!email || !senha) {
       app.logger.warn('Login attempt with missing email or senha');
-      return reply.status(400).send({ error: 'E-mail e senha são obrigatórios' });
+      return reply.code(400).send({ error: 'E-mail e senha são obrigatórios' });
     }
 
     // Rate limiting: máx 5 tentativas por e-mail+IP em 15 min; máx 30 por IP em 15 min
@@ -109,7 +109,7 @@ export function registerCustomAuthRoutes(app: App) {
         // Incrementar mesmo assim para não deixar o contador parar de crescer
         increment(keyEmailIp, WIN_15);
         increment(keyIp, WIN_15);
-        return reply.status(429).send({ error: 'Muitas tentativas. Tente novamente em 15 minutos.' });
+        return reply.code(429).send({ error: 'Muitas tentativas. Tente novamente em 15 minutos.' });
       }
 
       // Normalize email
@@ -129,7 +129,7 @@ export function registerCustomAuthRoutes(app: App) {
         app.logger.warn({ email: normalizedEmail }, 'User not found in usuarios table');
         increment(keyEmailIp, WIN_15);
         increment(keyIp, WIN_15);
-        return reply.status(401).send({ error: 'Invalid email or password' });
+        return reply.code(401).send({ error: 'Invalid email or password' });
       }
 
       const user = usuarios[0];
@@ -147,7 +147,7 @@ export function registerCustomAuthRoutes(app: App) {
         app.logger.warn({ email: normalizedEmail }, 'User has no password hash');
         increment(keyEmailIp, WIN_15);
         increment(keyIp, WIN_15);
-        return reply.status(401).send({ error: 'Invalid email or password' });
+        return reply.code(401).send({ error: 'Invalid email or password' });
       }
 
       // Verify password
@@ -160,7 +160,7 @@ export function registerCustomAuthRoutes(app: App) {
         app.logger.warn({ email: normalizedEmail }, 'Password mismatch');
         increment(keyEmailIp, WIN_15);
         increment(keyIp, WIN_15);
-        return reply.status(401).send({ error: 'Invalid email or password' });
+        return reply.code(401).send({ error: 'Invalid email or password' });
       }
 
       // Check if restaurant is active
@@ -172,13 +172,13 @@ export function registerCustomAuthRoutes(app: App) {
 
       if (restaurantes.length === 0) {
         app.logger.warn({ restauranteId: user.restauranteId }, 'Restaurant not found');
-        return reply.status(401).send({ error: 'Invalid email or password' });
+        return reply.code(401).send({ error: 'Invalid email or password' });
       }
 
       const restaurante = restaurantes[0];
       if (!restaurante.ativo) {
         app.logger.warn({ restauranteId: restaurante.id, restauranteName: restaurante.nome }, 'Login attempt on inactive restaurant');
-        return reply.status(403).send({ error: 'Restaurante desativado. Entre em contato com o suporte.' });
+        return reply.code(403).send({ error: 'Restaurante desativado. Entre em contato com o suporte.' });
       }
 
       // Create session token (uuid)
@@ -248,7 +248,7 @@ export function registerCustomAuthRoutes(app: App) {
 
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
         app.logger.warn('No Bearer token in Authorization header');
-        return reply.status(401).send({ error: 'Invalid or expired token' });
+        return reply.code(401).send({ error: 'Invalid or expired token' });
       }
 
       const token = authHeader.slice(7).trim();
@@ -266,7 +266,7 @@ export function registerCustomAuthRoutes(app: App) {
         // Check if session is expired
         if (new Date(session.expiresAt) < new Date()) {
           app.logger.warn({ token: token.substring(0, 20) }, 'Better Auth session expired');
-          return reply.status(401).send({ error: 'Invalid or expired token' });
+          return reply.code(401).send({ error: 'Invalid or expired token' });
         }
 
         // Get user from Better Auth user table
@@ -278,7 +278,7 @@ export function registerCustomAuthRoutes(app: App) {
 
         if (!users || users.length === 0) {
           app.logger.warn({ userId: session.userId }, 'Better Auth user not found');
-          return reply.status(401).send({ error: 'Invalid or expired token' });
+          return reply.code(401).send({ error: 'Invalid or expired token' });
         }
 
         const user = users[0];
@@ -308,7 +308,7 @@ export function registerCustomAuthRoutes(app: App) {
 
       if (usuarios.length === 0) {
         app.logger.warn({ userId }, 'User not found in usuarios table');
-        return reply.status(401).send({ error: 'Invalid or expired token' });
+        return reply.code(401).send({ error: 'Invalid or expired token' });
       }
 
       const user = usuarios[0];
@@ -472,7 +472,7 @@ export function registerCustomAuthRoutes(app: App) {
     const countIp = getCount(keyIp);
     if (countIp >= 10) {
       increment(keyIp, WIN_1H);
-      return reply.status(429).send({ error: 'Muitas tentativas. Tente novamente mais tarde.' });
+      return reply.code(429).send({ error: 'Muitas tentativas. Tente novamente mais tarde.' });
     }
     increment(keyIp, WIN_1H);
 
@@ -581,7 +581,7 @@ export async function verifyAndAttachUser(
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     app.logger.warn({ authHeader: authHeader?.substring(0, 20) }, 'No Bearer token in Authorization header for protected route');
-    reply.status(401).send({ error: 'Invalid or expired token' });
+    reply.code(401).send({ error: 'Invalid or expired token' });
     return false;
   }
 
@@ -598,7 +598,7 @@ export async function verifyAndAttachUser(
 
     if (!sessions || sessions.length === 0) {
       app.logger.warn({ token: token.substring(0, 20) }, 'Session token not found');
-      reply.status(401).send({ error: 'Invalid or expired token' });
+      reply.code(401).send({ error: 'Invalid or expired token' });
       return false;
     }
 
@@ -607,7 +607,7 @@ export async function verifyAndAttachUser(
     // Check if session has expired
     if (new Date(session.expiresAt) < new Date()) {
       app.logger.warn({ sessionId: session.id, expiresAt: session.expiresAt }, 'Session expired');
-      reply.status(401).send({ error: 'Invalid or expired token' });
+      reply.code(401).send({ error: 'Invalid or expired token' });
       return false;
     }
 
@@ -620,7 +620,7 @@ export async function verifyAndAttachUser(
 
     if (!usuarios || usuarios.length === 0) {
       app.logger.warn({ userId: session.userId }, 'User not found for session');
-      reply.status(401).send({ error: 'Invalid or expired token' });
+      reply.code(401).send({ error: 'Invalid or expired token' });
       return false;
     }
 
@@ -642,7 +642,7 @@ export async function verifyAndAttachUser(
       { err, token: token.substring(0, 20) },
       'Session token verification failed for protected route'
     );
-    reply.status(401).send({ error: 'Invalid or expired token' });
+    reply.code(401).send({ error: 'Invalid or expired token' });
     return false;
   }
 }

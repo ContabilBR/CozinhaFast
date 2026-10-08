@@ -60,7 +60,7 @@ export function registerEstoqueRoutes(app: App) {
     try {
       const session = await customRequireAuth(app, request, reply);
       if (!session) return;
-      if (!requireRole(session, ["gerente", "administrador", "admin"], reply)) return;
+      if (!(await requireRole(session, ["gerente", "administrador", "admin"], reply))) return;
       const restauranteId = requireTenant(session);
       const { nome, descricao, unidade, estoqueAtual, estoqueMinimo, custoUnitario } = request.body;
       if (!nome || !unidade) return reply.code(400).send({ error: "nome e unidade são obrigatórios" });
@@ -102,7 +102,7 @@ export function registerEstoqueRoutes(app: App) {
     try {
       const session = await customRequireAuth(app, request, reply);
       if (!session) return;
-      if (!requireRole(session, ["gerente", "administrador", "admin"], reply)) return;
+      if (!(await requireRole(session, ["gerente", "administrador", "admin"], reply))) return;
       const restauranteId = requireTenant(session);
       const { id } = request.params;
       const body = request.body;
@@ -155,7 +155,7 @@ export function registerEstoqueRoutes(app: App) {
     try {
       const session = await customRequireAuth(app, request, reply);
       if (!session) return;
-      if (!requireRole(session, ["gerente", "administrador", "admin"], reply)) return;
+      if (!(await requireRole(session, ["gerente", "administrador", "admin"], reply))) return;
       const restauranteId = requireTenant(session);
       const { id } = request.params;
 
@@ -180,7 +180,7 @@ export function registerEstoqueRoutes(app: App) {
     try {
       const session = await customRequireAuth(app, request, reply);
       if (!session) return;
-      if (!requireRole(session, ["gerente", "administrador", "admin"], reply)) return;
+      if (!(await requireRole(session, ["gerente", "administrador", "admin"], reply))) return;
       const restauranteId = requireTenant(session);
       const { insumoId, tipo, quantidade, motivo } = request.body;
 
@@ -289,7 +289,7 @@ export function registerEstoqueRoutes(app: App) {
     try {
       const session = await customRequireAuth(app, request, reply);
       if (!session) return;
-      if (!requireRole(session, ["gerente", "administrador", "admin"], reply)) return;
+      if (!(await requireRole(session, ["gerente", "administrador", "admin"], reply))) return;
       const restauranteId = requireTenant(session);
       const { pratoId } = request.params;
       const { insumo_id, quantidade } = request.body;
@@ -332,7 +332,7 @@ export function registerEstoqueRoutes(app: App) {
     try {
       const session = await customRequireAuth(app, request, reply);
       if (!session) return;
-      if (!requireRole(session, ["gerente", "administrador", "admin"], reply)) return;
+      if (!(await requireRole(session, ["gerente", "administrador", "admin"], reply))) return;
       const restauranteId = requireTenant(session);
       const { id } = request.params;
 
