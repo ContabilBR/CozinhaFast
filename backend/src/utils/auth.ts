@@ -179,7 +179,7 @@ export function requireRole(
     const normalizedUserRole = userRole?.toLowerCase() ?? "";
     const normalizedAllowedRoles = allowedRoles.map(r => r.toLowerCase());
     if (!normalizedAllowedRoles.includes(normalizedUserRole)) {
-      actualReply.status(403).send({ error: "Forbidden", message: "Insufficient permissions" });
+      actualReply.code(403).send({ error: "Você não tem permissão para esta ação." });
       return false;
     }
   } else {
@@ -189,7 +189,7 @@ export function requireRole(
     const normalizedUserRole = userRole?.toLowerCase() ?? "";
     const normalizedAllowedRoles = allowedRoles.map(r => r.toLowerCase());
     if (!normalizedAllowedRoles.includes(normalizedUserRole)) {
-      actualReply.status(403).send({ error: "Forbidden", message: "Insufficient permissions" });
+      actualReply.code(403).send({ error: "Você não tem permissão para esta ação." });
       return false;
     }
   }

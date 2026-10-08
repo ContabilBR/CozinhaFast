@@ -325,7 +325,6 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 200);
     const data = await res.json();
     expect(Array.isArray(data)).toBe(true);
-    // Verify structure of returned categorias
     if (data.length > 0) {
       expect(data[0].id).toBeDefined();
       expect(data[0].nome).toBeDefined();
@@ -410,7 +409,6 @@ describe("API Integration Tests", () => {
   });
 
   test("Delete categoria as non-admin returns 403", async () => {
-    // Create a category first
     const createRes = await authenticatedApi("/api/categorias", adminToken, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -421,7 +419,6 @@ describe("API Integration Tests", () => {
     await expectStatus(createRes, 201);
     const catData = await createRes.json();
 
-    // Try to delete as regular user
     const res = await authenticatedApi(`/api/categorias/${catData.categoria.id}`, regularUserToken, {
       method: "DELETE",
     });
@@ -434,7 +431,6 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 200);
     const data = await res.json();
     expect(Array.isArray(data)).toBe(true);
-    // Verify structure of returned pratos
     if (data.length > 0) {
       expect(data[0].id).toBeDefined();
       expect(data[0].nome).toBeDefined();
@@ -824,7 +820,6 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 200);
     const data = await res.json();
     expect(Array.isArray(data)).toBe(true);
-    // Verify structure of returned mesas
     if (data.length > 0) {
       expect(data[0].id).toBeDefined();
       expect(data[0].numero).toBeDefined();
@@ -1049,7 +1044,6 @@ describe("API Integration Tests", () => {
   });
 
   test("Create comanda with items in initial request returns 201", async () => {
-    // Create test prato
     const pratoRes = await authenticatedApi("/api/pratos", adminToken, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1061,7 +1055,6 @@ describe("API Integration Tests", () => {
     await expectStatus(pratoRes, 201);
     const pratoData = await pratoRes.json();
 
-    // Create mesa
     const mesaRes = await authenticatedApi("/api/mesas", adminToken, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1072,7 +1065,6 @@ describe("API Integration Tests", () => {
     await expectStatus(mesaRes, 201);
     const mesaData = await mesaRes.json();
 
-    // Create comanda with items
     const res = await authenticatedApi("/api/comandas", authToken, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1398,7 +1390,6 @@ describe("API Integration Tests", () => {
   });
 
   test("Create pedido standalone returns 201 or 404", async () => {
-    // Create test prato
     const pratoRes = await authenticatedApi("/api/pratos", adminToken, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1410,7 +1401,6 @@ describe("API Integration Tests", () => {
     await expectStatus(pratoRes, 201);
     const pratoData = await pratoRes.json();
 
-    // Create comanda
     const mesaRes = await authenticatedApi("/api/mesas", adminToken, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1429,7 +1419,6 @@ describe("API Integration Tests", () => {
     await expectStatus(comandaRes, 201);
     const comandaData = await comandaRes.json();
 
-    // Create pedido
     const res = await authenticatedApi("/api/pedidos", authToken, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1443,7 +1432,6 @@ describe("API Integration Tests", () => {
   });
 
   test("Cancel pedido returns 200 or 403 or 404 or 409", async () => {
-    // Create test prato
     const pratoRes = await authenticatedApi("/api/pratos", adminToken, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1455,7 +1443,6 @@ describe("API Integration Tests", () => {
     await expectStatus(pratoRes, 201);
     const pratoData = await pratoRes.json();
 
-    // Create mesa and comanda
     const mesaRes = await authenticatedApi("/api/mesas", adminToken, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1474,7 +1461,6 @@ describe("API Integration Tests", () => {
     await expectStatus(comandaRes, 201);
     const comandaData = await comandaRes.json();
 
-    // Add pedido to comanda
     const pedidosRes = await authenticatedApi(
       `/api/comandas/${comandaData.comanda.id}/pedidos`,
       authToken,
@@ -1497,7 +1483,6 @@ describe("API Integration Tests", () => {
     const pedidosData = await pedidosRes.json();
     const cancelPedidoId = pedidosData.pedidos[0].id;
 
-    // Cancel the pedido
     const res = await authenticatedApi(
       `/api/pedidos/${cancelPedidoId}/cancelar`,
       authToken,
@@ -1532,7 +1517,6 @@ describe("API Integration Tests", () => {
   });
 
   test("Cancel pedido with erro_lancamento motivo returns 200 or 403 or 404 or 409", async () => {
-    // Create test prato
     const pratoRes = await authenticatedApi("/api/pratos", adminToken, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1544,7 +1528,6 @@ describe("API Integration Tests", () => {
     await expectStatus(pratoRes, 201);
     const pratoData = await pratoRes.json();
 
-    // Create mesa and comanda
     const mesaRes = await authenticatedApi("/api/mesas", adminToken, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1563,7 +1546,6 @@ describe("API Integration Tests", () => {
     await expectStatus(comandaRes, 201);
     const comandaData = await comandaRes.json();
 
-    // Add pedido to comanda
     const pedidosRes = await authenticatedApi(
       `/api/comandas/${comandaData.comanda.id}/pedidos`,
       authToken,
@@ -1585,7 +1567,6 @@ describe("API Integration Tests", () => {
     const pedidosData = await pedidosRes.json();
     const pedidoId = pedidosData.pedidos[0].id;
 
-    // Cancel with erro_lancamento motivo
     const res = await authenticatedApi(
       `/api/pedidos/${pedidoId}/cancelar`,
       authToken,
@@ -1874,7 +1855,6 @@ describe("API Integration Tests", () => {
     if (res.status === 200) {
       const data = await res.json();
       expect(Array.isArray(data)).toBe(true);
-      // Each item should have required fields if present
       if (data.length > 0) {
         expect(data[0].id).toBeDefined();
         expect(data[0].status).toBeDefined();
@@ -2437,12 +2417,10 @@ describe("API Integration Tests", () => {
   test("Connect to realtime WebSocket without authentication should fail", async () => {
     try {
       const ws = await connectAuthenticatedWebSocket("/api/realtime", "invalid-token");
-      // If we reach here, connection might have failed as expected
       if (ws && ws.readyState === 1) {
         ws.close();
       }
     } catch (error) {
-      // Expected: authentication should fail
       expect(error).toBeDefined();
     }
   });
