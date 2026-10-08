@@ -2,7 +2,7 @@
 import { eq, and, inArray } from "drizzle-orm";
 import type { FastifyRequest, FastifyReply } from "fastify";
 import type { App } from "../index.js";
-import { requireAuth as customRequireAuth, requireTenant } from "../utils/auth.js";
+import { requireAuth as customRequireAuth, requireTenant, requireRole } from "../utils/auth.js";
 import * as schema from "../db/schema/schema.js";
 import { subtotalDaComanda } from "../services/total-comanda.js";
 
@@ -37,6 +37,7 @@ export function registerPagamentoRoutes(app: App) {
       try {
         const authUser = await customRequireAuth(app, request, reply);
         if (!authUser) return;
+        if (!requireRole(authUser, ["garcom", "gerente", "administrador", "admin"], reply)) return;
         const restauranteId = requireTenant(authUser);
 
         // Verificar se comanda existe e pertence ao tenant
@@ -46,6 +47,17 @@ export function registerPagamentoRoutes(app: App) {
         if (comanda[0].status !== "aberta") return reply.code(400).send({ error: "Comanda não está aberta" });
 
         const { forma_pagamento, valor, troco, referencia } = request.body;
+
+        if (!isFinite(valor) || valor <= 0) {
+          return reply.code(400).send({ error: "O valor do pagamento deve ser um número maior que zero." });
+        }
+        if (troco !== undefined && (!isFinite(troco) || troco < 0)) {
+          return reply.code(400).send({ error: "O troco deve ser um número maior ou igual a zero." });
+        }
+        const _gorjetaCheck = (request.body as any).gorjeta;
+        if (_gorjetaCheck !== undefined && (!isFinite(_gorjetaCheck) || _gorjetaCheck < 0)) {
+          return reply.code(400).send({ error: "A gorjeta deve ser um número maior ou igual a zero." });
+        }
 
         // Calcular total já pago
         const pagamentosExistentes = await db.select({ valor: schema.pagamentos.valor }).from(schema.pagamentos).where(and(eq(schema.pagamentos.comandaId, request.params.id), eq(schema.pagamentos.status, "confirmado")));
@@ -135,6 +147,7 @@ export function registerPagamentoRoutes(app: App) {
       try {
         const authUser = await customRequireAuth(app, request, reply);
         if (!authUser) return;
+        if (!requireRole(authUser, ["garcom", "gerente", "administrador", "admin"], reply)) return;
         const restauranteId = requireTenant(authUser);
 
         const pagamento = await db.select().from(schema.pagamentos).where(and(eq(schema.pagamentos.id, request.params.id), eq(schema.pagamentos.restauranteId, restauranteId)));

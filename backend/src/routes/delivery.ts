@@ -133,12 +133,29 @@ export function registerDeliveryRoutes(app: App) {
         }
 
         const result = await (db as any).transaction(async (tx: any) => {
+          // Validações de campos numéricos opcionais
+          if (body.taxa_entrega !== undefined && body.taxa_entrega < 0) {
+            throw new Error("VALIDATION: A taxa de entrega não pode ser negativa.");
+          }
+          if (body.tempo_estimado !== undefined && body.tempo_estimado < 0) {
+            throw new Error("VALIDATION: O tempo estimado não pode ser negativo.");
+          }
+          if (body.pagamento && body.pagamento.troco_para !== undefined && body.pagamento.troco_para < 0) {
+            throw new Error("VALIDATION: O valor para troco não pode ser negativo.");
+          }
+
           // Buscar preços dos pratos
           let subtotal = 0;
           const itensPedido: any[] = [];
           for (const item of body.itens) {
-            const [prato] = await tx.select({ id: schema.pratos.id, preco: schema.pratos.preco, nome: schema.pratos.nome }).from(schema.pratos).where(and(eq(schema.pratos.id, item.prato_id), eq(schema.pratos.restauranteId, restauranteId)));
+            const [prato] = await tx.select({ id: schema.pratos.id, preco: schema.pratos.preco, nome: schema.pratos.nome, disponivel: schema.pratos.disponivel }).from(schema.pratos).where(and(eq(schema.pratos.id, item.prato_id), eq(schema.pratos.restauranteId, restauranteId)));
             if (!prato) return { error: "Prato não encontrado: " + item.prato_id };
+            if (prato.disponivel === false) {
+              throw new Error("VALIDATION: Prato indisponível: " + prato.nome + ".");
+            }
+            if (item.quantidade > 99) {
+              throw new Error("VALIDATION: Quantidade máxima por item é 99.");
+            }
             const precoUnit = parseFloat(prato.preco);
             subtotal += precoUnit * item.quantidade;
             itensPedido.push({ pratoId: item.prato_id, quantidade: item.quantidade, precoUnitario: prato.preco, observacao: item.observacao || null });
@@ -242,7 +259,10 @@ export function registerDeliveryRoutes(app: App) {
         return reply.code(201).send({ comanda: result.comanda, entrega: result.entrega });
       } catch (err) {
         if ((err as any)?.message?.startsWith("TROCO_INSUFICIENTE:")) {
-          return reply.code(400).send({ error: (err as any).message.replace("TROCO_INSUFICIENTE:", "") });
+          return reply.code(400).send({ error: (err as any).message.replace("TROCO_INSUFICIENTE:", "").trim() });
+        }
+        if ((err as any)?.message?.startsWith("VALIDATION:")) {
+          return reply.code(400).send({ error: (err as any).message.replace("VALIDATION:", "").trim() });
         }
         app.logger.error({ error: (err as any).message }, "Erro ao criar pedido delivery");
         return reply.code(500).send({ error: "Erro interno" });

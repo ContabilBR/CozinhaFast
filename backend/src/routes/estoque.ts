@@ -2,7 +2,7 @@ import type { FastifyRequest, FastifyReply } from "fastify";
 import { eq, and, sql, desc, lte } from "drizzle-orm";
 import * as schema from "../db/schema/schema.js";
 import type { App } from "../index.js";
-import { requireAuth as customRequireAuth, requireTenant } from "../utils/auth.js";
+import { requireAuth as customRequireAuth, requireTenant, requireRole } from "../utils/auth.js";
 
 export function registerEstoqueRoutes(app: App) {
   const db = app.db as any;
@@ -16,6 +16,7 @@ export function registerEstoqueRoutes(app: App) {
     async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const session = await customRequireAuth(app, request, reply);
+      if (!session) return;
       const restauranteId = requireTenant(session);
       const insumos = await db.select().from(schema.insumos)
         .where(eq(schema.insumos.restauranteId, restauranteId))
@@ -34,6 +35,7 @@ export function registerEstoqueRoutes(app: App) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const session = await customRequireAuth(app, request, reply);
+        if (!session) return;
         const restauranteId = requireTenant(session);
         const alertas = await db.select().from(schema.insumos)
           .where(and(
@@ -57,9 +59,25 @@ export function registerEstoqueRoutes(app: App) {
     async (request: FastifyRequest<{ Body: { nome: string; descricao?: string; unidade: string; estoqueAtual?: string; estoqueMinimo?: string; custoUnitario?: string } }>, reply: FastifyReply) => {
     try {
       const session = await customRequireAuth(app, request, reply);
+      if (!session) return;
+      if (!requireRole(session, ["gerente", "administrador", "admin"], reply)) return;
       const restauranteId = requireTenant(session);
       const { nome, descricao, unidade, estoqueAtual, estoqueMinimo, custoUnitario } = request.body;
       if (!nome || !unidade) return reply.code(400).send({ error: "nome e unidade são obrigatórios" });
+
+      const VALID_UNITS = ["kg", "g", "l", "ml", "un", "cx", "pct", "dz"];
+      if (!VALID_UNITS.includes(unidade)) {
+        return reply.code(400).send({ error: "Unidade inválida. Use: " + VALID_UNITS.join(", ") });
+      }
+
+      const estMinNum = parseFloat(estoqueMinimo || "0");
+      const custUnitNum = parseFloat(custoUnitario || "0");
+      if (!isFinite(estMinNum) || estMinNum < 0) {
+        return reply.code(400).send({ error: "estoqueMinimo deve ser um número não-negativo." });
+      }
+      if (!isFinite(custUnitNum) || custUnitNum < 0) {
+        return reply.code(400).send({ error: "custoUnitario deve ser um número não-negativo." });
+      }
 
       const [insumo] = await db.insert(schema.insumos).values({
         nome, descricao: descricao || null, unidade,
@@ -74,8 +92,7 @@ export function registerEstoqueRoutes(app: App) {
       if (err.statusCode) return reply.code(err.statusCode).send({ error: err.message });
       return reply.code(500).send({ error: "Erro interno" });
     }
-    }
-  );
+  });
 
   // PUT /api/insumos/:id — atualizar insumo
   app.fastify.put(
@@ -84,12 +101,35 @@ export function registerEstoqueRoutes(app: App) {
     async (request: FastifyRequest<{ Params: { id: string }; Body: { nome?: string; descricao?: string; unidade?: string; estoqueMinimo?: string; custoUnitario?: string; ativo?: boolean } }>, reply: FastifyReply) => {
     try {
       const session = await customRequireAuth(app, request, reply);
+      if (!session) return;
+      if (!requireRole(session, ["gerente", "administrador", "admin"], reply)) return;
       const restauranteId = requireTenant(session);
       const { id } = request.params;
       const body = request.body;
 
       const [existing] = await db.select().from(schema.insumos).where(and(eq(schema.insumos.id, id), eq(schema.insumos.restauranteId, restauranteId)));
       if (!existing) return reply.code(404).send({ error: "Insumo não encontrado" });
+
+      if (body.unidade !== undefined) {
+        const VALID_UNITS = ["kg", "g", "l", "ml", "un", "cx", "pct", "dz"];
+        if (!VALID_UNITS.includes(body.unidade)) {
+          return reply.code(400).send({ error: "Unidade inválida. Use: " + VALID_UNITS.join(", ") });
+        }
+      }
+
+      if (body.estoqueMinimo !== undefined) {
+        const estMinNum = parseFloat(body.estoqueMinimo);
+        if (!isFinite(estMinNum) || estMinNum < 0) {
+          return reply.code(400).send({ error: "estoqueMinimo deve ser um número não-negativo." });
+        }
+      }
+
+      if (body.custoUnitario !== undefined) {
+        const custUnitNum = parseFloat(body.custoUnitario);
+        if (!isFinite(custUnitNum) || custUnitNum < 0) {
+          return reply.code(400).send({ error: "custoUnitario deve ser um número não-negativo." });
+        }
+      }
 
       const updates: any = { updatedAt: new Date() };
       if (body.nome !== undefined) updates.nome = body.nome;
@@ -105,8 +145,7 @@ export function registerEstoqueRoutes(app: App) {
       if (err.statusCode) return reply.code(err.statusCode).send({ error: err.message });
       return reply.code(500).send({ error: "Erro interno" });
     }
-    }
-  );
+  });
 
   // DELETE /api/insumos/:id — desativar insumo (soft delete)
   app.fastify.delete(
@@ -115,6 +154,8 @@ export function registerEstoqueRoutes(app: App) {
     async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
     try {
       const session = await customRequireAuth(app, request, reply);
+      if (!session) return;
+      if (!requireRole(session, ["gerente", "administrador", "admin"], reply)) return;
       const restauranteId = requireTenant(session);
       const { id } = request.params;
 
@@ -138,6 +179,8 @@ export function registerEstoqueRoutes(app: App) {
     async (request: FastifyRequest<{ Body: { insumoId: string; tipo: string; quantidade: string; motivo?: string } }>, reply: FastifyReply) => {
     try {
       const session = await customRequireAuth(app, request, reply);
+      if (!session) return;
+      if (!requireRole(session, ["gerente", "administrador", "admin"], reply)) return;
       const restauranteId = requireTenant(session);
       const { insumoId, tipo, quantidade, motivo } = request.body;
 
@@ -171,7 +214,7 @@ export function registerEstoqueRoutes(app: App) {
           estoqueAnterior: estoqueAnterior.toString(),
           estoqueNovo: estoqueNovo.toString(),
           motivo: motivo || null,
-          usuarioId: (session as any).user?.id || null,
+          usuarioId: (session as any).id || null,
           restauranteId,
         }).returning();
 
@@ -184,8 +227,7 @@ export function registerEstoqueRoutes(app: App) {
       if (err.statusCode) return reply.code(err.statusCode).send({ error: err.message });
       return reply.code(500).send({ error: "Erro interno" });
     }
-    }
-  );
+  });
 
   // GET /api/estoque/movimentacoes/:insumoId — histórico de movimentações de um insumo
   app.fastify.get(
@@ -194,6 +236,7 @@ export function registerEstoqueRoutes(app: App) {
     async (request: FastifyRequest<{ Params: { insumoId: string } }>, reply: FastifyReply) => {
     try {
       const session = await customRequireAuth(app, request, reply);
+      if (!session) return;
       const restauranteId = requireTenant(session);
       const { insumoId } = request.params;
 
@@ -206,8 +249,7 @@ export function registerEstoqueRoutes(app: App) {
       if (err.statusCode) return reply.code(err.statusCode).send({ error: err.message });
       return reply.code(500).send({ error: "Erro interno" });
     }
-    }
-  );
+  });
 
   // ==================== PRATO-INSUMOS (RECEITA) ====================
 
@@ -218,6 +260,7 @@ export function registerEstoqueRoutes(app: App) {
     async (request: FastifyRequest<{ Params: { pratoId: string } }>, reply: FastifyReply) => {
     try {
       const session = await customRequireAuth(app, request, reply);
+      if (!session) return;
       const restauranteId = requireTenant(session);
       const { pratoId } = request.params;
 
@@ -236,8 +279,7 @@ export function registerEstoqueRoutes(app: App) {
       if (err.statusCode) return reply.code(err.statusCode).send({ error: err.message });
       return reply.code(500).send({ error: "Erro interno" });
     }
-    }
-  );
+  });
 
   // POST /api/pratos/:pratoId/insumos — vincular insumo a prato
   app.fastify.post(
@@ -246,15 +288,30 @@ export function registerEstoqueRoutes(app: App) {
     async (request: FastifyRequest<{ Params: { pratoId: string }; Body: { insumo_id: string; quantidade: string } }>, reply: FastifyReply) => {
     try {
       const session = await customRequireAuth(app, request, reply);
+      if (!session) return;
+      if (!requireRole(session, ["gerente", "administrador", "admin"], reply)) return;
       const restauranteId = requireTenant(session);
       const { pratoId } = request.params;
       const { insumo_id, quantidade } = request.body;
 
       if (!insumo_id || !quantidade) return reply.code(400).send({ error: "insumo_id e quantidade são obrigatórios" });
 
-      // Check if prato exists
-      const [prato] = await db.select().from(schema.pratos).where(eq(schema.pratos.id, pratoId));
+      const qty = parseFloat(quantidade);
+      if (!isFinite(qty) || qty <= 0) {
+        return reply.code(400).send({ error: "quantidade deve ser um número maior que zero." });
+      }
+
+      // Check if prato exists and belongs to tenant
+      const [prato] = await db.select().from(schema.pratos).where(and(eq(schema.pratos.id, pratoId), eq(schema.pratos.restauranteId, restauranteId)));
       if (!prato) return reply.code(404).send({ error: "Prato não encontrado" });
+
+      // Check if insumo exists and belongs to tenant
+      const [insumo] = await db.select().from(schema.insumos).where(and(eq(schema.insumos.id, insumo_id), eq(schema.insumos.restauranteId, restauranteId)));
+      if (!insumo) return reply.code(404).send({ error: "Insumo não encontrado" });
+
+      // Check for duplicate link
+      const [existing] = await db.select().from(schema.pratoInsumos).where(and(eq(schema.pratoInsumos.pratoId, pratoId), eq(schema.pratoInsumos.insumoId, insumo_id)));
+      if (existing) return reply.code(400).send({ error: "Este insumo já está vinculado a este prato." });
 
       const [item] = await db.insert(schema.pratoInsumos).values({
         pratoId, insumoId: insumo_id, quantidadeUsada: quantidade, restauranteId,
@@ -265,8 +322,7 @@ export function registerEstoqueRoutes(app: App) {
       if (err.statusCode) return reply.code(err.statusCode).send({ error: err.message });
       return reply.code(500).send({ error: "Erro interno" });
     }
-    }
-  );
+  });
 
   // DELETE /api/pratos/:pratoId/insumos/:id — remover vínculo
   app.fastify.delete(
@@ -275,6 +331,8 @@ export function registerEstoqueRoutes(app: App) {
     async (request: FastifyRequest<{ Params: { pratoId: string; id: string } }>, reply: FastifyReply) => {
     try {
       const session = await customRequireAuth(app, request, reply);
+      if (!session) return;
+      if (!requireRole(session, ["gerente", "administrador", "admin"], reply)) return;
       const restauranteId = requireTenant(session);
       const { id } = request.params;
 
@@ -287,6 +345,5 @@ export function registerEstoqueRoutes(app: App) {
       if (err.statusCode) return reply.code(err.statusCode).send({ error: err.message });
       return reply.code(500).send({ error: "Erro interno" });
     }
-    }
-  );
+  });
 }
