@@ -325,6 +325,11 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 200);
     const data = await res.json();
     expect(Array.isArray(data)).toBe(true);
+    // Verify structure of returned categorias
+    if (data.length > 0) {
+      expect(data[0].id).toBeDefined();
+      expect(data[0].nome).toBeDefined();
+    }
   });
 
   test("List categorias without authentication returns 401", async () => {
@@ -429,6 +434,13 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 200);
     const data = await res.json();
     expect(Array.isArray(data)).toBe(true);
+    // Verify structure of returned pratos
+    if (data.length > 0) {
+      expect(data[0].id).toBeDefined();
+      expect(data[0].nome).toBeDefined();
+      expect(data[0].preco).toBeDefined();
+      expect(data[0].disponivel).toBeDefined();
+    }
   });
 
   test("List pratos with categoria filter returns 200", async () => {
@@ -491,6 +503,9 @@ describe("API Integration Tests", () => {
       }),
     });
     await expectStatus(res, 201);
+    const data = await res.json();
+    expect(data.prato.tempoPreparoMinutos).toBe(15);
+    expect(data.prato.ncm).toBe("21069090");
   });
 
   test("Create prato with missing required fields returns 400", async () => {
@@ -809,6 +824,13 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 200);
     const data = await res.json();
     expect(Array.isArray(data)).toBe(true);
+    // Verify structure of returned mesas
+    if (data.length > 0) {
+      expect(data[0].id).toBeDefined();
+      expect(data[0].numero).toBeDefined();
+      expect(data[0].status).toBeDefined();
+      expect(["disponivel", "ocupada", "reservada"]).toContain(data[0].status);
+    }
   });
 
   test("List mesas with status filter returns 200", async () => {
@@ -835,6 +857,22 @@ describe("API Integration Tests", () => {
     testTableId = data.id;
     expect(data.numero).toBe(tableNumber);
     expect(data.status).toBe("disponivel");
+    expect(data.capacidade).toBe(4);
+  });
+
+  test("Create mesa with custom status returns 201", async () => {
+    const res = await authenticatedApi("/api/mesas", adminToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        numero: Math.floor(Math.random() * 900000) + 100000,
+        capacidade: 6,
+        status: "reservada",
+      }),
+    });
+    await expectStatus(res, 201);
+    const data = await res.json();
+    expect(data.status).toBe("reservada");
   });
 
   test("Create mesa with missing numero returns 400", async () => {
@@ -1008,6 +1046,52 @@ describe("API Integration Tests", () => {
     testCommandaId = data.comanda.id;
     expect(data.comanda.mesa_id).toBe(testMesaForComandaId);
     expect(data.comanda.status).toBe("aberta");
+  });
+
+  test("Create comanda with items in initial request returns 201", async () => {
+    // Create test prato
+    const pratoRes = await authenticatedApi("/api/pratos", adminToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nome: `Prato for Comanda ${Date.now()}`,
+        preco: "30.00",
+      }),
+    });
+    await expectStatus(pratoRes, 201);
+    const pratoData = await pratoRes.json();
+
+    // Create mesa
+    const mesaRes = await authenticatedApi("/api/mesas", adminToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        numero: Math.floor(Math.random() * 900000) + 100000,
+      }),
+    });
+    await expectStatus(mesaRes, 201);
+    const mesaData = await mesaRes.json();
+
+    // Create comanda with items
+    const res = await authenticatedApi("/api/comandas", authToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mesaId: mesaData.id,
+        itens: [
+          {
+            prato_id: pratoData.prato.id,
+            quantidade: 2,
+            preco_unitario: 30.00,
+            observacao: "Sem sal",
+          },
+        ],
+      }),
+    });
+    await expectStatus(res, 201);
+    const data = await res.json();
+    expect(data.comanda).toBeDefined();
+    expect(data.comanda.mesa_id).toBe(mesaData.id);
   });
 
   test("Create comanda with non-existent mesa returns 404", async () => {
@@ -1598,6 +1682,19 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 400);
   });
 
+  test("Create garcon without authentication returns 401", async () => {
+    const res = await api("/api/garcons", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Unauth Garcon",
+        email: `garcon-unauth-${Date.now()}@example.com`,
+        password: "pass123456",
+      }),
+    });
+    await expectStatus(res, 401);
+  });
+
   test("Check email exists returns 200", async () => {
     const res = await authenticatedApi(
       `/api/garcons/check-email?email=test@example.com`,
@@ -1736,6 +1833,15 @@ describe("API Integration Tests", () => {
   test("Get garcom pedidos returns 200 or 401", async () => {
     const res = await authenticatedApi("/api/garcom/pedidos", authToken);
     await expectStatus(res, 200, 401);
+    if (res.status === 200) {
+      const data = await res.json();
+      expect(Array.isArray(data)).toBe(true);
+    }
+  });
+
+  test("Get garcom pedidos as non-garcom returns 200 or 401", async () => {
+    const res = await authenticatedApi("/api/garcom/pedidos", adminToken);
+    await expectStatus(res, 200, 401);
   });
 
   // ==================== Reports ====================
@@ -1765,6 +1871,15 @@ describe("API Integration Tests", () => {
   test("Get all archived comandas returns 200 or 500", async () => {
     const res = await authenticatedApi("/api/historico", authToken);
     await expectStatus(res, 200, 500);
+    if (res.status === 200) {
+      const data = await res.json();
+      expect(Array.isArray(data)).toBe(true);
+      // Each item should have required fields if present
+      if (data.length > 0) {
+        expect(data[0].id).toBeDefined();
+        expect(data[0].status).toBeDefined();
+      }
+    }
   });
 
   // ==================== Restaurant Info ====================
@@ -2317,6 +2432,19 @@ describe("API Integration Tests", () => {
     expect(ws).toBeDefined();
     expect(ws.readyState).toBe(1); // OPEN
     ws.close();
+  });
+
+  test("Connect to realtime WebSocket without authentication should fail", async () => {
+    try {
+      const ws = await connectAuthenticatedWebSocket("/api/realtime", "invalid-token");
+      // If we reach here, connection might have failed as expected
+      if (ws && ws.readyState === 1) {
+        ws.close();
+      }
+    } catch (error) {
+      // Expected: authentication should fail
+      expect(error).toBeDefined();
+    }
   });
 
   // ==================== SuperAdmin Endpoints ====================

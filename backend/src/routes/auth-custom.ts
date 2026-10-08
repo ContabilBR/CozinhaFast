@@ -7,6 +7,7 @@ import { randomUUID, randomBytes } from 'crypto';
 import { sendPasswordResetEmail } from '../utils/email.js';
 import { user as userTable, session as sessionTable } from '../db/schema/auth-schema.js';
 import { isSuperAdmin, requireSuperAdmin } from '../utils/auth.js';
+import { getClientKey, increment, getCount, resetKey } from '../utils/rate-limit.js';
 import { TEST_MODE, TEST_ADMIN_EMAIL } from '../config/test-mode.js';
 
 interface LoginBody {
@@ -91,9 +92,26 @@ export function registerCustomAuthRoutes(app: App) {
       return reply.status(400).send({ error: 'E-mail e senha são obrigatórios' });
     }
 
+    // Rate limiting: máx 5 tentativas por e-mail+IP em 15 min; máx 30 por IP em 15 min
+    const clientIp = getClientKey(request);
+    const normalizedEmailForRL = email.toLowerCase().trim();
+    const WIN_15 = 15 * 60 * 1000;
+    const keyEmailIp = `login:email:${normalizedEmailForRL}:${clientIp}`;
+    const keyIp = `login:ip:${clientIp}`;
+
     app.logger.info({ email }, 'Login attempt');
 
     try {
+      // Verificar contadores ANTES de consultar o banco (não revelar se e-mail existe)
+      const countEmailIp = getCount(keyEmailIp);
+      const countIp = getCount(keyIp);
+      if (countEmailIp >= 5 || countIp >= 30) {
+        // Incrementar mesmo assim para não deixar o contador parar de crescer
+        increment(keyEmailIp, WIN_15);
+        increment(keyIp, WIN_15);
+        return reply.status(429).send({ error: 'Muitas tentativas. Tente novamente em 15 minutos.' });
+      }
+
       // Normalize email
       const normalizedEmail = email.toLowerCase().trim();
       app.logger.debug({ normalizedEmail }, 'Normalized email for lookup');
@@ -109,6 +127,8 @@ export function registerCustomAuthRoutes(app: App) {
 
       if (usuarios.length === 0) {
         app.logger.warn({ email: normalizedEmail }, 'User not found in usuarios table');
+        increment(keyEmailIp, WIN_15);
+        increment(keyIp, WIN_15);
         return reply.status(401).send({ error: 'Invalid email or password' });
       }
 
@@ -125,6 +145,8 @@ export function registerCustomAuthRoutes(app: App) {
       // Verify password hash exists
       if (!senhaHash) {
         app.logger.warn({ email: normalizedEmail }, 'User has no password hash');
+        increment(keyEmailIp, WIN_15);
+        increment(keyIp, WIN_15);
         return reply.status(401).send({ error: 'Invalid email or password' });
       }
 
@@ -136,6 +158,8 @@ export function registerCustomAuthRoutes(app: App) {
 
       if (!passwordMatch) {
         app.logger.warn({ email: normalizedEmail }, 'Password mismatch');
+        increment(keyEmailIp, WIN_15);
+        increment(keyIp, WIN_15);
         return reply.status(401).send({ error: 'Invalid email or password' });
       }
 
@@ -171,6 +195,10 @@ export function registerCustomAuthRoutes(app: App) {
       });
 
       app.logger.info({ userId: user.id, email: user.email, role: user.role }, 'Session created successfully - returning role to client');
+
+      // Login bem-sucedido: zerar contadores
+      resetKey(keyEmailIp);
+      resetKey(keyIp);
 
       return reply.code(200).send({
         token,
@@ -323,6 +351,22 @@ export function registerCustomAuthRoutes(app: App) {
   }, async (request: FastifyRequest<{ Body: EsqueciSenhaBody }>, reply: FastifyReply) => {
     const { email } = request.body;
 
+    // Rate limiting silencioso: máx 3 por e-mail/hora, máx 10 por IP/hora
+    const clientIp = getClientKey(request);
+    const WIN_1H = 60 * 60 * 1000;
+    const normalizedEmailForRL = (email || '').toLowerCase().trim();
+    const keyEmail = `esqueci:email:${normalizedEmailForRL}`;
+    const keyIp = `esqueci:ip:${clientIp}`;
+    const countEmail = getCount(keyEmail);
+    const countIp = getCount(keyIp);
+    if (countEmail >= 3 || countIp >= 10) {
+      // Silencioso: retornar mensagem genérica SEM gerar token nem enviar e-mail
+      return reply.code(200).send({ message: 'Se esse e-mail estiver cadastrado, você receberá um link em instantes.' });
+    }
+    // Incrementar antes de processar (mesmo que o e-mail não exista)
+    increment(keyEmail, WIN_1H);
+    increment(keyIp, WIN_1H);
+
     app.logger.info({ email }, 'Password reset requested');
 
     try {
@@ -420,6 +464,17 @@ export function registerCustomAuthRoutes(app: App) {
     },
   }, async (request: FastifyRequest<{ Body: RedefinirSenhaBody }>, reply: FastifyReply) => {
     const { token, novaSenha } = request.body;
+
+    // Rate limiting: máx 10 tentativas por IP/hora
+    const clientIp = getClientKey(request);
+    const WIN_1H = 60 * 60 * 1000;
+    const keyIp = `redefinir:ip:${clientIp}`;
+    const countIp = getCount(keyIp);
+    if (countIp >= 10) {
+      increment(keyIp, WIN_1H);
+      return reply.status(429).send({ error: 'Muitas tentativas. Tente novamente mais tarde.' });
+    }
+    increment(keyIp, WIN_1H);
 
     app.logger.info({ tokenLength: token?.length }, 'Password reset attempt');
 

@@ -58,3 +58,38 @@ export function checkRateLimit(
   entry.count += 1;
   return true;
 }
+
+/**
+ * Incrementa o contador de uma chave e retorna o total atual.
+ * Não envia resposta — o chamador decide o que fazer.
+ */
+export function increment(
+  bucketKey: string,
+  windowMs: number
+): number {
+  const now = Date.now();
+  const entry = buckets.get(bucketKey);
+  if (!entry || entry.resetAt <= now) {
+    buckets.set(bucketKey, { count: 1, resetAt: now + windowMs });
+    return 1;
+  }
+  entry.count += 1;
+  return entry.count;
+}
+
+/**
+ * Lê o contador atual sem incrementar. Retorna 0 se não existir ou expirado.
+ */
+export function getCount(bucketKey: string): number {
+  const now = Date.now();
+  const entry = buckets.get(bucketKey);
+  if (!entry || entry.resetAt <= now) return 0;
+  return entry.count;
+}
+
+/**
+ * Zera o contador de uma chave (usado no login bem-sucedido).
+ */
+export function resetKey(bucketKey: string): void {
+  buckets.delete(bucketKey);
+}
