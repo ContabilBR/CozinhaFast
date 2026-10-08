@@ -33,7 +33,6 @@
         "BLUETOOTH_ADMIN",
         "BLUETOOTH_CONNECT",
         "BLUETOOTH_SCAN",
-        "ACCESS_FINE_LOCATION",
         "READ_MEDIA_IMAGES",
         "CAMERA"
       ]
