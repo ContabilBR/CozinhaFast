@@ -64,7 +64,6 @@ export default function GestaoScreen() {
     { icon: <UtensilsCrossed size={26} color={COLORS.primary} />, title: "Pratos", subtitle: "Gerenciar cardápio", route: "/(tabs)/(gestao)/pratos", color: COLORS.primary },
     { icon: <Tag size={26} color="#8B5CF6" />, title: "Categorias", subtitle: "Gerenciar categorias", route: "/(tabs)/(gestao)/categorias", color: "#8B5CF6" },
     { icon: <LayoutGrid size={26} color="#0EA5E9" />, title: "Mesas", subtitle: "Gerenciar mesas", route: "/(tabs)/(gestao)/mesas", color: "#0EA5E9" },
-    { icon: <Users size={26} color="#22C55E" />, title: "Garçons", subtitle: "Gerenciar garçons", route: "/(tabs)/(gestao)/garcons", color: "#22C55E" },
     { icon: <Users size={26} color="#EC4899" />, title: "Equipe", subtitle: "Gerenciar usuários", route: "/(tabs)/(usuarios)", color: "#EC4899" },
     { icon: <Store size={26} color="#F59E0B" />, title: "Restaurante", subtitle: "Dados do estabelecimento", route: "/(tabs)/(gestao)/restaurante", color: "#F59E0B" },
     { icon: <Ionicons name="cube-outline" size={26} color="#F97316" />, title: "Estoque", subtitle: "Controle de insumos", route: "/(tabs)/(gestao)/estoque", color: "#F97316" },
