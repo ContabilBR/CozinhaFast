@@ -40,15 +40,22 @@ export async function garantirColunasDeCancelamento(app: App): Promise<number> {
 
   try {
     const nomes = COLUNAS_CANCELAMENTO.map(([coluna]) => coluna);
-    const existentes = linhasDe(
-      await db.execute(
+    let existentes: any[] = [];
+
+    try {
+      const result = await db.execute(
         sql`SELECT table_name, column_name
             FROM information_schema.columns
             WHERE table_schema = current_schema()
               AND table_name IN ('pedidos', 'pedidos_historico')
               AND column_name IN (${sql.join(nomes.map((n) => sql`${n}`), sql`, `)})`
-      )
-    );
+      );
+      existentes = linhasDe(result);
+    } catch (queryErr) {
+      app.logger.warn({ err: queryErr }, "Failed to query information_schema at startup - proceeding anyway");
+      // Continue without checking existing columns - ALTER TABLE will use IF NOT EXISTS
+    }
+
     const jaExiste = new Set(existentes.map((r: any) => `${r.table_name}.${r.column_name}`));
 
     for (const tabela of TABELAS) {

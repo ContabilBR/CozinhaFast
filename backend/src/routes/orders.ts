@@ -221,18 +221,32 @@ export function registerOrderRoutes(app: App) {
           return reply.code(404).send({ error: "Nenhum restaurante associado" });
         }
 
-        // Check if mesa exists
+        // Check if mesa exists and belongs to tenant
         const mesaRecords = await app.db
           .select()
           .from(schema.mesas)
-          .where(eq(schema.mesas.id, mesaId))
+          .where(and(eq(schema.mesas.id, mesaId), eq(schema.mesas.restauranteId, restauranteId)))
           .limit(1);
 
         if (!mesaRecords.length) {
-          return reply.code(404).send({ error: "Mesa not found" });
+          return reply.code(404).send({ error: "Mesa não encontrada" });
         }
 
         const mesa = mesaRecords[0];
+
+        // Check for duplicate open comanda
+        const existingAberta = await app.db
+          .select({ id: schema.comandas.id })
+          .from(schema.comandas)
+          .where(and(
+            eq(schema.comandas.mesaId, mesaId),
+            eq(schema.comandas.status, "aberta" as any),
+            eq(schema.comandas.restauranteId, restauranteId)
+          ))
+          .limit(1);
+        if (existingAberta.length) {
+          return reply.code(409).send({ error: "Esta mesa já tem uma comanda aberta." });
+        }
 
         // Store garcom_id as the authenticated user's id (text, stable across deploys)
         const garcomId = authUser.id;
@@ -247,11 +261,40 @@ export function registerOrderRoutes(app: App) {
           "Creating comanda with auth user id as garcom_id"
         );
 
-        // Calculate total from items before insertion
+        // Items validation and prato price map
         let initialTotal = "0";
+        let pratoPriceMap: Map<string, string> = new Map();
+
         if (request.body.itens && request.body.itens.length > 0) {
+          // Validate quantities
+          for (const item of request.body.itens) {
+            if (!Number.isInteger(item.quantidade) || item.quantidade < 1 || item.quantidade > 99) {
+              return reply.code(400).send({ error: "Quantidade inválida: deve ser um número inteiro entre 1 e 99." });
+            }
+          }
+
+          // Fetch and validate pratos (ownership + availability)
+          const uniquePratoIds = Array.from(new Set(request.body.itens.map((i) => i.prato_id)));
+          const pratosResult = await app.db
+            .select({ id: schema.pratos.id, preco: schema.pratos.preco })
+            .from(schema.pratos)
+            .where(and(
+              inArray(schema.pratos.id, uniquePratoIds),
+              eq(schema.pratos.restauranteId, restauranteId),
+              eq(schema.pratos.disponivel, true)
+            ));
+
+          if (pratosResult.length !== uniquePratoIds.length) {
+            return reply.code(400).send({ error: "Prato indisponível ou não encontrado." });
+          }
+
+          for (const p of pratosResult) {
+            pratoPriceMap.set(p.id, p.preco);
+          }
+
           const calculatedTotal = request.body.itens.reduce((sum, item) => {
-            return sum + (item.quantidade * item.preco_unitario);
+            const preco = parseFloat(pratoPriceMap.get(item.prato_id) ?? "0");
+            return sum + (item.quantidade * preco);
           }, 0);
           initialTotal = calculatedTotal.toString();
         }
@@ -279,7 +322,7 @@ export function registerOrderRoutes(app: App) {
               comandaId: newComanda.id,
               pratoId: item.prato_id,
               quantidade: item.quantidade,
-              precoUnitario: item.preco_unitario.toString(),
+              precoUnitario: pratoPriceMap.get(item.prato_id) ?? "0",
               observacao: item.observacao || null,
               status: "pendente" as any,
               restauranteId,
@@ -554,49 +597,77 @@ export function registerOrderRoutes(app: App) {
 
       try {
         const comandaId = request.params.id;
+        const restauranteId = requireTenant(authUser);
 
         if (!request.body.items || !Array.isArray(request.body.items) || request.body.items.length === 0) {
           return reply.code(400).send({ error: "items array is required and must not be empty" });
         }
 
-        // Verify comanda exists
+        // Verify comanda exists and belongs to tenant
         const comandas = await app.db
           .select()
           .from(schema.comandas)
-          .where(eq(schema.comandas.id, comandaId))
+          .where(and(eq(schema.comandas.id, comandaId), eq(schema.comandas.restauranteId, restauranteId)))
           .limit(1);
 
         if (!comandas.length) {
-          return reply.code(404).send({ error: "Comanda not found" });
+          return reply.code(404).send({ error: "Comanda não encontrada" });
         }
 
         const comanda = comandas[0];
 
-        // Resolve garcom_id and verify ownership
-        const { garcomId: resolvedGarcomId } = await resolveGarcomId(app, authUser.email, authUser.id);
-
-        if (comanda.garcomId !== resolvedGarcomId) {
-          app.logger.warn(
-            { comandaId, expectedGarcomId: resolvedGarcomId, actualGarcomId: comanda.garcomId },
-            "Unauthorized access to comanda"
-          );
-          return reply.code(403).send({ error: "Unauthorized access to this comanda" });
+        // Delivery guard
+        if (comanda.tipo === 'delivery') {
+          return reply.code(409).send({ error: "Pedido de delivery: use a tela de Delivery." });
         }
 
-        // Verify all pratos exist
-        const uniquePratoIds = Array.from(new Set(request.body.items.map((item) => item.prato_id)));
-        const pratos = await app.db
-          .select({ id: schema.pratos.id })
-          .from(schema.pratos)
-          .where(inArray(schema.pratos.id, uniquePratoIds));
+        // Status check
+        if (comanda.status !== 'aberta') {
+          return reply.code(409).send({ error: "Esta comanda não está aberta." });
+        }
 
-        if (pratos.length !== uniquePratoIds.length) {
-          return reply.code(404).send({ error: "One or more pratos not found" });
+        // Role check: cozinheiro blocked; garçom only for own comanda; gerente/administrador/admin for any
+        const userRole = authUser.role?.toLowerCase() ?? "";
+        if (userRole === "cozinheiro" || userRole === "kitchen") {
+          return reply.code(403).send({ error: "Sem permissão para adicionar itens a esta comanda." });
+        }
+        if (userRole === "garcom") {
+          if (comanda.garcomId !== authUser.id) {
+            return reply.code(403).send({ error: "Sem permissão para adicionar itens a esta comanda." });
+          }
+        }
+        // gerente, administrador, admin can add to any comanda of the tenant — no further check needed
+
+        // Validate quantities
+        for (const item of request.body.items) {
+          if (!Number.isInteger(item.quantidade) || item.quantidade < 1 || item.quantidade > 99) {
+            return reply.code(400).send({ error: "Quantidade inválida: deve ser um número inteiro entre 1 e 99." });
+          }
+        }
+
+        // Fetch and validate pratos (ownership + availability)
+        const uniquePratoIds = Array.from(new Set(request.body.items.map((item) => item.prato_id)));
+        const pratosResult = await app.db
+          .select({ id: schema.pratos.id, preco: schema.pratos.preco })
+          .from(schema.pratos)
+          .where(and(
+            inArray(schema.pratos.id, uniquePratoIds),
+            eq(schema.pratos.restauranteId, restauranteId),
+            eq(schema.pratos.disponivel, true)
+          ));
+
+        if (pratosResult.length !== uniquePratoIds.length) {
+          return reply.code(400).send({ error: "Prato indisponível ou não encontrado." });
+        }
+
+        const pratoPriceMap = new Map<string, string>();
+        for (const p of pratosResult) {
+          pratoPriceMap.set(p.id, p.preco);
         }
 
         app.logger.info({ comandaId, itemsCount: request.body.items.length }, "Adding pedidos to comanda");
 
-        // Insert all items
+        // Insert all items using real prato prices
         const insertedPedidos = await app.db
           .insert(schema.pedidos)
           .values(
@@ -604,10 +675,10 @@ export function registerOrderRoutes(app: App) {
               comandaId,
               pratoId: item.prato_id,
               quantidade: item.quantidade,
-              precoUnitario: item.preco_unitario.toString(),
+              precoUnitario: pratoPriceMap.get(item.prato_id) ?? "0",
               observacao: item.observacao || null,
               status: "pendente" as any,
-              restauranteId: authUser.restauranteId,
+              restauranteId,
             }))
           )
           .returning();
@@ -645,7 +716,6 @@ export function registerOrderRoutes(app: App) {
 
         // Publish realtime event for each pedido created
         try {
-          const restauranteId = requireTenant(authUser);
           for (const pedido of insertedPedidos) {
             realtimeHub.publish(restauranteId, {
               type: "pedido.created",
@@ -685,14 +755,33 @@ export function registerOrderRoutes(app: App) {
         const session = await customRequireAuth(app, request, reply);
         if (!session) return;
         const restauranteId = requireTenant(session);
+
+        // Role check: cozinheiro blocked
+        const userRole = session.role?.toLowerCase() ?? "";
+        if (userRole === "cozinheiro" || userRole === "kitchen") {
+          return reply.code(403).send({ error: "Sem permissão para alterar a gorjeta." });
+        }
+
         const comanda = await app.db.select().from(schema.comandas).where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)));
         if (!comanda.length) return reply.code(404).send({ error: "Comanda não encontrada" });
         if (comanda[0].status !== "aberta") return reply.code(400).send({ error: "Comanda não está aberta" });
-        const gorjeta = Math.max(0, (request.body as any)?.gorjeta || 0);
+
+        // Delivery guard
+        if (comanda[0].tipo === 'delivery') {
+          return reply.code(400).send({ error: "Pedido de delivery não tem gorjeta nem taxa de serviço. A taxa de entrega já faz parte do total." });
+        }
+
+        // Value validation
+        const gorjetaRaw = (request.body as any)?.gorjeta;
+        const gorjetaValue = typeof gorjetaRaw === 'number' ? gorjetaRaw : parseFloat(String(gorjetaRaw ?? '0'));
+        if (!isFinite(gorjetaValue) || gorjetaValue < 0) {
+          return reply.code(400).send({ error: "Gorjeta inválida: deve ser um número maior ou igual a zero." });
+        }
+
         const subtotal = parseFloat(comanda[0].subtotal ?? "0");
-        const novoTotal = subtotal + gorjeta;
-        await app.db.update(schema.comandas).set({ total: novoTotal.toString(), gorjeta: gorjeta.toString() }).where(eq(schema.comandas.id, request.params.id));
-        return reply.code(200).send({ subtotal, gorjeta, total: novoTotal });
+        const novoTotal = subtotal + gorjetaValue;
+        await app.db.update(schema.comandas).set({ total: novoTotal.toString(), gorjeta: gorjetaValue.toString() }).where(eq(schema.comandas.id, request.params.id));
+        return reply.code(200).send({ subtotal, gorjeta: gorjetaValue, total: novoTotal });
       } catch (err) {
         return reply.code(500).send({ error: "Erro interno" });
       }
@@ -778,7 +867,8 @@ export function registerOrderRoutes(app: App) {
         app.logger.info({ comandaId: request.params.id, restauranteId, closedBy: session.id, closedByRole: session.role }, "Closing and archiving comanda");
 
         // Parâmetros com valores padrão; a gorjeta é lida como número
-        const gorjetaValue = parseFloat((request.body?.gorjeta?.toString()) ?? "0");
+        const gorjetaRaw2 = request.body?.gorjeta;
+        const gorjetaValue = typeof gorjetaRaw2 === 'number' ? gorjetaRaw2 : parseFloat(String(gorjetaRaw2 ?? '0'));
         const numPessoas = request.body?.num_pessoas ?? 0;
 
         // Check if this is a delivery order early to provide specific error messages
@@ -792,6 +882,14 @@ export function registerOrderRoutes(app: App) {
             return reply.code(400).send({ error: "Pedido de delivery não tem gorjeta nem taxa de serviço. A taxa de entrega já faz parte do total." });
           }
           return reply.code(400).send({ error: "Pedido de delivery não pode ser fechado por aqui. Use a tela de Delivery." });
+        }
+
+        // Validate gorjeta and num_pessoas
+        if (!isFinite(gorjetaValue) || gorjetaValue < 0) {
+          return reply.code(400).send({ error: "Gorjeta inválida: deve ser um número maior ou igual a zero." });
+        }
+        if (!Number.isInteger(numPessoas) || numPessoas < 0) {
+          return reply.code(400).send({ error: "Número de pessoas inválido: deve ser um inteiro maior ou igual a zero." });
         }
 
         // Toda a regra de fechamento vive no módulo services/fechamento-comanda.ts
@@ -861,15 +959,40 @@ export function registerOrderRoutes(app: App) {
 
       try {
         app.logger.info({ comandaId: request.params.id }, "Canceling comanda");
+        const restauranteId = requireTenant(session);
 
         const existing = await app.db
           .select()
           .from(schema.comandas)
-          .where(eq(schema.comandas.id, request.params.id));
+          .where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)));
 
         if (!existing.length) {
-          return reply.code(404).send({ error: "Comanda not found" });
+          return reply.code(404).send({ error: "Comanda não encontrada" });
         }
+
+        const comanda = existing[0];
+
+        // Status check
+        if (comanda.status !== 'aberta') {
+          return reply.code(409).send({ error: "Só é possível cancelar uma comanda aberta." });
+        }
+
+        // Delivery guard
+        if (comanda.tipo === 'delivery') {
+          return reply.code(409).send({ error: "Pedido de delivery: use a tela de Delivery." });
+        }
+
+        // Role check
+        const userRole = session.role?.toLowerCase() ?? "";
+        if (userRole === "cozinheiro" || userRole === "kitchen") {
+          return reply.code(403).send({ error: "Sem permissão para cancelar comandas." });
+        }
+        if (userRole === "garcom") {
+          if (comanda.garcomId !== session.id) {
+            return reply.code(403).send({ error: "Você só pode cancelar suas próprias comandas." });
+          }
+        }
+        // gerente, administrador, admin can cancel any comanda of the tenant
 
         const [updated] = await app.db
           .update(schema.comandas)
@@ -887,7 +1010,6 @@ export function registerOrderRoutes(app: App) {
 
         const remainingCount = remainingComandasResult[0]?.count || 0;
 
-        // Update mesa status to 'disponivel' only if no more open comandas
         if (remainingCount === 0) {
           await app.db
             .update(schema.mesas)
@@ -899,7 +1021,6 @@ export function registerOrderRoutes(app: App) {
 
         // Publish realtime event
         try {
-          const restauranteId = requireTenant(session);
           realtimeHub.publish(restauranteId, {
             type: "comanda.cancelled",
             entityId: updated.id,
@@ -951,18 +1072,45 @@ export function registerOrderRoutes(app: App) {
 
       try {
         app.logger.info({ comandaId: request.params.id }, "Deleting comanda");
+        const restauranteId = requireTenant(session);
 
         const existing = await app.db
           .select()
           .from(schema.comandas)
-          .where(eq(schema.comandas.id, request.params.id));
+          .where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)));
 
         if (!existing.length) {
           app.logger.warn({ comandaId: request.params.id }, "Comanda not found");
-          return reply.code(404).send({ error: "Comanda not found" });
+          return reply.code(404).send({ error: "Comanda não encontrada" });
         }
 
         const comanda = existing[0];
+
+        // Role check
+        const userRole = session.role?.toLowerCase() ?? "";
+        if (userRole === "cozinheiro" || userRole === "kitchen") {
+          return reply.code(403).send({ error: "Sem permissão para excluir comandas." });
+        }
+        if (userRole === "garcom") {
+          if (comanda.garcomId !== session.id) {
+            return reply.code(403).send({ error: "Você só pode excluir suas próprias comandas." });
+          }
+        }
+        // gerente, administrador, admin can delete any comanda of the tenant
+
+        // Status check
+        if (comanda.status !== 'aberta') {
+          return reply.code(409).send({ error: "Só é possível excluir uma comanda aberta." });
+        }
+
+        // Items check: count non-cancelled pedidos
+        const activeItemsResult = await (app.db as any).execute(
+          sql`SELECT COUNT(*) as count FROM pedidos WHERE comanda_id = ${request.params.id} AND status <> 'cancelado'`
+        ) as any[];
+        const activeItemsCount = Number(activeItemsResult[0]?.count ?? 0);
+        if (activeItemsCount > 0) {
+          return reply.code(409).send({ error: "Não é possível excluir uma comanda com itens. Cancele os itens primeiro." });
+        }
 
         // Delete all pedidos for this comanda
         app.logger.debug({ comandaId: request.params.id }, "Deleting pedidos for comanda");
@@ -1044,15 +1192,44 @@ export function registerOrderRoutes(app: App) {
 
       try {
         app.logger.info({ pedidoId: request.params.id }, "Updating pedido observacao");
+        const restauranteId = requireTenant(session);
 
-        const existing = await app.db
-          .select()
+        // Validate observacao length
+        if (request.body.observacao.length > 300) {
+          return reply.code(400).send({ error: "A observação não pode ter mais de 300 caracteres." });
+        }
+
+        // Fetch pedido joining comanda for tenant isolation
+        const pedidoResult = await app.db
+          .select({
+            id: schema.pedidos.id,
+            comandaId: schema.pedidos.comandaId,
+            pratoId: schema.pedidos.pratoId,
+            quantidade: schema.pedidos.quantidade,
+            precoUnitario: schema.pedidos.precoUnitario,
+            observacao: schema.pedidos.observacao,
+            status: schema.pedidos.status,
+            createdAt: schema.pedidos.createdAt,
+            comandaStatus: schema.comandas.status,
+          })
           .from(schema.pedidos)
-          .where(eq(schema.pedidos.id, request.params.id));
+          .innerJoin(schema.comandas, eq(schema.pedidos.comandaId, schema.comandas.id))
+          .where(and(eq(schema.pedidos.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)))
+          .limit(1);
 
-        if (!existing.length) {
+        if (!pedidoResult.length) {
           app.logger.warn({ pedidoId: request.params.id }, "Pedido not found");
-          return reply.code(404).send({ error: "Pedido not found" });
+          return reply.code(404).send({ error: "Pedido não encontrado" });
+        }
+
+        const pedido = pedidoResult[0];
+
+        if (pedido.status !== 'pendente') {
+          return reply.code(400).send({ error: "Só é possível alterar a observação de um item pendente." });
+        }
+
+        if (pedido.comandaStatus !== 'aberta') {
+          return reply.code(400).send({ error: "Só é possível alterar a observação de uma comanda aberta." });
         }
 
         const [updated] = await app.db
@@ -1144,13 +1321,14 @@ export function registerOrderRoutes(app: App) {
 
       try {
         const mesaId = request.params.id;
+        const restauranteId = requireTenant(session);
         app.logger.info({ mesaId }, "Fetching current open comanda for mesa");
 
-        // Validate that mesa exists
+        // Validate that mesa exists and belongs to tenant
         const mesaExists = await app.db
           .select({ id: schema.mesas.id })
           .from(schema.mesas)
-          .where(eq(schema.mesas.id, mesaId as any));
+          .where(and(eq(schema.mesas.id, mesaId as any), eq(schema.mesas.restauranteId, restauranteId)));
 
         if (!mesaExists.length) {
           app.logger.warn({ mesaId }, "Mesa not found");
@@ -1335,11 +1513,11 @@ export function registerOrderRoutes(app: App) {
         const restauranteId = requireTenant(session);
         app.logger.info({ mesaId }, "Fetching historical data for mesa");
 
-        // Step 1: Fetch mesa
+        // Step 1: Fetch mesa with tenant isolation
         const mesaResult = await app.db
           .select()
           .from(schema.mesas)
-          .where(eq(schema.mesas.id, mesaId))
+          .where(and(eq(schema.mesas.id, mesaId), eq(schema.mesas.restauranteId, restauranteId)))
           .limit(1);
 
         if (!mesaResult.length) {

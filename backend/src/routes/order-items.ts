@@ -340,6 +340,7 @@ export function registerOrderItemRoutes(app: App) {
 
       try {
         app.logger.info({ pedidoId: request.params.id }, "Getting pedido");
+        const restauranteId = requireTenant(session);
 
         const pedidos = await app.db
           .select({
@@ -356,11 +357,11 @@ export function registerOrderItemRoutes(app: App) {
           })
           .from(schema.pedidos)
           .leftJoin(schema.pratos, eq(schema.pedidos.pratoId, schema.pratos.id))
-          .leftJoin(schema.comandas, eq(schema.pedidos.comandaId, schema.comandas.id))
-          .where(eq(schema.pedidos.id, request.params.id));
+          .innerJoin(schema.comandas, eq(schema.pedidos.comandaId, schema.comandas.id))
+          .where(and(eq(schema.pedidos.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)));
 
         if (!pedidos.length) {
-          return reply.code(404).send({ error: "Pedido not found" });
+          return reply.code(404).send({ error: "Pedido não encontrado" });
         }
 
         const p = pedidos[0];

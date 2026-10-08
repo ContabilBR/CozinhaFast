@@ -36,16 +36,39 @@ const schema = { ...appSchema, ...authSchema };
 // Create application with schema for full database type support
 export const app = await createApplication(schema);
 
+// Add process-level error handlers for unhandled rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  app.logger.fatal({ reason, promise }, 'Unhandled promise rejection');
+  process.exit(1);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  app.logger.fatal({ err: error }, 'Uncaught exception');
+  process.exit(1);
+});
+
 // Enable automatic retry logic for all SELECT queries on connection errors
 // This transparently handles transient connection failures without requiring
 // changes to individual query call sites
 enableSelectRetry(app.db);
 
 // Garante as colunas de cancelamento de item (as migrações não rodam sozinhas no deploy)
-await garantirColunasDeCancelamento(app);
+try {
+  await garantirColunasDeCancelamento(app);
+} catch (error) {
+  app.logger.error({ err: error }, 'Failed to ensure schema columns');
+  // Don't exit - this is not critical
+}
 
 // Seed test admin and restaurante if test mode is enabled
-await seedTestAdmin(app);
+try {
+  await seedTestAdmin(app);
+} catch (error) {
+  app.logger.error({ err: error }, 'Failed to seed test admin');
+  // Don't exit - this is not critical
+}
 
 app.withStorage();
 
@@ -59,6 +82,20 @@ export type App = typeof app;
 
 // Add global error handler for debugging - only catch unexpected errors
 app.fastify.setErrorHandler((error: any, request, reply) => {
+  // Safety check: if reply is already sent, don't try to send again
+  if (reply.sent) {
+    app.logger.error(
+      {
+        err: error,
+        url: request.url,
+        method: request.method,
+        replySent: true,
+      },
+      'Error after reply already sent'
+    );
+    return;
+  }
+
   // Let Fastify handle validation errors (FST_ERR_*) and other framework errors
   if (error.statusCode && error.statusCode < 500) {
     return reply.status(error.statusCode).send({ error: error.message });
@@ -79,7 +116,11 @@ app.fastify.setErrorHandler((error: any, request, reply) => {
   if (error.cause) console.error('Underlying cause:', error.cause);
 
   // Never leak raw SQL, bound params, or driver internals to the client
-  reply.status(500).send({ error: 'Erro interno do servidor. Tente novamente em instantes.' });
+  try {
+    reply.status(500).send({ error: 'Erro interno do servidor. Tente novamente em instantes.' });
+  } catch (replyErr) {
+    app.logger.error({ err: replyErr }, 'Failed to send error response');
+  }
 });
 
 // Ensure a default restaurante exists for authentication
@@ -116,6 +157,22 @@ try {
   app.logger.error({ err: selectErr }, 'Failed to query restaurante table - migrations may not have run');
 }
 
+// Register request/response lifecycle hooks for debugging connection issues
+app.fastify.addHook('onRequest', async (request, reply) => {
+  app.logger.debug(
+    { method: request.method, path: request.url },
+    'Incoming request'
+  );
+});
+
+app.fastify.addHook('onSend', async (request, reply, payload) => {
+  app.logger.debug(
+    { method: request.method, path: request.url, statusCode: reply.statusCode },
+    'Sending response'
+  );
+  return payload;
+});
+
 // Register routes - IMPORTANT: Always use registration functions to avoid circular dependency issues
 // Register custom auth routes FIRST so they take priority
 // Renova as URLs assinadas das fotos (valem só 15 min) em toda resposta. Deve vir ANTES das rotas.
@@ -150,5 +207,12 @@ if (process.env.NODE_ENV !== 'production' && process.env.SEED_ENABLED === 'true'
   await seedDatabase(app);
 }
 
-await app.run();
-app.logger.info('Application running');
+try {
+  app.logger.info('Starting application...');
+  await app.run();
+  app.logger.info('Application running successfully on port ' + (process.env.PORT || 3000));
+} catch (error) {
+  console.error('Fatal error during app.run():', error);
+  app.logger.fatal({ err: error, stack: error instanceof Error ? error.stack : 'no stack' }, 'Fatal error during app.run()');
+  process.exit(1);
+}
