@@ -225,19 +225,19 @@ export function isSuperAdmin(email: string): boolean {
   return false;
 }
 
-export function requireSuperAdmin(
+export async function requireSuperAdmin(
   request: FastifyRequest,
   reply: FastifyReply
-): boolean {
+): Promise<boolean> {
   const userEmail = (request as any).userEmail;
 
   if (!userEmail) {
-    reply.code(401).send({ error: 'Não autenticado' });
+    await reply.code(401).send({ error: 'Não autenticado' });
     return false;
   }
 
   if (!isSuperAdmin(userEmail)) {
-    reply.code(403).send({ error: 'Acesso restrito a Super Admin' });
+    await reply.code(403).send({ error: 'Acesso restrito a Super Admin' });
     return false;
   }
 

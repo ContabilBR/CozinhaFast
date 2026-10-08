@@ -130,7 +130,7 @@ export function registerUsuariosRoutes(app: App) {
       const authUser = await customRequireAuth(app, request, reply);
       if (!authUser) return;
 
-      if (!requireRole(authUser, ["administrador", "gerente", "admin", "manager", "superadmin", "super_admin"], reply)) return;
+      if (!(await requireRole(authUser, ["administrador", "gerente", "admin", "manager", "superadmin", "super_admin"], reply))) return;
 
       try {
         if (!request.body.nome || !request.body.email || !request.body.senha) {
@@ -224,7 +224,7 @@ export function registerUsuariosRoutes(app: App) {
       const authUser = await customRequireAuth(app, request, reply);
       if (!authUser) return;
 
-      if (!requireRole(authUser, ["administrador", "gerente", "admin", "manager", "superadmin", "super_admin"], reply)) return;
+      if (!(await requireRole(authUser, ["administrador", "gerente", "admin", "manager", "superadmin", "super_admin"], reply))) return;
 
       const restauranteId = requireTenant(authUser);
       if (!restauranteId) {
@@ -301,7 +301,7 @@ export function registerUsuariosRoutes(app: App) {
       const authUser = await customRequireAuth(app, request, reply);
       if (!authUser) return;
 
-      if (!requireRole(authUser, ["administrador", "gerente", "admin", "manager", "superadmin", "super_admin"], reply)) return;
+      if (!(await requireRole(authUser, ["administrador", "gerente", "admin", "manager", "superadmin", "super_admin"], reply))) return;
 
       const restauranteId = requireTenant(authUser);
       if (!restauranteId) {

@@ -203,7 +203,7 @@ export function registerRelatoriosRoutes(app: App) {
       if (!authUser) return;
       // Revenue and business metrics are management-level information —
       // garcom/cozinheiro should not see the restaurant's financials.
-      if (!requireRole(authUser, ["administrador", "gerente"], reply)) return;
+      if (!(await requireRole(authUser, ["administrador", "gerente"], reply))) return;
 
       try {
         const tenantId = requireTenant(authUser);
@@ -686,7 +686,7 @@ export function registerRelatoriosRoutes(app: App) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const authUser = await customRequireAuth(app, request, reply);
       if (!authUser) return;
-      if (!requireRole(authUser, ["administrador", "gerente"], reply)) return;
+      if (!(await requireRole(authUser, ["administrador", "gerente"], reply))) return;
 
       try {
         const tenantId = requireTenant(authUser);

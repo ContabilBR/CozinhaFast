@@ -99,7 +99,7 @@ export function registerLgpdRoutes(app: App) {
       // Contas de garçom/cozinheiro são criadas e geridas pelo gerente, então
       // a exclusão delas deve passar por quem administra a equipe, não pelo
       // próprio garçom/cozinheiro.
-      if (!requireRole(authUser, ["administrador", "gerente"], reply)) return;
+      if (!(await requireRole(authUser, ["administrador", "gerente"], reply))) return;
       const restauranteId = requireTenant(authUser);
 
       // Try to find usuario in usuarios table, but handle Better Auth users gracefully

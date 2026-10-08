@@ -132,7 +132,7 @@ export function registerOrderRoutes(app: App) {
 
         app.logger.info({ count: comandas.length }, "Comandas retrieved");
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           comandas: comandas.map((c: any) => ({
             id: c.id,
             mesa_id: c.mesa_id,
@@ -147,7 +147,7 @@ export function registerOrderRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to list comandas");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -213,12 +213,12 @@ export function registerOrderRoutes(app: App) {
         const mesaId = request.body.mesa_id || request.body.mesaId;
 
         if (!mesaId) {
-          return reply.code(400).send({ error: "mesa_id is required" });
+          return await reply.code(400).send({ error: "mesa_id is required" });
         }
 
         const restauranteId = requireTenant(authUser);
         if (!restauranteId) {
-          return reply.code(404).send({ error: "Nenhum restaurante associado" });
+          return await reply.code(404).send({ error: "Nenhum restaurante associado" });
         }
 
         // Check if mesa exists and belongs to tenant
@@ -229,7 +229,7 @@ export function registerOrderRoutes(app: App) {
           .limit(1);
 
         if (!mesaRecords.length) {
-          return reply.code(404).send({ error: "Mesa não encontrada" });
+          return await reply.code(404).send({ error: "Mesa não encontrada" });
         }
 
         const mesa = mesaRecords[0];
@@ -245,7 +245,7 @@ export function registerOrderRoutes(app: App) {
           ))
           .limit(1);
         if (existingAberta.length) {
-          return reply.code(409).send({ error: "Esta mesa já tem uma comanda aberta." });
+          return await reply.code(409).send({ error: "Esta mesa já tem uma comanda aberta." });
         }
 
         // Store garcom_id as the authenticated user's id (text, stable across deploys)
@@ -269,7 +269,7 @@ export function registerOrderRoutes(app: App) {
           // Validate quantities
           for (const item of request.body.itens) {
             if (!Number.isInteger(item.quantidade) || item.quantidade < 1 || item.quantidade > 99) {
-              return reply.code(400).send({ error: "Quantidade inválida: deve ser um número inteiro entre 1 e 99." });
+              return await reply.code(400).send({ error: "Quantidade inválida: deve ser um número inteiro entre 1 e 99." });
             }
           }
 
@@ -285,7 +285,7 @@ export function registerOrderRoutes(app: App) {
             ));
 
           if (pratosResult.length !== uniquePratoIds.length) {
-            return reply.code(400).send({ error: "Prato indisponível ou não encontrado." });
+            return await reply.code(400).send({ error: "Prato indisponível ou não encontrado." });
           }
 
           for (const p of pratosResult) {
@@ -364,7 +364,7 @@ export function registerOrderRoutes(app: App) {
           app.logger.error({ err }, "Failed to publish comanda.created event");
         }
 
-        return reply.code(201).send({
+        return await reply.code(201).send({
           comanda: {
             id: comanda.id,
             mesa_id: comanda.mesaId,
@@ -377,7 +377,7 @@ export function registerOrderRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error, body: request.body }, "Failed to create comanda");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -467,13 +467,13 @@ export function registerOrderRoutes(app: App) {
           .where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)));
 
         if (!comandas.length) {
-          return reply.code(404).send({ error: "Comanda not found" });
+          return await reply.code(404).send({ error: "Comanda not found" });
         }
 
         const c = comandas[0];
 
         if (c.tipo === 'delivery') {
-          return reply.code(400).send({ error: "Este é um pedido de delivery. Use a tela de Delivery." });
+          return await reply.code(400).send({ error: "Este é um pedido de delivery. Use a tela de Delivery." });
         }
 
         // Get pedidos with prato details
@@ -495,7 +495,7 @@ export function registerOrderRoutes(app: App) {
 
         app.logger.info({ comandaId: request.params.id, itemsCount: pedidos_data.length }, "Comanda retrieved successfully");
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           id: c.id,
           mesa_id: c.mesaId,
           mesa_numero: c.mesaNumero,
@@ -522,7 +522,7 @@ export function registerOrderRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to get comanda");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -600,7 +600,7 @@ export function registerOrderRoutes(app: App) {
         const restauranteId = requireTenant(authUser);
 
         if (!request.body.items || !Array.isArray(request.body.items) || request.body.items.length === 0) {
-          return reply.code(400).send({ error: "items array is required and must not be empty" });
+          return await reply.code(400).send({ error: "items array is required and must not be empty" });
         }
 
         // Verify comanda exists and belongs to tenant
@@ -611,29 +611,29 @@ export function registerOrderRoutes(app: App) {
           .limit(1);
 
         if (!comandas.length) {
-          return reply.code(404).send({ error: "Comanda não encontrada" });
+          return await reply.code(404).send({ error: "Comanda não encontrada" });
         }
 
         const comanda = comandas[0];
 
         // Delivery guard
         if (comanda.tipo === 'delivery') {
-          return reply.code(409).send({ error: "Pedido de delivery: use a tela de Delivery." });
+          return await reply.code(409).send({ error: "Pedido de delivery: use a tela de Delivery." });
         }
 
         // Status check
         if (comanda.status !== 'aberta') {
-          return reply.code(409).send({ error: "Esta comanda não está aberta." });
+          return await reply.code(409).send({ error: "Esta comanda não está aberta." });
         }
 
         // Role check: cozinheiro blocked; garçom only for own comanda; gerente/administrador/admin for any
         const userRole = authUser.role?.toLowerCase() ?? "";
         if (userRole === "cozinheiro" || userRole === "kitchen") {
-          return reply.code(403).send({ error: "Sem permissão para adicionar itens a esta comanda." });
+          return await reply.code(403).send({ error: "Sem permissão para adicionar itens a esta comanda." });
         }
         if (userRole === "garcom") {
           if (comanda.garcomId !== authUser.id) {
-            return reply.code(403).send({ error: "Sem permissão para adicionar itens a esta comanda." });
+            return await reply.code(403).send({ error: "Sem permissão para adicionar itens a esta comanda." });
           }
         }
         // gerente, administrador, admin can add to any comanda of the tenant — no further check needed
@@ -641,7 +641,7 @@ export function registerOrderRoutes(app: App) {
         // Validate quantities
         for (const item of request.body.items) {
           if (!Number.isInteger(item.quantidade) || item.quantidade < 1 || item.quantidade > 99) {
-            return reply.code(400).send({ error: "Quantidade inválida: deve ser um número inteiro entre 1 e 99." });
+            return await reply.code(400).send({ error: "Quantidade inválida: deve ser um número inteiro entre 1 e 99." });
           }
         }
 
@@ -657,7 +657,7 @@ export function registerOrderRoutes(app: App) {
           ));
 
         if (pratosResult.length !== uniquePratoIds.length) {
-          return reply.code(400).send({ error: "Prato indisponível ou não encontrado." });
+          return await reply.code(400).send({ error: "Prato indisponível ou não encontrado." });
         }
 
         const pratoPriceMap = new Map<string, string>();
@@ -728,7 +728,7 @@ export function registerOrderRoutes(app: App) {
           app.logger.debug({ err: pubErr }, "Failed to publish pedido.created event");
         }
 
-        return reply.code(201).send({
+        return await reply.code(201).send({
           pedidos: insertedPedidos.map((p) => ({
             id: p.id,
             comanda_id: p.comandaId,
@@ -742,7 +742,7 @@ export function registerOrderRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error, body: request.body }, "Failed to add pedidos to comanda");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -759,7 +759,7 @@ export function registerOrderRoutes(app: App) {
         // Role check: cozinheiro blocked
         const userRole = session.role?.toLowerCase() ?? "";
         if (userRole === "cozinheiro" || userRole === "kitchen") {
-          return reply.code(403).send({ error: "Sem permissão para alterar a gorjeta." });
+          return await reply.code(403).send({ error: "Sem permissão para alterar a gorjeta." });
         }
 
         const comanda = await app.db.select().from(schema.comandas).where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)));
@@ -768,22 +768,22 @@ export function registerOrderRoutes(app: App) {
 
         // Delivery guard
         if (comanda[0].tipo === 'delivery') {
-          return reply.code(400).send({ error: "Pedido de delivery não tem gorjeta nem taxa de serviço. A taxa de entrega já faz parte do total." });
+          return await reply.code(400).send({ error: "Pedido de delivery não tem gorjeta nem taxa de serviço. A taxa de entrega já faz parte do total." });
         }
 
         // Value validation
         const gorjetaRaw = (request.body as any)?.gorjeta;
         const gorjetaValue = typeof gorjetaRaw === 'number' ? gorjetaRaw : parseFloat(String(gorjetaRaw ?? '0'));
         if (!isFinite(gorjetaValue) || gorjetaValue < 0) {
-          return reply.code(400).send({ error: "Gorjeta inválida: deve ser um número maior ou igual a zero." });
+          return await reply.code(400).send({ error: "Gorjeta inválida: deve ser um número maior ou igual a zero." });
         }
 
         const subtotal = parseFloat(comanda[0].subtotal ?? "0");
         const novoTotal = subtotal + gorjetaValue;
         await app.db.update(schema.comandas).set({ total: novoTotal.toString(), gorjeta: gorjetaValue.toString() }).where(eq(schema.comandas.id, request.params.id));
-        return reply.code(200).send({ subtotal, gorjeta: gorjetaValue, total: novoTotal });
+        return await reply.code(200).send({ subtotal, gorjeta: gorjetaValue, total: novoTotal });
       } catch (err) {
-        return reply.code(500).send({ error: "Erro interno" });
+        return await reply.code(500).send({ error: "Erro interno" });
       }
     }
   );
@@ -850,18 +850,18 @@ export function registerOrderRoutes(app: App) {
 
       // Fechamento é permitido para qualquer garçom ou papel gerencial (não para cozinheiro/kitchen)
       if (
-        !requireRole(
+        !(await requireRole(
           session,
           ["garcom", "gerente", "administrador", "admin", "manager", "superadmin", "super_admin"],
           reply
-        )
+        ))
       )
         return;
 
       try {
         const restauranteId = requireTenant(session);
         if (!restauranteId) {
-          return reply.code(404).send({ error: "Nenhum restaurante associado" });
+          return await reply.code(404).send({ error: "Nenhum restaurante associado" });
         }
 
         app.logger.info({ comandaId: request.params.id, restauranteId, closedBy: session.id, closedByRole: session.role }, "Closing and archiving comanda");
@@ -879,17 +879,17 @@ export function registerOrderRoutes(app: App) {
 
         if (comandaCheck.length > 0 && comandaCheck[0].tipo === 'delivery') {
           if (gorjetaValue > 0) {
-            return reply.code(400).send({ error: "Pedido de delivery não tem gorjeta nem taxa de serviço. A taxa de entrega já faz parte do total." });
+            return await reply.code(400).send({ error: "Pedido de delivery não tem gorjeta nem taxa de serviço. A taxa de entrega já faz parte do total." });
           }
-          return reply.code(400).send({ error: "Pedido de delivery não pode ser fechado por aqui. Use a tela de Delivery." });
+          return await reply.code(400).send({ error: "Pedido de delivery não pode ser fechado por aqui. Use a tela de Delivery." });
         }
 
         // Validate gorjeta and num_pessoas
         if (!isFinite(gorjetaValue) || gorjetaValue < 0) {
-          return reply.code(400).send({ error: "Gorjeta inválida: deve ser um número maior ou igual a zero." });
+          return await reply.code(400).send({ error: "Gorjeta inválida: deve ser um número maior ou igual a zero." });
         }
         if (!Number.isInteger(numPessoas) || numPessoas < 0) {
-          return reply.code(400).send({ error: "Número de pessoas inválido: deve ser um inteiro maior ou igual a zero." });
+          return await reply.code(400).send({ error: "Número de pessoas inválido: deve ser um inteiro maior ou igual a zero." });
         }
 
         // Toda a regra de fechamento vive no módulo services/fechamento-comanda.ts
@@ -902,20 +902,20 @@ export function registerOrderRoutes(app: App) {
 
         switch (resultado.tipo) {
           case "nao_encontrada":
-            return reply.code(404).send({ error: "Comanda not found" });
+            return await reply.code(404).send({ error: "Comanda not found" });
           case "tipo_nao_suportado":
-            return reply.code(409).send({ error: "Comandas de delivery não são fechadas por esta rota." });
+            return await reply.code(409).send({ error: "Comandas de delivery não são fechadas por esta rota." });
           case "nao_aberta":
-            return reply.code(409).send({ error: "comanda não está aberta" });
+            return await reply.code(409).send({ error: "comanda não está aberta" });
           case "pagamentos_pendentes":
-            return reply.code(400).send({ error: "Existem pagamentos pendentes (ex: Pix aguardando confirmação). Confirme ou cancele antes de fechar." });
+            return await reply.code(400).send({ error: "Existem pagamentos pendentes (ex: Pix aguardando confirmação). Confirme ou cancele antes de fechar." });
           case "pago_a_menos":
-            return reply.code(400).send({ error: `Total pago (R$ ${resultado.totalPago.toFixed(2)}) é menor que o total da comanda (R$ ${resultado.totalDevido.toFixed(2)}).` });
+            return await reply.code(400).send({ error: `Total pago (R$ ${resultado.totalPago.toFixed(2)}) é menor que o total da comanda (R$ ${resultado.totalDevido.toFixed(2)}).` });
         }
 
         const valorPorPessoa = numPessoas > 0 ? resultado.totalFinal / numPessoas : null;
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           success: true,
           mesa_numero: resultado.mesaNumero,
           subtotal: resultado.subtotal,
@@ -930,7 +930,7 @@ export function registerOrderRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to close and archive comanda");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -967,29 +967,29 @@ export function registerOrderRoutes(app: App) {
           .where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)));
 
         if (!existing.length) {
-          return reply.code(404).send({ error: "Comanda não encontrada" });
+          return await reply.code(404).send({ error: "Comanda não encontrada" });
         }
 
         const comanda = existing[0];
 
         // Status check
         if (comanda.status !== 'aberta') {
-          return reply.code(409).send({ error: "Só é possível cancelar uma comanda aberta." });
+          return await reply.code(409).send({ error: "Só é possível cancelar uma comanda aberta." });
         }
 
         // Delivery guard
         if (comanda.tipo === 'delivery') {
-          return reply.code(409).send({ error: "Pedido de delivery: use a tela de Delivery." });
+          return await reply.code(409).send({ error: "Pedido de delivery: use a tela de Delivery." });
         }
 
         // Role check
         const userRole = session.role?.toLowerCase() ?? "";
         if (userRole === "cozinheiro" || userRole === "kitchen") {
-          return reply.code(403).send({ error: "Sem permissão para cancelar comandas." });
+          return await reply.code(403).send({ error: "Sem permissão para cancelar comandas." });
         }
         if (userRole === "garcom") {
           if (comanda.garcomId !== session.id) {
-            return reply.code(403).send({ error: "Você só pode cancelar suas próprias comandas." });
+            return await reply.code(403).send({ error: "Você só pode cancelar suas próprias comandas." });
           }
         }
         // gerente, administrador, admin can cancel any comanda of the tenant
@@ -1030,7 +1030,7 @@ export function registerOrderRoutes(app: App) {
           app.logger.error({ err }, "Failed to publish comanda.cancelled event");
         }
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           id: updated.id,
           mesa_id: updated.mesaId,
           mesa_numero: updated.mesaNumero,
@@ -1042,7 +1042,7 @@ export function registerOrderRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to cancel comanda");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -1081,7 +1081,7 @@ export function registerOrderRoutes(app: App) {
 
         if (!existing.length) {
           app.logger.warn({ comandaId: request.params.id }, "Comanda not found");
-          return reply.code(404).send({ error: "Comanda não encontrada" });
+          return await reply.code(404).send({ error: "Comanda não encontrada" });
         }
 
         const comanda = existing[0];
@@ -1089,18 +1089,18 @@ export function registerOrderRoutes(app: App) {
         // Role check
         const userRole = session.role?.toLowerCase() ?? "";
         if (userRole === "cozinheiro" || userRole === "kitchen") {
-          return reply.code(403).send({ error: "Sem permissão para excluir comandas." });
+          return await reply.code(403).send({ error: "Sem permissão para excluir comandas." });
         }
         if (userRole === "garcom") {
           if (comanda.garcomId !== session.id) {
-            return reply.code(403).send({ error: "Você só pode excluir suas próprias comandas." });
+            return await reply.code(403).send({ error: "Você só pode excluir suas próprias comandas." });
           }
         }
         // gerente, administrador, admin can delete any comanda of the tenant
 
         // Status check
         if (comanda.status !== 'aberta') {
-          return reply.code(409).send({ error: "Só é possível excluir uma comanda aberta." });
+          return await reply.code(409).send({ error: "Só é possível excluir uma comanda aberta." });
         }
 
         // Items check: count non-cancelled pedidos
@@ -1109,7 +1109,7 @@ export function registerOrderRoutes(app: App) {
         ) as any[];
         const activeItemsCount = Number(activeItemsResult[0]?.count ?? 0);
         if (activeItemsCount > 0) {
-          return reply.code(409).send({ error: "Não é possível excluir uma comanda com itens. Cancele os itens primeiro." });
+          return await reply.code(409).send({ error: "Não é possível excluir uma comanda com itens. Cancele os itens primeiro." });
         }
 
         // Delete all pedidos for this comanda
@@ -1131,10 +1131,10 @@ export function registerOrderRoutes(app: App) {
 
         app.logger.info({ comandaId: request.params.id }, "Comanda deleted successfully");
 
-        return reply.code(204).send();
+        return await reply.code(204).send();
       } catch (error) {
         app.logger.error({ err: error, comandaId: request.params.id }, "Failed to delete comanda");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -1196,7 +1196,7 @@ export function registerOrderRoutes(app: App) {
 
         // Validate observacao length
         if (request.body.observacao.length > 300) {
-          return reply.code(400).send({ error: "A observação não pode ter mais de 300 caracteres." });
+          return await reply.code(400).send({ error: "A observação não pode ter mais de 300 caracteres." });
         }
 
         // Fetch pedido joining comanda for tenant isolation
@@ -1219,17 +1219,17 @@ export function registerOrderRoutes(app: App) {
 
         if (!pedidoResult.length) {
           app.logger.warn({ pedidoId: request.params.id }, "Pedido not found");
-          return reply.code(404).send({ error: "Pedido não encontrado" });
+          return await reply.code(404).send({ error: "Pedido não encontrado" });
         }
 
         const pedido = pedidoResult[0];
 
         if (pedido.status !== 'pendente') {
-          return reply.code(400).send({ error: "Só é possível alterar a observação de um item pendente." });
+          return await reply.code(400).send({ error: "Só é possível alterar a observação de um item pendente." });
         }
 
         if (pedido.comandaStatus !== 'aberta') {
-          return reply.code(400).send({ error: "Só é possível alterar a observação de uma comanda aberta." });
+          return await reply.code(400).send({ error: "Só é possível alterar a observação de uma comanda aberta." });
         }
 
         const [updated] = await app.db
@@ -1242,7 +1242,7 @@ export function registerOrderRoutes(app: App) {
 
         app.logger.info({ pedidoId: updated.id }, "Pedido observacao updated successfully");
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           id: updated.id,
           comanda_id: updated.comandaId,
           prato_id: updated.pratoId,
@@ -1254,7 +1254,7 @@ export function registerOrderRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error, pedidoId: request.params.id }, "Failed to update pedido observacao");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -1332,7 +1332,7 @@ export function registerOrderRoutes(app: App) {
 
         if (!mesaExists.length) {
           app.logger.warn({ mesaId }, "Mesa not found");
-          return reply.code(404).send({ error: "Mesa não encontrada" });
+          return await reply.code(404).send({ error: "Mesa não encontrada" });
         }
 
         // Query to find the most recent open comanda with dynamic total calculation
@@ -1361,7 +1361,7 @@ export function registerOrderRoutes(app: App) {
 
         if (!comandaResult || comandaResult.length === 0) {
           app.logger.info({ mesaId }, "No open comanda found for mesa");
-          return reply.code(200).send({ comanda: null });
+          return await reply.code(200).send({ comanda: null });
         }
 
         const comandaRow = comandaResult[0];
@@ -1389,7 +1389,7 @@ export function registerOrderRoutes(app: App) {
 
         app.logger.info({ comandaId: comandaRow.comanda_id, pedidoCount: pedidosResult.length }, "Comanda and pedidos retrieved");
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           comanda: {
             id: comandaRow.comanda_id,
             mesa_id: comandaRow.mesa_id,
@@ -1416,7 +1416,7 @@ export function registerOrderRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error, mesaId: request.params.id }, "Failed to fetch comanda for mesa");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -1521,7 +1521,7 @@ export function registerOrderRoutes(app: App) {
           .limit(1);
 
         if (!mesaResult.length) {
-          return reply.code(404).send({ error: "Mesa não encontrada" });
+          return await reply.code(404).send({ error: "Mesa não encontrada" });
         }
 
         const mesa = mesaResult[0];
@@ -1714,7 +1714,7 @@ export function registerOrderRoutes(app: App) {
           "Historical data retrieved successfully"
         );
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           mesa: {
             id: mesa.id,
             numero: mesa.numero,
@@ -1731,7 +1731,7 @@ export function registerOrderRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error, mesaId: request.params.id }, "Failed to fetch mesa historico");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -1989,10 +1989,10 @@ export function registerOrderRoutes(app: App) {
           };
         });
 
-        return reply.code(200).send({ comandas });
+        return await reply.code(200).send({ comandas });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to fetch comandas for kitchen");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );

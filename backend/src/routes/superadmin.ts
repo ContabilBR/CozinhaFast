@@ -75,7 +75,7 @@ export function registerSuperAdminRoutes(app: App) {
       const isAuth = await verifyAndAttachUser(app, request, reply);
       if (!isAuth) return;
 
-      if (!requireSuperAdmin(request, reply)) return;
+      if (!(await requireSuperAdmin(request, reply))) return;
 
       try {
         // Fetch all restaurants
@@ -232,7 +232,7 @@ export function registerSuperAdminRoutes(app: App) {
       const isAuth = await verifyAndAttachUser(app, request, reply);
       if (!isAuth) return;
 
-      if (!requireSuperAdmin(request, reply)) return;
+      if (!(await requireSuperAdmin(request, reply))) return;
 
       try {
         // Validate required fields
@@ -413,7 +413,7 @@ export function registerSuperAdminRoutes(app: App) {
       const isAuth = await verifyAndAttachUser(app, request, reply);
       if (!isAuth) return;
 
-      if (!requireSuperAdmin(request, reply)) return;
+      if (!(await requireSuperAdmin(request, reply))) return;
 
       try {
         // Check if restaurant exists
@@ -505,7 +505,7 @@ export function registerSuperAdminRoutes(app: App) {
       const isAuth = await verifyAndAttachUser(app, request, reply);
       if (!isAuth) return;
 
-      if (!requireSuperAdmin(request, reply)) return;
+      if (!(await requireSuperAdmin(request, reply))) return;
 
       try {
         // Check if at least one field is provided

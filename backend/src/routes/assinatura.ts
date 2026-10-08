@@ -175,7 +175,7 @@ export function registerAssinaturaRoutes(app: App) {
         if (!authUser) return;
         // Billing with the platform itself is an owner-level action — gerente
         // and other staff roles should not be able to change the plan.
-        if (!requireRole(authUser, ["administrador", "admin", "superadmin", "super_admin"], reply)) return;
+        if (!(await requireRole(authUser, ["administrador", "admin", "superadmin", "super_admin"], reply))) return;
         const restauranteId = requireTenant(authUser);
 
         const { plano, email, cpf_cnpj } = request.body;
@@ -243,7 +243,7 @@ export function registerAssinaturaRoutes(app: App) {
         if (!authUser) return;
         // Billing with the platform itself is an owner-level action — gerente
         // and other staff roles should not be able to cancel the subscription.
-        if (!requireRole(authUser, ["administrador", "admin", "superadmin", "super_admin"], reply)) return;
+        if (!(await requireRole(authUser, ["administrador", "admin", "superadmin", "super_admin"], reply))) return;
         const restauranteId = requireTenant(authUser);
 
         app.logger.info({ restauranteId }, "Cancelling subscription");

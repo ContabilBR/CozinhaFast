@@ -322,7 +322,7 @@ export function registerRestauranteRoutes(app: App) {
     ) => {
       const authUser = await customRequireAuth(app, request, reply);
       if (!authUser) return;
-      if (!requireRole(authUser, ["administrador", "gerente"], reply)) return;
+      if (!(await requireRole(authUser, ["administrador", "gerente"], reply))) return;
 
       try {
         let tenantId: string;
@@ -425,7 +425,7 @@ export function registerRestauranteRoutes(app: App) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const authUser = await customRequireAuth(app, request, reply);
       if (!authUser) return;
-      if (!requireRole(authUser, ["administrador", "gerente"], reply)) return;
+      if (!(await requireRole(authUser, ["administrador", "gerente"], reply))) return;
 
       try {
         let tenantId: string;

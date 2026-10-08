@@ -32,9 +32,9 @@ export function registerCardapioPublicoRoutes(app: App) {
           })
           .from(schema.restaurante);
 
-        return reply.code(200).send({ restaurantes });
+        return await reply.code(200).send({ restaurantes });
       } catch (err) {
-        return reply.code(500).send({ error: "Erro interno" });
+        return await reply.code(500).send({ error: "Erro interno" });
       }
     }
   );
@@ -169,7 +169,7 @@ init()
 </script>
 </body>
 </html>`;
-    reply.header("Content-Type", "text/html; charset=utf-8").send(html);
+    await reply.header("Content-Type", "text/html; charset=utf-8").send(html);
   });
 
   // GET /api/public/cardapio/:restauranteId — cardápio público (sem auth)
@@ -180,7 +180,7 @@ init()
       try {
         const { restauranteId } = request.params;
         const [rest] = await db.select({ id: schema.restaurante.id, nome: schema.restaurante.nome }).from(schema.restaurante).where(eq(schema.restaurante.id, restauranteId));
-        if (!rest) return reply.code(404).send({ error: "Restaurante não encontrado" });
+        if (!rest) return await reply.code(404).send({ error: "Restaurante não encontrado" });
 
         const categorias = await db.select().from(schema.categorias).where(eq(schema.categorias.restauranteId, restauranteId));
         const pratos = await db.select().from(schema.pratos).where(and(eq(schema.pratos.restauranteId, restauranteId), eq(schema.pratos.disponivel, true)));
@@ -197,9 +197,9 @@ init()
           cardapio.push({ categoria: { id: "outros", nome: "Outros" }, pratos: pratosSeemCategoria.map((p: any) => ({ id: p.id, nome: p.nome, descricao: p.descricao, preco: parseFloat(p.preco), imagemUrl: p.imagemUrl })) });
         }
 
-        return reply.code(200).send({ restaurante: rest, cardapio });
+        return await reply.code(200).send({ restaurante: rest, cardapio });
       } catch (err) {
-        return reply.code(500).send({ error: "Erro interno" });
+        return await reply.code(500).send({ error: "Erro interno" });
       }
     }
   );
@@ -212,14 +212,14 @@ init()
       try {
         const { restaurante_id, mesa_numero, cliente_nome, itens } = request.body;
         if (!restaurante_id || !mesa_numero || !itens || itens.length === 0) {
-          return reply.code(400).send({ error: "restaurante_id, mesa_numero e itens são obrigatórios" });
+          return await reply.code(400).send({ error: "restaurante_id, mesa_numero e itens são obrigatórios" });
         }
 
         const [rest] = await db.select({ id: schema.restaurante.id }).from(schema.restaurante).where(eq(schema.restaurante.id, restaurante_id));
-        if (!rest) return reply.code(404).send({ error: "Restaurante não encontrado" });
+        if (!rest) return await reply.code(404).send({ error: "Restaurante não encontrado" });
 
         const [mesa] = await db.select().from(schema.mesas).where(and(eq(schema.mesas.numero, mesa_numero), eq(schema.mesas.restauranteId, restaurante_id)));
-        if (!mesa) return reply.code(404).send({ error: "Mesa não encontrada" });
+        if (!mesa) return await reply.code(404).send({ error: "Mesa não encontrada" });
 
         const result = await (db as any).transaction(async (tx: any) => {
           const itensPedido: any[] = [];
@@ -274,11 +274,11 @@ init()
           return { comanda_id: comanda.id, mesa: mesa_numero, itens_adicionados: itensPedido.length };
         });
 
-        if (result.error) return reply.code(400).send({ error: result.error });
-        return reply.code(201).send({ success: true, ...result, mensagem: "Pedido recebido! A cozinha já está preparando." });
+        if (result.error) return await reply.code(400).send({ error: result.error });
+        return await reply.code(201).send({ success: true, ...result, mensagem: "Pedido recebido! A cozinha já está preparando." });
       } catch (err) {
         app.logger.error({ error: (err as any).message }, "Erro no pedido público");
-        return reply.code(500).send({ error: "Erro interno" });
+        return await reply.code(500).send({ error: "Erro interno" });
       }
     }
   );
@@ -291,7 +291,7 @@ init()
       try {
         const { restauranteId, mesaNumero } = request.params;
         const [mesa] = await db.select().from(schema.mesas).where(and(eq(schema.mesas.numero, parseInt(mesaNumero)), eq(schema.mesas.restauranteId, restauranteId)));
-        if (!mesa) return reply.code(404).send({ error: "Mesa não encontrada" });
+        if (!mesa) return await reply.code(404).send({ error: "Mesa não encontrada" });
 
         let comanda = null;
         let pedidos: any[] = [];
@@ -301,9 +301,9 @@ init()
           pedidos = await db.select({ id: schema.pedidos.id, quantidade: schema.pedidos.quantidade, precoUnitario: schema.pedidos.precoUnitario, status: schema.pedidos.status, pratoNome: schema.pratos.nome }).from(schema.pedidos).leftJoin(schema.pratos, eq(schema.pedidos.pratoId, schema.pratos.id)).where(eq(schema.pedidos.comandaId, comandaAberta.id));
         }
 
-        return reply.code(200).send({ mesa: { numero: mesa.numero, status: mesa.status }, comanda, pedidos });
+        return await reply.code(200).send({ mesa: { numero: mesa.numero, status: mesa.status }, comanda, pedidos });
       } catch (err) {
-        return reply.code(500).send({ error: "Erro interno" });
+        return await reply.code(500).send({ error: "Erro interno" });
       }
     }
   );
