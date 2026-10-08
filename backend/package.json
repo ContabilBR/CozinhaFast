@@ -15,6 +15,7 @@
   "dependencies": {
     "@electric-sql/pglite": "0.2.17",
     "@fastify/aws-lambda": "6.1.1",
+    "@fastify/cors": "11.3.1",
     "@fastify/multipart": "9.3.0",
     "@fastify/swagger": "9.6.1",
     "@fastify/websocket": "11.2.0",
