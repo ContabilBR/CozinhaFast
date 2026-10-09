@@ -74,9 +74,9 @@ export function registerAuthRoutes(app: App) {
       },
     },
     async (request: FastifyRequest<{ Body: SignUpBody }>, reply: FastifyReply) => {
-      if (process.env.NODE_ENV === "production") {
-        return await reply.code(404).send();
-      }
+      // Cadastro por e-mail desativado SEMPRE (não depende de NODE_ENV): restaurantes e usuários
+      // são criados pelo Admin Geral (/api/superadmin/restaurantes) e por /api/usuarios.
+      return await reply.code(404).send();
       try {
         app.logger.info({ email: request.body.email }, "Sign up attempt");
 
@@ -486,51 +486,6 @@ export function registerAuthRoutes(app: App) {
         return await reply.code(200).send({ success: true });
       } catch (error) {
         app.logger.error({ err: error }, "Sign out failed");
-        return await reply.code(500).send({ error: "Internal server error" });
-      }
-    }
-  );
-
-  // GET /api/seed-status - Check seed status
-  app.fastify.get(
-    "/api/seed-status",
-    {
-      schema: {
-        description: "Get database seed status",
-        tags: ["auth"],
-        response: {
-          200: {
-            type: "object",
-            properties: {
-              users: { type: "number" },
-              accounts: { type: "number" },
-              profiles: { type: "number" },
-            },
-          },
-        },
-      },
-    },
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      try {
-        const users = await app.db.select().from(userTable);
-        const accounts = await app.db
-          .select()
-          .from(accountTable)
-          .where(eq(accountTable.providerId, "credential"));
-        const profiles = await app.db.select().from(schema.profiles);
-
-        app.logger.info(
-          { userCount: users.length, accountCount: accounts.length, profileCount: profiles.length },
-          "Seed status retrieved"
-        );
-
-        return await reply.code(200).send({
-          users: users.length,
-          accounts: accounts.length,
-          profiles: profiles.length,
-        });
-      } catch (error) {
-        app.logger.error({ err: error }, "Failed to get seed status");
         return await reply.code(500).send({ error: "Internal server error" });
       }
     }
