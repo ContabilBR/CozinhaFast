@@ -161,6 +161,8 @@ export async function fecharComanda(
           motivoCancelamento: schema.pedidos.motivoCancelamento,
           motivoCancelamentoDetalhe: schema.pedidos.motivoCancelamentoDetalhe,
           canceladoAposInicio: schema.pedidos.canceladoAposInicio,
+          iniciadoEm: schema.pedidos.iniciadoEm,
+          prontoEm: schema.pedidos.prontoEm,
           pratoNome: schema.pratos.nome,
         })
         .from(schema.pedidos)

@@ -1338,7 +1338,7 @@ export function registerOrderRoutes(app: App) {
         // Query to find the most recent open comanda with dynamic total calculation
         const comandaQuery = sql`
           SELECT
-            c.id,
+            c.id as comanda_id,
             c.mesa_id,
             c.mesa_numero,
             c.garcom_id,
@@ -1366,7 +1366,14 @@ export function registerOrderRoutes(app: App) {
         }
 
         const comandaRow = comandaResult[0];
-        const comandaId = comandaRow.id;
+
+        // Extract ID with explicit column name from alias
+        let comandaId = comandaRow.comanda_id || comandaRow.id;
+
+        if (!comandaId) {
+          app.logger.error({ comandaRow, keys: Object.keys(comandaRow) }, "Could not extract comanda ID from result row");
+          return await reply.code(500).send({ error: "Failed to retrieve comanda ID" });
+        }
 
         // Query to get pedidos for this comanda
         const pedidosQuery = sql`
@@ -1391,17 +1398,31 @@ export function registerOrderRoutes(app: App) {
 
         app.logger.info({ comandaId, pedidoCount: pedidosResult.length }, "Comanda and pedidos retrieved");
 
-        await reply.code(200).send({
+        // Normalize all field names to handle case variations from raw SQL
+        const getField = (row: any, ...names: string[]) => {
+          for (const name of names) {
+            if (row.hasOwnProperty(name)) return row[name];
+            const lowerName = name.toLowerCase();
+            const matchingKey = Object.keys(row).find(k => k.toLowerCase() === lowerName);
+            if (matchingKey) return row[matchingKey];
+          }
+          return undefined;
+        };
+
+        const response = {
           comanda: {
             id: comandaId,
-            mesa_id: comandaRow.mesa_id,
-            mesa_numero: comandaRow.mesa_numero,
-            garcom_id: comandaRow.garcom_id,
-            garcom_nome: comandaRow.garcom_nome,
-            garcom_email: comandaRow.garcom_email,
-            status: comandaRow.status,
-            total: comandaRow.total,
-            created_at: comandaRow.created_at ? new Date(comandaRow.created_at).toISOString() : null,
+            mesa_id: getField(comandaRow, 'mesa_id', 'mesaId'),
+            mesa_numero: getField(comandaRow, 'mesa_numero', 'mesaNumero'),
+            garcom_id: getField(comandaRow, 'garcom_id', 'garcomId'),
+            garcom_nome: getField(comandaRow, 'garcom_nome', 'garcomNome'),
+            garcom_email: getField(comandaRow, 'garcom_email', 'garcomEmail'),
+            status: getField(comandaRow, 'status'),
+            total: getField(comandaRow, 'total'),
+            created_at: (() => {
+              const val = getField(comandaRow, 'created_at', 'createdAt');
+              return val ? new Date(val).toISOString() : null;
+            })(),
             pedidos: pedidosResult.map((p: any) => ({
               id: p.id,
               prato_id: p.prato_id,
@@ -1415,7 +1436,10 @@ export function registerOrderRoutes(app: App) {
               created_at: p.created_at ? new Date(p.created_at).toISOString() : null,
             })),
           },
-        });
+        };
+
+        app.logger.debug({ response }, "Sending comanda response");
+        await reply.code(200).send(response);
         return;
       } catch (error) {
         app.logger.error({ err: error, mesaId: request.params.id }, "Failed to fetch comanda for mesa");
