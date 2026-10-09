@@ -1361,7 +1361,8 @@ export function registerOrderRoutes(app: App) {
 
         if (!comandaResult || comandaResult.length === 0) {
           app.logger.info({ mesaId }, "No open comanda found for mesa");
-          return await reply.code(200).send({ comanda: null });
+          await reply.code(200).send({ comanda: null });
+          return;
         }
 
         const comandaRow = comandaResult[0];
@@ -1389,7 +1390,7 @@ export function registerOrderRoutes(app: App) {
 
         app.logger.info({ comandaId: comandaRow.comanda_id, pedidoCount: pedidosResult.length }, "Comanda and pedidos retrieved");
 
-        return await reply.code(200).send({
+        await reply.code(200).send({
           comanda: {
             id: comandaRow.comanda_id,
             mesa_id: comandaRow.mesa_id,
@@ -1414,6 +1415,7 @@ export function registerOrderRoutes(app: App) {
             })),
           },
         });
+        return;
       } catch (error) {
         app.logger.error({ err: error, mesaId: request.params.id }, "Failed to fetch comanda for mesa");
         return await reply.code(500).send({ error: "Internal server error" });
