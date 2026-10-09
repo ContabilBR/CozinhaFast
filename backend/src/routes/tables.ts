@@ -578,7 +578,10 @@ export function registerTableRoutes(app: App) {
         const [updated] = await app.db
           .update(schema.mesas)
           .set(updateData)
-          .where(eq(schema.mesas.id, id as any))
+          .where(and(
+            eq(schema.mesas.id, id as any),
+            eq(schema.mesas.restauranteId, tenantId as any)
+          ))
           .returning();
 
         app.logger.info({ mesaId: id }, "Mesa updated successfully");
@@ -683,17 +686,29 @@ export function registerTableRoutes(app: App) {
         const comandasForMesa = await app.db
           .select()
           .from(schema.comandas)
-          .where(eq(schema.comandas.mesaId, id as any));
+          .where(and(
+            eq(schema.comandas.mesaId, id as any),
+            eq(schema.comandas.restauranteId, tenantId as any)
+          ));
 
         for (const comanda of comandasForMesa) {
-          await app.db.delete(schema.pedidos).where(eq(schema.pedidos.comandaId, comanda.id));
+          await app.db.delete(schema.pedidos).where(and(
+            eq(schema.pedidos.comandaId, comanda.id),
+            eq(schema.pedidos.restauranteId, tenantId as any)
+          ));
         }
 
         // Delete comandas
-        await app.db.delete(schema.comandas).where(eq(schema.comandas.mesaId, id as any));
+        await app.db.delete(schema.comandas).where(and(
+          eq(schema.comandas.mesaId, id as any),
+          eq(schema.comandas.restauranteId, tenantId as any)
+        ));
 
         // Delete mesa
-        await app.db.delete(schema.mesas).where(eq(schema.mesas.id, id as any));
+        await app.db.delete(schema.mesas).where(and(
+          eq(schema.mesas.id, id as any),
+          eq(schema.mesas.restauranteId, tenantId as any)
+        ));
 
         app.logger.info({ mesaId: id }, "Mesa deleted successfully");
         return reply.code(204).send();
