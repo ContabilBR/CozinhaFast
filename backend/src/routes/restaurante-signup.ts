@@ -84,6 +84,7 @@ export function registerRestauranteSignupRoutes(app: App) {
       },
     },
     async (request: FastifyRequest<{ Body: SignupBody }>, reply: FastifyReply) => {
+      return await reply.code(404).send();
       const { nome, cnpj, adminNome, adminEmail, adminSenha } = request.body;
 
       try {

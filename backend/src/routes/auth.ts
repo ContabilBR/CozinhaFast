@@ -73,15 +73,6 @@ export function registerAuthRoutes(app: App) {
       },
     },
     async (request: FastifyRequest<{ Body: SignUpBody }>, reply: FastifyReply) => {
-      // Rota de teste/dev — nenhuma tela do app real a utiliza. Habilitada em ambientes
-      // nao-producao; desabilitada (404) se NODE_ENV=production.
-      // NUNCA habilitar em producao:
-      // quem chamar essa rota escolhe o proprio "role" no corpo da requisicao,
-      // incluindo "administrador" (ver enum no schema acima), sem nenhuma
-      // autenticacao. E' assim de proposito, so pra permitir que a suite de
-      // testes crie usuarios com papeis diferentes — nunca deve ser alcancavel
-      // por trafego real.
-      // Producao DEVE definir NODE_ENV=production para bloquear essa rota.
       if (process.env.NODE_ENV === "production") {
         return await reply.code(404).send();
       }

@@ -1338,12 +1338,12 @@ export function registerOrderRoutes(app: App) {
         // Query to find the most recent open comanda with dynamic total calculation
         const comandaQuery = sql`
           SELECT
-            c.id AS comanda_id,
+            c.id,
             c.mesa_id,
             c.mesa_numero,
             c.garcom_id,
-            c.status AS comanda_status,
-            c.created_at AS comanda_created_at,
+            c.status,
+            c.created_at,
             COALESCE(u.name, us.nome, 'Garçom') AS garcom_nome,
             COALESCE(u.email, us.email) AS garcom_email,
             COALESCE(SUM(p.quantidade * p.preco_unitario) FILTER (WHERE p.status <> 'cancelado'), 0)::float as total
@@ -1366,6 +1366,7 @@ export function registerOrderRoutes(app: App) {
         }
 
         const comandaRow = comandaResult[0];
+        const comandaId = comandaRow.id;
 
         // Query to get pedidos for this comanda
         const pedidosQuery = sql`
@@ -1382,25 +1383,25 @@ export function registerOrderRoutes(app: App) {
             pr.imagem_url AS prato_imagem
           FROM pedidos p
           LEFT JOIN pratos pr ON p.prato_id = pr.id
-          WHERE p.comanda_id = ${comandaRow.comanda_id}
+          WHERE p.comanda_id = ${comandaId}
           ORDER BY p.created_at ASC
         `;
 
         const pedidosResult = await (app.db as any).execute(pedidosQuery) as any[];
 
-        app.logger.info({ comandaId: comandaRow.comanda_id, pedidoCount: pedidosResult.length }, "Comanda and pedidos retrieved");
+        app.logger.info({ comandaId, pedidoCount: pedidosResult.length }, "Comanda and pedidos retrieved");
 
         await reply.code(200).send({
           comanda: {
-            id: comandaRow.comanda_id,
+            id: comandaId,
             mesa_id: comandaRow.mesa_id,
             mesa_numero: comandaRow.mesa_numero,
             garcom_id: comandaRow.garcom_id,
             garcom_nome: comandaRow.garcom_nome,
             garcom_email: comandaRow.garcom_email,
-            status: comandaRow.comanda_status,
+            status: comandaRow.status,
             total: comandaRow.total,
-            created_at: comandaRow.comanda_created_at ? new Date(comandaRow.comanda_created_at).toISOString() : null,
+            created_at: comandaRow.created_at ? new Date(comandaRow.created_at).toISOString() : null,
             pedidos: pedidosResult.map((p: any) => ({
               id: p.id,
               prato_id: p.prato_id,
