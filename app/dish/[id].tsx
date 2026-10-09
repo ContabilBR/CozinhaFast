@@ -20,6 +20,7 @@ import { Dish, Category } from "@/types";
 import { apiGet, apiPut } from "@/utils/api";
 import { UtensilsCrossed } from "lucide-react-native";
 import type { ImageSourcePropType } from "react-native";
+import { CampoMoeda } from "@/components/CampoMoeda";
 
 function resolveImageSource(source: string | number | ImageSourcePropType | undefined): ImageSourcePropType {
   if (!source) return { uri: "" };
@@ -28,16 +29,17 @@ function resolveImageSource(source: string | number | ImageSourcePropType | unde
 }
 
 function FormField({
-  label, value, onChangeText, placeholder, multiline, keyboardType, autoCapitalize, autoCorrect,
+  label, value, onChangeText, placeholder, multiline, keyboardType, autoCapitalize, autoCorrect, moeda,
 }: {
   label: string; value: string; onChangeText: (t: string) => void;
-  placeholder?: string; multiline?: boolean; keyboardType?: any; autoCapitalize?: any; autoCorrect?: boolean;
+  placeholder?: string; multiline?: boolean; keyboardType?: any; autoCapitalize?: any; autoCorrect?: boolean; moeda?: boolean;
 }) {
   const COLORS = useColors();
+  const Campo: any = moeda ? CampoMoeda : TextInput;
   return (
     <View style={{ gap: 6 }}>
       <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 14, color: COLORS.text }}>{label}</Text>
-      <TextInput
+      <Campo
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
@@ -114,7 +116,7 @@ export default function DishDetailScreen() {
 
   const handleSave = async () => {
     if (!name.trim()) { setError("Nome é obrigatório."); return; }
-    if (!price.trim() || isNaN(Number(price))) { setError("Preço inválido."); return; }
+    if (!price.trim() || isNaN(Number(price.replace(",", ".")))) { setError("Preço inválido."); return; }
     console.log("[DishDetail] Salvar pressionado para prato:", id);
     setError("");
     setSubmitting(true);
@@ -123,7 +125,7 @@ export default function DishDetailScreen() {
       await apiPut(`/api/dishes/${id}`, {
         name: name.trim(),
         description: description.trim() || undefined,
-        price: Number(price),
+        price: Number(price.replace(",", ".")),
         prep_time_minutes: Number(prepTime) || 15,
         image_url: imageUrl.trim() || undefined,
         category_id: categoryId || undefined,
@@ -212,7 +214,7 @@ export default function DishDetailScreen() {
 
         <View style={{ flexDirection: "row", gap: 12 }}>
           <View style={{ flex: 1 }}>
-            <FormField label="Preço (R$) *" value={price} onChangeText={setPrice} placeholder="0.00" keyboardType="decimal-pad" />
+            <FormField label="Preço (R$) *" value={price} onChangeText={setPrice} placeholder="0,00" moeda />
           </View>
           <View style={{ flex: 1 }}>
             <FormField label="Preparo (min)" value={prepTime} onChangeText={setPrepTime} placeholder="15" keyboardType="number-pad" />

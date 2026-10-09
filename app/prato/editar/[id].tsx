@@ -22,6 +22,7 @@ import { ChevronDown, Camera, Image as ImageIcon, UtensilsCrossed } from "lucide
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
 import type { ImageSourcePropType } from "react-native";
+import { CampoMoeda } from "@/components/CampoMoeda";
 
 function resolveImageSource(source: string | number | ImageSourcePropType | undefined): ImageSourcePropType {
   if (!source) return { uri: "" };
@@ -285,12 +286,11 @@ export default function EditarPratoScreen() {
         </FormField>
 
         <FormField label="Preço (R$) *">
-          <TextInput
+          <CampoMoeda
             value={preco}
             onChangeText={setPreco}
             placeholder="0,00"
             placeholderTextColor={COLORS.textTertiary}
-            keyboardType="decimal-pad"
             style={inputStyle}
           />
         </FormField>

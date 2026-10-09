@@ -11,6 +11,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import * as Print from "expo-print";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
+import { CampoMoeda } from "@/components/CampoMoeda";
 
 const ETAPA_FLOW = ["pendente", "preparando", "pronto_para_despachar", "saiu_entrega", "entregue"] as const;
 type Etapa = typeof ETAPA_FLOW[number];
@@ -990,12 +991,11 @@ export default function DeliveryDetalhes() {
                               <Text style={{ fontSize: 12, color: COLORS.primary }}>Valor exato</Text>
                             </Pressable>
                           </View>
-                          <TextInput
+                          <CampoMoeda
                             value={confirmarValorRecebido}
                             onChangeText={(t) => { setConfirmarValorRecebido(t); setConfirmarErro(null); }}
                             placeholder="0,00"
                             placeholderTextColor={COLORS.textTertiary}
-                            keyboardType="decimal-pad"
                             style={{ borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, padding: 10, color: COLORS.text, fontSize: 16 }}
                           />
                           {troco !== null && (

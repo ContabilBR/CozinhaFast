@@ -22,6 +22,7 @@ import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { SkeletonLine } from "@/components/SkeletonLoader";
 import { apiGet, apiPost } from "@/utils/api";
 import { formatCurrency, parseBRL } from "@/utils/helpers";
+import { CampoMoeda } from "@/components/CampoMoeda";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1138,12 +1139,11 @@ export default function NovoDelivery() {
         >
           Entrega
         </Text>
-        <TextInput
+        <CampoMoeda
           placeholder="Taxa de entrega (ex: 10,50)"
           placeholderTextColor={COLORS.textTertiary}
           value={taxaEntrega}
           onChangeText={setTaxaEntrega}
-          keyboardType="decimal-pad"
           style={inputStyle}
         />
         <TextInput
@@ -1265,12 +1265,11 @@ export default function NovoDelivery() {
               <Text style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 4 }}>
                 Troco para quanto? (opcional)
               </Text>
-              <TextInput
+              <CampoMoeda
                 value={trocoPara}
                 onChangeText={setTrocoPara}
                 placeholder="Ex: 50,00"
                 placeholderTextColor={COLORS.textTertiary}
-                keyboardType="decimal-pad"
                 style={{
                   borderWidth: 1,
                   borderColor: COLORS.border,

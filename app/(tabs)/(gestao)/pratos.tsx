@@ -26,6 +26,7 @@ import { formatCurrency } from "@/utils/helpers";
 import { X, UtensilsCrossed, Camera, Image as ImageIcon, ChevronDown, Search } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import type { ImageSourcePropType } from "react-native";
+import { CampoMoeda } from "@/components/CampoMoeda";
 
 function resolveImageSource(source: string | number | ImageSourcePropType | undefined): ImageSourcePropType {
   if (!source) return { uri: "" };
@@ -970,13 +971,11 @@ export default function GestaoPratos() {
                   <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 14, color: COLORS.text }}>
                     Preço (R$) *
                   </Text>
-                  <TextInput
+                  <CampoMoeda
                     value={preco}
                     onChangeText={(t) => { setPreco(t); setModalError(""); }}
-                    onBlur={() => { if (preco.trim()) setPreco(formatPreco(preco)); }}
                     placeholder="0,00"
                     placeholderTextColor={COLORS.textTertiary}
-                    keyboardType="decimal-pad"
                     style={inputStyle}
                   />
                 </View>

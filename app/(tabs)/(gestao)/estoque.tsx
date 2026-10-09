@@ -7,6 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { apiGet, apiPost, apiPut, apiDelete } from "@/utils/api";
+import { CampoMoeda } from "@/components/CampoMoeda";
 
 const UNIDADES = ["kg", "g", "l", "ml", "un", "cx", "pct", "dz"];
 
@@ -90,9 +91,9 @@ export default function EstoqueScreen() {
     setSaving(true);
     try {
       if (editingInsumo) {
-        await apiPut("/api/insumos/" + editingInsumo.id, { nome, descricao, unidade, estoqueMinimo, custoUnitario });
+        await apiPut("/api/insumos/" + editingInsumo.id, { nome, descricao, unidade, estoqueMinimo, custoUnitario: custoUnitario.replace(",", ".") });
       } else {
-        await apiPost("/api/insumos", { nome, descricao, unidade, estoqueMinimo, custoUnitario });
+        await apiPost("/api/insumos", { nome, descricao, unidade, estoqueMinimo, custoUnitario: custoUnitario.replace(",", ".") });
       }
       console.log("[EstoqueScreen] handleSave: success");
       setShowModal(false); fetchData();
@@ -238,7 +239,7 @@ export default function EstoqueScreen() {
                 style={{ backgroundColor: COLORS.surface, borderRadius: 10, padding: 12, color: COLORS.text, fontSize: 15, marginBottom: 12, borderWidth: 0.5, borderColor: COLORS.border }} />
 
               <Text style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 4 }}>Custo Unitário (R$)</Text>
-              <TextInput value={custoUnitario} onChangeText={setCustoUnitario} placeholder="0.00" keyboardType="decimal-pad" placeholderTextColor={COLORS.textSecondary}
+              <CampoMoeda value={custoUnitario} onChangeText={setCustoUnitario} placeholder="0,00" placeholderTextColor={COLORS.textSecondary}
                 style={{ backgroundColor: COLORS.surface, borderRadius: 10, padding: 12, color: COLORS.text, fontSize: 15, marginBottom: 16, borderWidth: 0.5, borderColor: COLORS.border }} />
 
               <Pressable onPress={handleSave} disabled={saving} style={{ backgroundColor: COLORS.primary, borderRadius: 12, padding: 16, alignItems: "center" }}>
