@@ -125,14 +125,28 @@ export function registerAuthRoutes(app: App) {
         // O usuário de teste é sempre vinculado ao restaurante interno da plataforma,
         // nunca a um restaurante real (antes pegava "o primeiro da tabela").
         const restauranteId: string = ID_RESTAURANTE_PLATAFORMA;
-        const plataforma = await app.db
+        let plataforma = await app.db
           .select({ id: schema.restaurante.id })
           .from(schema.restaurante)
           .where(eq(schema.restaurante.id, restauranteId))
           .limit(1);
+
+        // Create the platform restaurant if it doesn't exist
         if (plataforma.length === 0) {
-          app.logger.error({}, "TEST SIGNUP: restaurante interno da plataforma não encontrado");
-          return await reply.code(500).send({ error: "Restaurante interno da plataforma não encontrado. Reinicie o backend com TEST_MODE ativo." });
+          app.logger.info({}, "TEST SIGNUP: creating internal platform restaurant");
+          try {
+            await app.db.insert(schema.restaurante).values({
+              id: restauranteId,
+              nome: "Restaurante Interno da Plataforma",
+              cnpj: "00.000.000/0000-00",
+              plano: "trial",
+              assinaturaStatus: "ativa",
+            });
+            app.logger.info({}, "TEST SIGNUP: platform restaurant created successfully");
+          } catch (err: any) {
+            app.logger.error({ err }, "TEST SIGNUP: failed to create platform restaurant");
+            return await reply.code(500).send({ error: "Failed to initialize platform restaurant" });
+          }
         }
 
         // Hash password

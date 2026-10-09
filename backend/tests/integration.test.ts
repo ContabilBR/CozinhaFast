@@ -995,6 +995,58 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 404);
   });
 
+  test("Create mesas in batch returns 201", async () => {
+    const res = await authenticatedApi("/api/mesas/lote", adminToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        numero_inicial: Math.floor(Math.random() * 900000) + 100000,
+        numero_final: Math.floor(Math.random() * 900000) + 100000 + 10,
+        capacidade: 4,
+      }),
+    });
+    await expectStatus(res, 201);
+    const data = await res.json();
+    expect(data.criadas).toBeDefined();
+    expect(data.mesas).toBeDefined();
+    expect(Array.isArray(data.mesas)).toBe(true);
+  });
+
+  test("Create mesas batch with missing fields returns 400", async () => {
+    const res = await authenticatedApi("/api/mesas/lote", adminToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        numero_inicial: 100,
+      }),
+    });
+    await expectStatus(res, 400);
+  });
+
+  test("Create mesas batch as non-admin returns 403", async () => {
+    const res = await authenticatedApi("/api/mesas/lote", garcomToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        numero_inicial: Math.floor(Math.random() * 900000) + 100000,
+        numero_final: Math.floor(Math.random() * 900000) + 100000 + 10,
+      }),
+    });
+    await expectStatus(res, 403);
+  });
+
+  test("Create mesas batch without authentication returns 401", async () => {
+    const res = await api("/api/mesas/lote", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        numero_inicial: Math.floor(Math.random() * 900000) + 100000,
+        numero_final: Math.floor(Math.random() * 900000) + 100000 + 10,
+      }),
+    });
+    await expectStatus(res, 401);
+  });
+
   // ==================== Comandas CRUD ====================
   test("Create mesa for comanda operations", async () => {
     const res = await authenticatedApi("/api/mesas", adminToken, {

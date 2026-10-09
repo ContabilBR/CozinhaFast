@@ -1366,7 +1366,21 @@ export function registerOrderRoutes(app: App) {
         }
 
         const comandaRow = comandaResult[0];
-        const comandaId = comandaRow.id;
+
+        // Extract ID - handle different column name variations from raw SQL
+        let comandaId = comandaRow.comanda_id || comandaRow.id;
+        if (!comandaId && Object.keys(comandaRow).length > 0) {
+          // Try to find any UUID-like value in the first position (first column selected)
+          const firstValue = Object.values(comandaRow)[0];
+          if (typeof firstValue === 'string' && firstValue.match(/^[0-9a-f-]{36}$/i)) {
+            comandaId = firstValue;
+          }
+        }
+
+        if (!comandaId) {
+          app.logger.error({ comandaRow, keys: Object.keys(comandaRow) }, "Could not extract comanda ID");
+          return await reply.code(500).send({ error: "Failed to retrieve comanda" });
+        }
 
         // Query to get pedidos for this comanda
         const pedidosQuery = sql`
