@@ -7,6 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { apiGet, apiPost } from "@/utils/api";
 import { formatCurrency } from "@/utils/helpers";
+import { CampoMoeda } from "@/components/CampoMoeda";
 
 const FORMAS = [
   { key: "dinheiro", label: "Dinheiro", icon: "cash-outline" },
@@ -90,11 +91,11 @@ export default function PagamentoScreen() {
         </View>
 
         <Text style={{ fontSize: 12, fontWeight: "600", color: COLORS.primary, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>Valor</Text>
-        <TextInput value={valor} onChangeText={setValor} keyboardType="decimal-pad" placeholder="0,00" placeholderTextColor={COLORS.textTertiary} style={{ ...inputStyle, marginBottom: 12, fontSize: 24, textAlign: "center", fontWeight: "600" }} />
+        <CampoMoeda value={valor} onChangeText={setValor} placeholder="0,00" placeholderTextColor={COLORS.textTertiary} style={{ ...inputStyle, marginBottom: 12, fontSize: 24, textAlign: "center", fontWeight: "600" }} />
 
         {forma === "dinheiro" && (
           <><Text style={{ fontSize: 12, fontWeight: "600", color: COLORS.primary, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>Troco para</Text>
-          <TextInput value={troco} onChangeText={setTroco} keyboardType="decimal-pad" placeholder="0,00" placeholderTextColor={COLORS.textTertiary} style={{ ...inputStyle, marginBottom: 12 }} /></>
+          <CampoMoeda value={troco} onChangeText={setTroco} placeholder="0,00" placeholderTextColor={COLORS.textTertiary} style={{ ...inputStyle, marginBottom: 12 }} /></>
         )}
 
         {pagamentos.length > 0 && (
