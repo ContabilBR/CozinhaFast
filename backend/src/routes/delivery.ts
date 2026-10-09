@@ -126,10 +126,10 @@ export function registerDeliveryRoutes(app: App) {
         const body = request.body;
 
         if (!body.cliente_nome || !body.cliente_telefone || !body.endereco) {
-          return reply.code(400).send({ error: "cliente_nome, cliente_telefone e endereco são obrigatórios" });
+          return await reply.code(400).send({ error: "cliente_nome, cliente_telefone e endereco são obrigatórios" });
         }
         if (!body.itens || body.itens.length === 0) {
-          return reply.code(400).send({ error: "Informe pelo menos um item" });
+          return await reply.code(400).send({ error: "Informe pelo menos um item" });
         }
 
         const result = await (db as any).transaction(async (tx: any) => {
@@ -256,16 +256,16 @@ export function registerDeliveryRoutes(app: App) {
           app.logger.error({ err: pubErr }, "Failed to publish delivery.criado event");
         }
 
-        return reply.code(201).send({ comanda: result.comanda, entrega: result.entrega });
+        return await reply.code(201).send({ comanda: result.comanda, entrega: result.entrega });
       } catch (err) {
         if ((err as any)?.message?.startsWith("TROCO_INSUFICIENTE:")) {
-          return reply.code(400).send({ error: (err as any).message.replace("TROCO_INSUFICIENTE:", "").trim() });
+          return await reply.code(400).send({ error: (err as any).message.replace("TROCO_INSUFICIENTE:", "").trim() });
         }
         if ((err as any)?.message?.startsWith("VALIDATION:")) {
-          return reply.code(400).send({ error: (err as any).message.replace("VALIDATION:", "").trim() });
+          return await reply.code(400).send({ error: (err as any).message.replace("VALIDATION:", "").trim() });
         }
         app.logger.error({ error: (err as any).message }, "Erro ao criar pedido delivery");
-        return reply.code(500).send({ error: "Erro interno" });
+        return await reply.code(500).send({ error: "Erro interno" });
       }
     }
   );
@@ -376,10 +376,10 @@ export function registerDeliveryRoutes(app: App) {
           });
         }
 
-        return reply.code(200).send({ pedidos, total: pedidos.length });
+        return await reply.code(200).send({ pedidos, total: pedidos.length });
       } catch (err) {
         app.logger.error({ error: (err as any).message }, "Erro ao listar delivery");
-        return reply.code(500).send({ error: "Erro interno" });
+        return await reply.code(500).send({ error: "Erro interno" });
       }
     }
   );
@@ -543,7 +543,7 @@ export function registerDeliveryRoutes(app: App) {
           }
         }
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           entrega: {
             id: entrega.id,
             status: entrega.status,
@@ -603,7 +603,7 @@ export function registerDeliveryRoutes(app: App) {
         });
       } catch (err) {
         app.logger.error({ error: (err as any).message }, "Erro ao consultar delivery");
-        return reply.code(500).send({ error: "Erro interno" });
+        return await reply.code(500).send({ error: "Erro interno" });
       }
     }
   );
@@ -675,7 +675,7 @@ export function registerDeliveryRoutes(app: App) {
           }
 
           if (!entregador_nome?.trim()) {
-            return reply.code(400).send({ error: "O nome de quem vai entregar é obrigatório para despachar." });
+            return await reply.code(400).send({ error: "O nome de quem vai entregar é obrigatório para despachar." });
           }
           const itens = await db.select({ status: schema.pedidos.status })
             .from(schema.pedidos)
@@ -724,10 +724,10 @@ export function registerDeliveryRoutes(app: App) {
           app.logger.error({ err: pubErr }, "Failed to publish delivery event");
         }
 
-        return reply.code(200).send({ entrega: entregaAtualizada });
+        return await reply.code(200).send({ entrega: entregaAtualizada });
       } catch (err) {
         app.logger.error({ error: (err as any).message }, "Erro ao atualizar status delivery");
-        return reply.code(500).send({ error: "Erro interno" });
+        return await reply.code(500).send({ error: "Erro interno" });
       }
     }
   );
@@ -775,10 +775,10 @@ export function registerDeliveryRoutes(app: App) {
           "qualidade", "outro", "cliente_nao_atendeu", "endereco_fora_area",
         ];
         if (!MOTIVOS_VALIDOS.includes(motivo)) {
-          return reply.code(400).send({ error: "Motivo inválido." });
+          return await reply.code(400).send({ error: "Motivo inválido." });
         }
         if (motivo === "outro" && (!detalhe || !detalhe.trim())) {
-          return reply.code(400).send({ error: "O detalhe é obrigatório quando o motivo é 'outro'." });
+          return await reply.code(400).send({ error: "O detalhe é obrigatório quando o motivo é 'outro'." });
         }
 
         // Cozinheiro nunca cancela
@@ -963,10 +963,10 @@ export function registerDeliveryRoutes(app: App) {
           app.logger.error({ err: pubErr }, "Failed to publish delivery.cancelado event");
         }
 
-        return reply.code(200).send({ ok: true, houve_perda: resultado.houvePerda, houve_estorno: resultado.houve_estorno ?? false });
+        return await reply.code(200).send({ ok: true, houve_perda: resultado.houvePerda, houve_estorno: resultado.houve_estorno ?? false });
       } catch (err) {
         app.logger.error({ error: (err as any).message }, "Erro ao cancelar delivery");
-        return reply.code(500).send({ error: "Erro interno" });
+        return await reply.code(500).send({ error: "Erro interno" });
       }
     }
   );
@@ -1139,10 +1139,10 @@ export function registerDeliveryRoutes(app: App) {
           app.logger.error({ err: pubErr }, "Failed to publish delivery.status_changed (entregue) event");
         }
 
-        return reply.code(200).send({ ok: true, troco });
+        return await reply.code(200).send({ ok: true, troco });
       } catch (err) {
         app.logger.error({ error: (err as any).message }, "Erro ao confirmar entrega");
-        return reply.code(500).send({ error: "Erro interno" });
+        return await reply.code(500).send({ error: "Erro interno" });
       }
     }
   );

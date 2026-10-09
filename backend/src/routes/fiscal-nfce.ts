@@ -199,7 +199,7 @@ export function registerFiscalNfceRoutes(app: App) {
             { restauranteId, campos: validacao.camposFaltantes },
             "Restaurante sem dados fiscais completos"
           );
-          return reply.code(400).send({
+          return await reply.code(400).send({
             error: "Restaurante sem dados fiscais completos para emitir NFC-e",
             campos_faltantes: validacao.camposFaltantes,
           });
@@ -215,7 +215,7 @@ export function registerFiscalNfceRoutes(app: App) {
         // Bloquear NFC-e para delivery
         const tipoComanda = (encontrada as any).comanda?.tipo || (encontrada as any).tipo;
         if (tipoComanda === "delivery") {
-          return reply.code(400).send({ error: "A nota fiscal de delivery será implementada em uma etapa própria." });
+          return await reply.code(400).send({ error: "A nota fiscal de delivery será implementada em uma etapa própria." });
         }
 
         // 3. Idempotencia
@@ -233,21 +233,21 @@ export function registerFiscalNfceRoutes(app: App) {
         const confirmados = pagRows.filter((p: any) => p.status === "confirmado");
         if (confirmados.length === 0) {
           app.logger.warn({ comandaId: comanda_id }, "NFC-e recusada: sem pagamento confirmado");
-          return reply.code(400).send({
+          return await reply.code(400).send({
             error: "Nenhum pagamento confirmado nesta comanda. Confirme o pagamento antes de emitir a NFC-e.",
           });
         }
 
         const formasBrutas = montarFormasPagamento(confirmados);
         if (formasBrutas.length === 0) {
-          return reply.code(400).send({ error: "Valor liquido dos pagamentos confirmados e zero" });
+          return await reply.code(400).send({ error: "Valor liquido dos pagamentos confirmados e zero" });
         }
 
         // 5. Itens
         const pedidoRows = await carregarPedidosFiscais(db, comanda_id, restauranteId, arquivada);
         const pedidosValidos = pedidoRows.filter((p: any) => p.status !== "cancelado");
         if (pedidosValidos.length === 0) {
-          return reply.code(400).send({ error: "Comanda sem itens validos para emissao" });
+          return await reply.code(400).send({ error: "Comanda sem itens validos para emissao" });
         }
 
         const pratoIds = Array.from(
@@ -258,7 +258,7 @@ export function registerFiscalNfceRoutes(app: App) {
         const itens = montarItensFiscais(pedidosValidos, pratoMap, restaurante);
         const valorItens = calcularValorItens(itens);
         if (valorItens <= 0) {
-          return reply.code(400).send({ error: "Valor total dos itens e zero" });
+          return await reply.code(400).send({ error: "Valor total dos itens e zero" });
         }
 
         const formasPagamento = ajustarFormasPagamento(formasBrutas, valorItens);
@@ -299,7 +299,7 @@ export function registerFiscalNfceRoutes(app: App) {
           );
         } catch (buildErr: any) {
           app.logger.warn({ err: buildErr, comandaId: comanda_id }, "Falha ao montar payload NFC-e");
-          return reply.code(400).send({ error: buildErr.message });
+          return await reply.code(400).send({ error: buildErr.message });
         }
 
         // 9. Persiste e envia
@@ -342,7 +342,7 @@ export function registerFiscalNfceRoutes(app: App) {
             "NFC-e processada"
           );
 
-          return reply.code(200).send({
+          return await reply.code(200).send({
             ...notaFiscal,
             ...updateData,
             ref,
@@ -366,7 +366,7 @@ export function registerFiscalNfceRoutes(app: App) {
         }
       } catch (err: any) {
         app.logger.error({ err }, "Falha ao emitir NFC-e");
-        return reply.code(500).send({ error: err.message });
+        return await reply.code(500).send({ error: err.message });
       }
     }
   );
@@ -443,7 +443,7 @@ export function registerFiscalNfceRoutes(app: App) {
 
         const qrCodeBase64 = await gerarQrCodeBase64(nota.qrcodeUrl);
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           ...nota,
           qrCodeBase64,
           chaveAcessoFormatada: formatarChaveAcesso(nota.chaveAcesso),
@@ -451,7 +451,7 @@ export function registerFiscalNfceRoutes(app: App) {
         });
       } catch (err: any) {
         app.logger.error({ err }, "Falha ao consultar NFC-e");
-        return reply.code(500).send({ error: err.message });
+        return await reply.code(500).send({ error: err.message });
       }
     }
   );

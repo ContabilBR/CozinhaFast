@@ -130,7 +130,7 @@ export function registerFiscalRoutes(app: App) {
         const restaurante = rest[0];
         if (!restaurante.cnpj) {
           app.logger.warn({ restauranteId }, "Restaurant CNPJ not configured");
-          return reply.code(400).send({ error: "CNPJ do restaurante não cadastrado" });
+          return await reply.code(400).send({ error: "CNPJ do restaurante não cadastrado" });
         }
 
         const {
@@ -147,7 +147,7 @@ export function registerFiscalRoutes(app: App) {
 
         if (!descricao_servico || !valor_servico) {
           app.logger.warn({ descricao_servico, valor_servico }, "Missing required fields");
-          return reply.code(400).send({ error: "descricao_servico e valor_servico são obrigatórios" });
+          return await reply.code(400).send({ error: "descricao_servico e valor_servico são obrigatórios" });
         }
 
         const ref = "nfsen-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
@@ -229,7 +229,7 @@ export function registerFiscalRoutes(app: App) {
 
           await db.update(schema.notasFiscais).set(updateData).where(eq(schema.notasFiscais.id, notaFiscal.id));
           app.logger.info({ notaId: notaFiscal.id, status: updateData.status }, "NFSe created successfully");
-          return reply.code(200).send({ ...notaFiscal, ...updateData, ref });
+          return await reply.code(200).send({ ...notaFiscal, ...updateData, ref });
 
         } catch (focusErr: any) {
           await db.update(schema.notasFiscais).set({
@@ -242,7 +242,7 @@ export function registerFiscalRoutes(app: App) {
 
       } catch (err: any) {
         app.logger.error({ err }, "Failed to create NFSe");
-        return reply.code(500).send({ error: err.message, type: "outer_catch", stack: err.stack?.slice(0, 300) });
+        return await reply.code(500).send({ error: err.message, type: "outer_catch", stack: err.stack?.slice(0, 300) });
       }
     }
   );
@@ -316,15 +316,15 @@ export function registerFiscalRoutes(app: App) {
           }
 
           app.logger.info({ notaId: nota.id, status: updateData.status || nota.status }, "NFSe status updated");
-          return reply.code(200).send({ ...nota, ...updateData, focusResponse: consulta });
+          return await reply.code(200).send({ ...nota, ...updateData, focusResponse: consulta });
         } catch (focusErr: any) {
           app.logger.warn({ err: focusErr, ref }, "Focus query error, returning cached status");
-          return reply.code(200).send({ ...nota, consultaErro: focusErr.message });
+          return await reply.code(200).send({ ...nota, consultaErro: focusErr.message });
         }
 
       } catch (err: any) {
         app.logger.error({ err }, "Failed to query NFSe");
-        return reply.code(500).send({ error: err.message });
+        return await reply.code(500).send({ error: err.message });
       }
     }
   );
@@ -385,7 +385,7 @@ export function registerFiscalRoutes(app: App) {
 
         if (!justificativa || justificativa.length < 15) {
           app.logger.warn({ justificativaLength: justificativa?.length }, "Invalid justification");
-          return reply.code(400).send({ error: "Justificativa deve ter no mínimo 15 caracteres" });
+          return await reply.code(400).send({ error: "Justificativa deve ter no mínimo 15 caracteres" });
         }
 
         const [nota] = await db.select().from(schema.notasFiscais)
@@ -405,11 +405,11 @@ export function registerFiscalRoutes(app: App) {
         }).where(eq(schema.notasFiscais.id, nota.id));
 
         app.logger.info({ notaId: nota.id }, "NFSe cancelled successfully");
-        return reply.code(200).send({ status: "cancelada", focusResponse: resultado });
+        return await reply.code(200).send({ status: "cancelada", focusResponse: resultado });
 
       } catch (err: any) {
         app.logger.error({ err }, "Failed to cancel NFSe");
-        return reply.code(500).send({ error: err.message });
+        return await reply.code(500).send({ error: err.message });
       }
     }
   );
@@ -449,7 +449,7 @@ export function registerFiscalRoutes(app: App) {
         return reply.code(200).send(notas);
       } catch (err: any) {
         app.logger.error({ err }, "Failed to list notas fiscais");
-        return reply.code(500).send({ error: err.message });
+        return await reply.code(500).send({ error: err.message });
       }
     }
   );
@@ -496,10 +496,10 @@ export function registerFiscalRoutes(app: App) {
           .returning();
 
         app.logger.info({ deletedCount: result.length }, "Old test notes cleanup completed");
-        return reply.code(200).send({ deletedCount: result.length });
+        return await reply.code(200).send({ deletedCount: result.length });
       } catch (err: any) {
         app.logger.error({ err }, "Failed to cleanup old test notes");
-        return reply.code(500).send({ error: err.message });
+        return await reply.code(500).send({ error: err.message });
       }
     }
   );

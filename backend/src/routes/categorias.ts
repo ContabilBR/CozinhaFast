@@ -63,7 +63,7 @@ export function registerCategoriasRoutes(app: App) {
         );
       } catch (error) {
         app.logger.error({ err: error }, "Failed to list categorias");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -112,12 +112,12 @@ export function registerCategoriasRoutes(app: App) {
 
       try {
         if (!request.body.nome) {
-          return reply.code(400).send({ error: "nome is required" });
+          return await reply.code(400).send({ error: "nome is required" });
         }
 
         const restauranteId = requireTenant(authUser);
         if (!restauranteId) {
-          return reply.code(404).send({ error: "Nenhum restaurante associado" });
+          return await reply.code(404).send({ error: "Nenhum restaurante associado" });
         }
 
         app.logger.info({ nome: request.body.nome, restauranteId }, "Creating categoria");
@@ -133,7 +133,7 @@ export function registerCategoriasRoutes(app: App) {
 
         app.logger.info({ categoriaId: categoria.id }, "Categoria created successfully");
 
-        return reply.code(201).send({
+        return await reply.code(201).send({
           categoria: {
             id: categoria.id,
             nome: categoria.nome,
@@ -143,7 +143,7 @@ export function registerCategoriasRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error, body: request.body }, "Failed to create categoria");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -207,7 +207,7 @@ export function registerCategoriasRoutes(app: App) {
           .where(and(eq(schema.categorias.id, request.params.id), eq(schema.categorias.restauranteId, restauranteId)));
 
         if (!existing.length) {
-          return reply.code(404).send({ error: "Categoria not found" });
+          return await reply.code(404).send({ error: "Categoria not found" });
         }
 
         const updates: any = {};
@@ -222,7 +222,7 @@ export function registerCategoriasRoutes(app: App) {
 
         app.logger.info({ categoriaId: updated.id }, "Categoria updated successfully");
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           categoria: {
             id: updated.id,
             nome: updated.nome,
@@ -232,7 +232,7 @@ export function registerCategoriasRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to update categoria");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -281,7 +281,7 @@ export function registerCategoriasRoutes(app: App) {
 
         if (!existing.length) {
           app.logger.warn({ categoriaId: request.params.id }, "Categoria not found");
-          return reply.code(404).send({ error: "Category não encontrada." });
+          return await reply.code(404).send({ error: "Category não encontrada." });
         }
 
         // Nullify categoria_id on all linked pratos
@@ -295,10 +295,10 @@ export function registerCategoriasRoutes(app: App) {
 
         app.logger.info({ categoriaId: request.params.id }, "Categoria deleted successfully");
 
-        return reply.code(200).send({ success: true });
+        return await reply.code(200).send({ success: true });
       } catch (error) {
         app.logger.error({ err: error, categoriaId: request.params.id }, "Failed to delete categoria");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );

@@ -92,7 +92,7 @@ export function registerAuthRoutes(app: App) {
 
         if (!name || !email || !password) {
           app.logger.warn({ email, hasMissing: !name || !email || !password }, "Sign up failed: missing required fields");
-          return reply.code(400).send({ error: "Name, email e senha são obrigatórios" });
+          return await reply.code(400).send({ error: "Name, email e senha são obrigatórios" });
         }
 
         // Check if user already exists in custom auth usuarios table
@@ -148,7 +148,7 @@ export function registerAuthRoutes(app: App) {
 
         if (!restauranteId) {
           app.logger.error({}, "TEST SIGNUP: no restaurante found and cannot create user without one (NOT NULL constraint)");
-          return reply.code(500).send({ error: "Nenhum restaurante disponível para usuário de teste. Crie um restaurante primeiro via /api/restaurantes/signup." });
+          return await reply.code(500).send({ error: "Nenhum restaurante disponível para usuário de teste. Crie um restaurante primeiro via /api/restaurantes/signup." });
         }
 
         // Hash password
@@ -192,7 +192,7 @@ export function registerAuthRoutes(app: App) {
         app.logger.info({ tokenStart: token.substring(0, 20), userId }, "Session created successfully");
         app.logger.info({ userId, email: normalizedEmail }, "Sign up successful");
 
-        return reply.code(201).send({
+        return await reply.code(201).send({
           token,
           user: {
             id: userId,
@@ -208,7 +208,7 @@ export function registerAuthRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error, email: request.body.email }, "Sign up failed with error");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -265,7 +265,7 @@ export function registerAuthRoutes(app: App) {
         const { email, password } = request.body;
 
         if (!email || !password) {
-          return reply.code(400).send({ error: "Email and password are required" });
+          return await reply.code(400).send({ error: "Email and password are required" });
         }
 
         // Look up user in custom auth system (usuarios table)
@@ -284,7 +284,7 @@ export function registerAuthRoutes(app: App) {
 
         if (!users || users.length === 0) {
           app.logger.info({ email: normalizedEmail }, "Sign in failed: user not found");
-          return reply.code(401).send({ error: "Credenciais inválidas" });
+          return await reply.code(401).send({ error: "Credenciais inválidas" });
         }
 
         const user = users[0];
@@ -292,7 +292,7 @@ export function registerAuthRoutes(app: App) {
 
         if (!senhaHash) {
           app.logger.info({ userId: user.id }, "Sign in failed: no password set");
-          return reply.code(401).send({ error: "Credenciais inválidas" });
+          return await reply.code(401).send({ error: "Credenciais inválidas" });
         }
 
         // Verify password
@@ -300,7 +300,7 @@ export function registerAuthRoutes(app: App) {
 
         if (!isPasswordValid) {
           app.logger.info({ email: normalizedEmail }, "Sign in failed: invalid password");
-          return reply.code(401).send({ error: "Credenciais inválidas" });
+          return await reply.code(401).send({ error: "Credenciais inválidas" });
         }
 
         // Generate session token
@@ -323,7 +323,7 @@ export function registerAuthRoutes(app: App) {
 
         app.logger.info({ userId: user.id, email: normalizedEmail }, "Sign in successful");
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           token,
           user: {
             id: user.id,
@@ -339,7 +339,7 @@ export function registerAuthRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error }, "Sign in failed with error");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -377,7 +377,7 @@ export function registerAuthRoutes(app: App) {
 
         if (!authHeader || !authHeader.startsWith("Bearer ")) {
           app.logger.warn("No Bearer token in /api/auth/me");
-          return reply.code(401).send({ error: "Não autorizado" });
+          return await reply.code(401).send({ error: "Não autorizado" });
         }
 
         const token = authHeader.slice(7).trim();
@@ -393,21 +393,21 @@ export function registerAuthRoutes(app: App) {
             .limit(1);
         } catch (err) {
           app.logger.error({ err, token: token.substring(0, 20) }, "Failed to query usuariosSession table");
-          return reply.code(401).send({ error: "Não autorizado" });
+          return await reply.code(401).send({ error: "Não autorizado" });
         }
 
         app.logger.debug({ sessionsFound: sessions?.length || 0 }, "Session query result in /api/auth/me");
 
         if (!sessions || sessions.length === 0) {
           app.logger.warn({ token: token.substring(0, 20) }, "No session found for token in /api/auth/me");
-          return reply.code(401).send({ error: "Não autorizado" });
+          return await reply.code(401).send({ error: "Não autorizado" });
         }
 
         const session = sessions[0];
 
         // Check if session expired
         if (new Date(session.expiresAt) < new Date()) {
-          return reply.code(401).send({ error: "Não autorizado" });
+          return await reply.code(401).send({ error: "Não autorizado" });
         }
 
         // Get user from usuarios table
@@ -420,18 +420,18 @@ export function registerAuthRoutes(app: App) {
             .limit(1);
         } catch (err) {
           app.logger.error({ err, userId: session.userId }, "Failed to query usuarios table in /api/auth/me");
-          return reply.code(401).send({ error: "Não autorizado" });
+          return await reply.code(401).send({ error: "Não autorizado" });
         }
 
         if (!users || users.length === 0) {
-          return reply.code(401).send({ error: "Não autorizado" });
+          return await reply.code(401).send({ error: "Não autorizado" });
         }
 
         const user = users[0];
 
         app.logger.info({ userId: user.id }, "Get current user via /api/auth/me");
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           id: user.id,
           email: user.email,
           name: user.nome,
@@ -440,7 +440,7 @@ export function registerAuthRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error }, "Get current user failed");
-        return reply.code(401).send({ error: "Não autorizado" });
+        return await reply.code(401).send({ error: "Não autorizado" });
       }
     }
   );
@@ -473,7 +473,7 @@ export function registerAuthRoutes(app: App) {
         const authHeader = request.headers.authorization;
 
         if (!authHeader || !authHeader.startsWith("Bearer ")) {
-          return reply.code(401).send({ error: "Não autorizado" });
+          return await reply.code(401).send({ error: "Não autorizado" });
         }
 
         const token = authHeader.slice(7).trim();
@@ -485,10 +485,10 @@ export function registerAuthRoutes(app: App) {
 
         app.logger.info({}, "Sign out successful");
 
-        return reply.code(200).send({ success: true });
+        return await reply.code(200).send({ success: true });
       } catch (error) {
         app.logger.error({ err: error }, "Sign out failed");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -526,14 +526,14 @@ export function registerAuthRoutes(app: App) {
           "Seed status retrieved"
         );
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           users: users.length,
           accounts: accounts.length,
           profiles: profiles.length,
         });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to get seed status");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );

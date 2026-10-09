@@ -21,10 +21,10 @@ export function registerEstoqueRoutes(app: App) {
       const insumos = await db.select().from(schema.insumos)
         .where(eq(schema.insumos.restauranteId, restauranteId))
         .orderBy(schema.insumos.nome);
-      return reply.code(200).send(insumos);
+      return await reply.code(200).send(insumos);
     } catch (err: any) {
-      if (err.statusCode) return reply.code(err.statusCode).send({ error: err.message });
-      return reply.code(500).send({ error: "Erro interno" });
+      if (err.statusCode) return await reply.code(err.statusCode).send({ error: err.message });
+      return await reply.code(500).send({ error: "Erro interno" });
     }
   });
 
@@ -44,10 +44,10 @@ export function registerEstoqueRoutes(app: App) {
             lte(schema.insumos.estoqueAtual, schema.insumos.estoqueMinimo)
           ))
           .orderBy(schema.insumos.nome);
-        return reply.code(200).send(alertas);
+        return await reply.code(200).send(alertas);
       } catch (err: any) {
-        if (err.statusCode) return reply.code(err.statusCode).send({ error: err.message });
-        return reply.code(500).send({ error: "Erro interno" });
+        if (err.statusCode) return await reply.code(err.statusCode).send({ error: err.message });
+        return await reply.code(500).send({ error: "Erro interno" });
       }
     }
   );
@@ -89,8 +89,8 @@ export function registerEstoqueRoutes(app: App) {
 
       return reply.code(201).send(insumo);
     } catch (err: any) {
-      if (err.statusCode) return reply.code(err.statusCode).send({ error: err.message });
-      return reply.code(500).send({ error: "Erro interno" });
+      if (err.statusCode) return await reply.code(err.statusCode).send({ error: err.message });
+      return await reply.code(500).send({ error: "Erro interno" });
     }
   });
 
@@ -142,8 +142,8 @@ export function registerEstoqueRoutes(app: App) {
       const [updated] = await db.update(schema.insumos).set(updates).where(eq(schema.insumos.id, id)).returning();
       return reply.code(200).send(updated);
     } catch (err: any) {
-      if (err.statusCode) return reply.code(err.statusCode).send({ error: err.message });
-      return reply.code(500).send({ error: "Erro interno" });
+      if (err.statusCode) return await reply.code(err.statusCode).send({ error: err.message });
+      return await reply.code(500).send({ error: "Erro interno" });
     }
   });
 
@@ -165,8 +165,8 @@ export function registerEstoqueRoutes(app: App) {
       await db.update(schema.insumos).set({ ativo: false, updatedAt: new Date() }).where(eq(schema.insumos.id, id));
       return reply.code(200).send({ success: true });
     } catch (err: any) {
-      if (err.statusCode) return reply.code(err.statusCode).send({ error: err.message });
-      return reply.code(500).send({ error: "Erro interno" });
+      if (err.statusCode) return await reply.code(err.statusCode).send({ error: err.message });
+      return await reply.code(500).send({ error: "Erro interno" });
     }
   });
 
@@ -224,8 +224,8 @@ export function registerEstoqueRoutes(app: App) {
       if (result.error) return reply.code(400).send({ error: result.error });
       return reply.code(201).send(result);
     } catch (err: any) {
-      if (err.statusCode) return reply.code(err.statusCode).send({ error: err.message });
-      return reply.code(500).send({ error: "Erro interno" });
+      if (err.statusCode) return await reply.code(err.statusCode).send({ error: err.message });
+      return await reply.code(500).send({ error: "Erro interno" });
     }
   });
 
@@ -246,8 +246,8 @@ export function registerEstoqueRoutes(app: App) {
 
       return reply.code(200).send(movimentacoes);
     } catch (err: any) {
-      if (err.statusCode) return reply.code(err.statusCode).send({ error: err.message });
-      return reply.code(500).send({ error: "Erro interno" });
+      if (err.statusCode) return await reply.code(err.statusCode).send({ error: err.message });
+      return await reply.code(500).send({ error: "Erro interno" });
     }
   });
 
@@ -276,8 +276,8 @@ export function registerEstoqueRoutes(app: App) {
 
       return reply.code(200).send(items);
     } catch (err: any) {
-      if (err.statusCode) return reply.code(err.statusCode).send({ error: err.message });
-      return reply.code(500).send({ error: "Erro interno" });
+      if (err.statusCode) return await reply.code(err.statusCode).send({ error: err.message });
+      return await reply.code(500).send({ error: "Erro interno" });
     }
   });
 
@@ -319,8 +319,8 @@ export function registerEstoqueRoutes(app: App) {
 
       return reply.code(201).send(item);
     } catch (err: any) {
-      if (err.statusCode) return reply.code(err.statusCode).send({ error: err.message });
-      return reply.code(500).send({ error: "Erro interno" });
+      if (err.statusCode) return await reply.code(err.statusCode).send({ error: err.message });
+      return await reply.code(500).send({ error: "Erro interno" });
     }
   });
 
@@ -342,8 +342,8 @@ export function registerEstoqueRoutes(app: App) {
       await db.delete(schema.pratoInsumos).where(eq(schema.pratoInsumos.id, id));
       return reply.code(200).send({ success: true });
     } catch (err: any) {
-      if (err.statusCode) return reply.code(err.statusCode).send({ error: err.message });
-      return reply.code(500).send({ error: "Erro interno" });
+      if (err.statusCode) return await reply.code(err.statusCode).send({ error: err.message });
+      return await reply.code(500).send({ error: "Erro interno" });
     }
   });
 }

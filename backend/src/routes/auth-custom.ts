@@ -83,13 +83,13 @@ export function registerCustomAuthRoutes(app: App) {
     // Check if test admin login is disabled
     if (!TEST_MODE && email.toLowerCase().trim() === TEST_ADMIN_EMAIL.toLowerCase()) {
       app.logger.warn({ email }, 'Test admin login attempt when test mode is disabled');
-      return reply.code(403).send({ error: 'Acesso desativado.' });
+      return await reply.code(403).send({ error: 'Acesso desativado.' });
     }
 
     // Validate input
     if (!email || !senha) {
       app.logger.warn('Login attempt with missing email or senha');
-      return reply.code(400).send({ error: 'E-mail e senha são obrigatórios' });
+      return await reply.code(400).send({ error: 'E-mail e senha são obrigatórios' });
     }
 
     // Rate limiting: máx 5 tentativas por e-mail+IP em 15 min; máx 30 por IP em 15 min
@@ -129,7 +129,7 @@ export function registerCustomAuthRoutes(app: App) {
         app.logger.warn({ email: normalizedEmail }, 'User not found in usuarios table');
         increment(keyEmailIp, WIN_15);
         increment(keyIp, WIN_15);
-        return reply.code(401).send({ error: 'Invalid email or password' });
+        return await reply.code(401).send({ error: 'Invalid email or password' });
       }
 
       const user = usuarios[0];
@@ -147,7 +147,7 @@ export function registerCustomAuthRoutes(app: App) {
         app.logger.warn({ email: normalizedEmail }, 'User has no password hash');
         increment(keyEmailIp, WIN_15);
         increment(keyIp, WIN_15);
-        return reply.code(401).send({ error: 'Invalid email or password' });
+        return await reply.code(401).send({ error: 'Invalid email or password' });
       }
 
       // Verify password
@@ -160,7 +160,7 @@ export function registerCustomAuthRoutes(app: App) {
         app.logger.warn({ email: normalizedEmail }, 'Password mismatch');
         increment(keyEmailIp, WIN_15);
         increment(keyIp, WIN_15);
-        return reply.code(401).send({ error: 'Invalid email or password' });
+        return await reply.code(401).send({ error: 'Invalid email or password' });
       }
 
       // Check if restaurant is active
@@ -172,13 +172,13 @@ export function registerCustomAuthRoutes(app: App) {
 
       if (restaurantes.length === 0) {
         app.logger.warn({ restauranteId: user.restauranteId }, 'Restaurant not found');
-        return reply.code(401).send({ error: 'Invalid email or password' });
+        return await reply.code(401).send({ error: 'Invalid email or password' });
       }
 
       const restaurante = restaurantes[0];
       if (!restaurante.ativo) {
         app.logger.warn({ restauranteId: restaurante.id, restauranteName: restaurante.nome }, 'Login attempt on inactive restaurant');
-        return reply.code(403).send({ error: 'Restaurante desativado. Entre em contato com o suporte.' });
+        return await reply.code(403).send({ error: 'Restaurante desativado. Entre em contato com o suporte.' });
       }
 
       // Create session token (uuid)
@@ -248,7 +248,7 @@ export function registerCustomAuthRoutes(app: App) {
 
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
         app.logger.warn('No Bearer token in Authorization header');
-        return reply.code(401).send({ error: 'Invalid or expired token' });
+        return await reply.code(401).send({ error: 'Invalid or expired token' });
       }
 
       const token = authHeader.slice(7).trim();
@@ -266,7 +266,7 @@ export function registerCustomAuthRoutes(app: App) {
         // Check if session is expired
         if (new Date(session.expiresAt) < new Date()) {
           app.logger.warn({ token: token.substring(0, 20) }, 'Better Auth session expired');
-          return reply.code(401).send({ error: 'Invalid or expired token' });
+          return await reply.code(401).send({ error: 'Invalid or expired token' });
         }
 
         // Get user from Better Auth user table
@@ -278,13 +278,13 @@ export function registerCustomAuthRoutes(app: App) {
 
         if (!users || users.length === 0) {
           app.logger.warn({ userId: session.userId }, 'Better Auth user not found');
-          return reply.code(401).send({ error: 'Invalid or expired token' });
+          return await reply.code(401).send({ error: 'Invalid or expired token' });
         }
 
         const user = users[0];
         app.logger.info({ userId: user.id, email: user.email }, 'User profile fetched successfully via Better Auth');
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           id: user.id,
           nome: user.name,
           email: user.email,
@@ -308,7 +308,7 @@ export function registerCustomAuthRoutes(app: App) {
 
       if (usuarios.length === 0) {
         app.logger.warn({ userId }, 'User not found in usuarios table');
-        return reply.code(401).send({ error: 'Invalid or expired token' });
+        return await reply.code(401).send({ error: 'Invalid or expired token' });
       }
 
       const user = usuarios[0];
@@ -374,7 +374,7 @@ export function registerCustomAuthRoutes(app: App) {
       const genericMessage = 'Se esse e-mail estiver cadastrado, você receberá um link em instantes.';
 
       if (!email) {
-        return reply.code(200).send({ message: genericMessage });
+        return await reply.code(200).send({ message: genericMessage });
       }
 
       // Normalize and look up user
@@ -386,7 +386,7 @@ export function registerCustomAuthRoutes(app: App) {
 
       if (usuarios.length === 0) {
         app.logger.debug({ email: normalizedEmail }, 'Password reset requested for non-existent user');
-        return reply.code(200).send({ message: genericMessage });
+        return await reply.code(200).send({ message: genericMessage });
       }
 
       const user = usuarios[0];
@@ -482,12 +482,12 @@ export function registerCustomAuthRoutes(app: App) {
       // Validate inputs
       if (!token) {
         app.logger.warn('Password reset attempted without token');
-        return reply.code(400).send({ error: 'Token inválido.' });
+        return await reply.code(400).send({ error: 'Token inválido.' });
       }
 
       if (!novaSenha || novaSenha.length < 6) {
         app.logger.warn('Password reset attempted with weak password');
-        return reply.code(400).send({ error: 'A nova senha deve ter pelo menos 6 caracteres.' });
+        return await reply.code(400).send({ error: 'A nova senha deve ter pelo menos 6 caracteres.' });
       }
 
       // Look up token
@@ -499,7 +499,7 @@ export function registerCustomAuthRoutes(app: App) {
 
       if (tokens.length === 0) {
         app.logger.warn({ token: token.substring(0, 20) }, 'Password reset token not found');
-        return reply.code(400).send({ error: 'Token inválido ou não encontrado.' });
+        return await reply.code(400).send({ error: 'Token inválido ou não encontrado.' });
       }
 
       const resetToken = tokens[0];
@@ -507,13 +507,13 @@ export function registerCustomAuthRoutes(app: App) {
       // Check if already used
       if (resetToken.usedAt) {
         app.logger.warn({ tokenId: resetToken.id }, 'Password reset token already used');
-        return reply.code(400).send({ error: 'Este token já foi utilizado.' });
+        return await reply.code(400).send({ error: 'Este token já foi utilizado.' });
       }
 
       // Check if expired
       if (new Date(resetToken.expiresAt) < new Date()) {
         app.logger.warn({ tokenId: resetToken.id }, 'Password reset token expired');
-        return reply.code(400).send({ error: 'Token expirado. Solicite um novo link de redefinição.' });
+        return await reply.code(400).send({ error: 'Token expirado. Solicite um novo link de redefinição.' });
       }
 
       app.logger.debug({ usuarioId: resetToken.usuarioId }, 'Token valid, hashing new password');

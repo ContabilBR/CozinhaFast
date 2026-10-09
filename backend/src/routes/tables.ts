@@ -85,7 +85,7 @@ export function registerTableRoutes(app: App) {
         }));
       } catch (error) {
         app.logger.error({ err: error }, "Failed to list mesas");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -153,11 +153,11 @@ export function registerTableRoutes(app: App) {
 
         // Validate numero and capacidade
         if (!Number.isInteger(numero) || numero <= 0 || !Number.isInteger(capacidade) || capacidade <= 0) {
-          return reply.code(400).send({ error: "Número e capacidade devem ser inteiros maiores que zero." });
+          return await reply.code(400).send({ error: "Número e capacidade devem ser inteiros maiores que zero." });
         }
 
         if (!numero) {
-          return reply.code(400).send({ error: "numero é obrigatório" });
+          return await reply.code(400).send({ error: "numero é obrigatório" });
         }
 
         app.logger.info({ tenantId, numero }, "Creating mesa");
@@ -190,7 +190,7 @@ export function registerTableRoutes(app: App) {
 
         app.logger.info({ mesaId: newMesa.id, tenantId }, "Mesa created successfully");
 
-        return reply.code(201).send({
+        return await reply.code(201).send({
           id: newMesa.id,
           numero: newMesa.numero,
           status: newMesa.status,
@@ -199,7 +199,7 @@ export function registerTableRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to create mesa");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -255,10 +255,10 @@ export function registerTableRoutes(app: App) {
 
         if (mesa.length === 0) {
           app.logger.warn({ tenantId, mesaId: id }, "Mesa not found");
-          return reply.code(404).send({ error: "Mesa não encontrada" });
+          return await reply.code(404).send({ error: "Mesa não encontrada" });
         }
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           id: mesa[0].id,
           numero: mesa[0].numero,
           status: mesa[0].status,
@@ -267,7 +267,7 @@ export function registerTableRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to get mesa");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -342,7 +342,7 @@ export function registerTableRoutes(app: App) {
         // Validate numero and capacidade when provided
         if ((numero !== undefined && (!Number.isInteger(numero) || numero <= 0)) ||
             (capacidade !== undefined && (!Number.isInteger(capacidade) || capacidade <= 0))) {
-          return reply.code(400).send({ error: "Número e capacidade devem ser inteiros maiores que zero." });
+          return await reply.code(400).send({ error: "Número e capacidade devem ser inteiros maiores que zero." });
         }
 
         app.logger.info({ tenantId, mesaId: id }, "Updating mesa");
@@ -359,7 +359,7 @@ export function registerTableRoutes(app: App) {
 
         if (existingMesa.length === 0) {
           app.logger.warn({ tenantId, mesaId: id }, "Mesa not found");
-          return reply.code(404).send({ error: "Mesa não encontrada" });
+          return await reply.code(404).send({ error: "Mesa não encontrada" });
         }
 
         // If setting status to "disponivel", check for open comanda
@@ -411,7 +411,7 @@ export function registerTableRoutes(app: App) {
 
         app.logger.info({ mesaId: id }, "Mesa updated successfully");
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           id: updated.id,
           numero: updated.numero,
           status: updated.status,
@@ -419,7 +419,7 @@ export function registerTableRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to update mesa");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -489,7 +489,7 @@ export function registerTableRoutes(app: App) {
 
         if (mesa.length === 0) {
           app.logger.warn({ tenantId, mesaId: id }, "Mesa not found");
-          return reply.code(404).send({ error: "Mesa não encontrada" });
+          return await reply.code(404).send({ error: "Mesa não encontrada" });
         }
 
         // Check for open comanda
@@ -530,10 +530,10 @@ export function registerTableRoutes(app: App) {
         const isFKError = errorStr.includes('foreign key') || errorStr.includes('restrict');
         if (isFKError) {
           app.logger.warn({ err: error }, "Cannot delete mesa - has dependent records");
-          return reply.code(400).send({ error: "Não é possível deletar mesa com registros relacionados" });
+          return await reply.code(400).send({ error: "Não é possível deletar mesa com registros relacionados" });
         }
         app.logger.error({ err: error }, "Failed to delete mesa");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );

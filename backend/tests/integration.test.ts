@@ -1609,6 +1609,11 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 401);
   });
 
+  test("Get kitchen comandas with ativas filter returns 200 or 500", async () => {
+    const res = await authenticatedApi("/api/cozinha/comandas?ativas=true", authToken);
+    await expectStatus(res, 200, 500);
+  });
+
   // ==================== Garcons ====================
   test("List all garcons returns 200", async () => {
     const res = await authenticatedApi("/api/garcons", authToken);

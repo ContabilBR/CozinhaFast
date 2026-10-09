@@ -255,7 +255,7 @@ export function registerDishRoutes(app: App) {
         );
       } catch (error) {
         app.logger.error({ err: error }, "Failed to list pratos");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -332,24 +332,24 @@ export function registerDishRoutes(app: App) {
 
       try {
         if (!request.body.nome || !request.body.preco) {
-          return reply.code(400).send({ error: "nome and preco are required" });
+          return await reply.code(400).send({ error: "nome and preco are required" });
         }
 
         const restauranteId = requireTenant(authUser);
         if (!restauranteId) {
-          return reply.code(404).send({ error: "Nenhum restaurante associado" });
+          return await reply.code(404).send({ error: "Nenhum restaurante associado" });
         }
 
         // Validate preco
         const precoFloat = parseFloat(request.body.preco);
         if (isNaN(precoFloat) || precoFloat < 0) {
-          return reply.code(400).send({ error: "Preço inválido: deve ser um número maior ou igual a zero." });
+          return await reply.code(400).send({ error: "Preço inválido: deve ser um número maior ou igual a zero." });
         }
 
         // Validate tempoPreparoMinutos if provided
         if (request.body.tempoPreparoMinutos !== undefined && request.body.tempoPreparoMinutos !== null) {
           if (!Number.isInteger(request.body.tempoPreparoMinutos) || request.body.tempoPreparoMinutos < 0 || request.body.tempoPreparoMinutos > 600) {
-            return reply.code(400).send({ error: "Tempo de preparo inválido: deve ser um inteiro entre 0 e 600 minutos." });
+            return await reply.code(400).send({ error: "Tempo de preparo inválido: deve ser um inteiro entre 0 e 600 minutos." });
           }
         }
 
@@ -366,7 +366,7 @@ export function registerDishRoutes(app: App) {
             .limit(1);
 
           if (categoria.length === 0) {
-            return reply.code(400).send({ error: "Categoria não encontrada." });
+            return await reply.code(400).send({ error: "Categoria não encontrada." });
           }
         }
 
@@ -378,12 +378,12 @@ export function registerDishRoutes(app: App) {
           fiscalFields = validateAndNormalizeFiscalFields(request.body);
         } catch (validationError: any) {
           app.logger.warn({ err: validationError, body: request.body }, "Fiscal field validation failed");
-          return reply.code(400).send({ error: validationError.message });
+          return await reply.code(400).send({ error: validationError.message });
         }
 
         const imagemCriacao = resolverImagemUrlEntrada(request.body.imagemUrl ?? request.body.imagem_url);
         if (!imagemCriacao.ok) {
-          return reply.code(400).send({ error: (imagemCriacao as any).erro });
+          return await reply.code(400).send({ error: (imagemCriacao as any).erro });
         }
 
         const normalizedPreco = normalizeDecimal(request.body.preco);
@@ -415,7 +415,7 @@ export function registerDishRoutes(app: App) {
 
         app.logger.info({ pratoId: prato.id }, "Prato created successfully");
 
-        return reply.code(201).send({
+        return await reply.code(201).send({
           prato: {
             id: prato.id,
             nome: prato.nome,
@@ -438,7 +438,7 @@ export function registerDishRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error, body: request.body }, "Failed to create prato");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -537,11 +537,11 @@ export function registerDishRoutes(app: App) {
           .where(and(eq(schema.pratos.id, request.params.id), eq(schema.pratos.restauranteId, restauranteId)));
 
         if (!pratos.length) {
-          return reply.code(404).send({ error: "Prato not found" });
+          return await reply.code(404).send({ error: "Prato not found" });
         }
 
         const p = pratos[0];
-        return reply.code(200).send({
+        return await reply.code(200).send({
           prato: {
             id: p.id,
             nome: p.nome,
@@ -565,7 +565,7 @@ export function registerDishRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to get prato");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -655,14 +655,14 @@ export function registerDishRoutes(app: App) {
         if (request.body.preco !== undefined) {
           const precoFloat = parseFloat(request.body.preco);
           if (isNaN(precoFloat) || precoFloat < 0) {
-            return reply.code(400).send({ error: "Preço inválido: deve ser um número maior ou igual a zero." });
+            return await reply.code(400).send({ error: "Preço inválido: deve ser um número maior ou igual a zero." });
           }
         }
 
         // Validate tempoPreparoMinutos if provided
         if (request.body.tempoPreparoMinutos !== undefined && request.body.tempoPreparoMinutos !== null) {
           if (!Number.isInteger(request.body.tempoPreparoMinutos) || request.body.tempoPreparoMinutos < 0 || request.body.tempoPreparoMinutos > 600) {
-            return reply.code(400).send({ error: "Tempo de preparo inválido: deve ser um inteiro entre 0 e 600 minutos." });
+            return await reply.code(400).send({ error: "Tempo de preparo inválido: deve ser um inteiro entre 0 e 600 minutos." });
           }
         }
 
@@ -679,7 +679,7 @@ export function registerDishRoutes(app: App) {
             .limit(1);
 
           if (categoria.length === 0) {
-            return reply.code(400).send({ error: "Categoria não encontrada." });
+            return await reply.code(400).send({ error: "Categoria não encontrada." });
           }
         }
 
@@ -691,7 +691,7 @@ export function registerDishRoutes(app: App) {
           .where(and(eq(schema.pratos.id, request.params.id), eq(schema.pratos.restauranteId, restauranteId)));
 
         if (!existing.length) {
-          return reply.code(404).send({ error: "Prato not found" });
+          return await reply.code(404).send({ error: "Prato not found" });
         }
 
         // Validate and normalize fiscal fields
@@ -700,7 +700,7 @@ export function registerDishRoutes(app: App) {
           fiscalFields = validateAndNormalizeFiscalFields(request.body);
         } catch (validationError: any) {
           app.logger.warn({ err: validationError, body: request.body }, "Fiscal field validation failed");
-          return reply.code(400).send({ error: validationError.message });
+          return await reply.code(400).send({ error: validationError.message });
         }
 
         const updates: any = {};
@@ -716,7 +716,7 @@ export function registerDishRoutes(app: App) {
           existing[0].imagemUrl
         );
         if (!imagemEdicao.ok) {
-          return reply.code(400).send({ error: (imagemEdicao as any).erro });
+          return await reply.code(400).send({ error: (imagemEdicao as any).erro });
         }
         if (imagemEdicao.valor !== undefined) updates.imagemUrl = imagemEdicao.valor;
 
@@ -741,7 +741,7 @@ export function registerDishRoutes(app: App) {
 
         app.logger.info({ pratoId: updated.id }, "Prato updated successfully");
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           prato: {
             id: updated.id,
             nome: updated.nome,
@@ -764,7 +764,7 @@ export function registerDishRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to update prato");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -821,7 +821,7 @@ export function registerDishRoutes(app: App) {
       if (!(await requireRole(authUser, ["admin", "administrador", "gerente", "cozinheiro"], reply))) return;
 
       if (typeof request.body?.disponivel !== "boolean") {
-        return reply.code(400).send({ error: "disponivel (boolean) is required" });
+        return await reply.code(400).send({ error: "disponivel (boolean) is required" });
       }
 
       try {
@@ -837,7 +837,7 @@ export function registerDishRoutes(app: App) {
           .where(and(eq(schema.pratos.id, request.params.id), eq(schema.pratos.restauranteId, restauranteId)));
 
         if (!existing.length) {
-          return reply.code(404).send({ error: "Prato not found" });
+          return await reply.code(404).send({ error: "Prato not found" });
         }
 
         const [updated] = await app.db
@@ -848,7 +848,7 @@ export function registerDishRoutes(app: App) {
 
         app.logger.info({ pratoId: updated.id, disponivel: updated.disponivel }, "Prato disponibilidade updated");
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           prato: {
             id: updated.id,
             nome: updated.nome,
@@ -857,7 +857,7 @@ export function registerDishRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to toggle prato disponibilidade");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -898,7 +898,7 @@ export function registerDishRoutes(app: App) {
           .where(and(eq(schema.pratos.id, request.params.id), eq(schema.pratos.restauranteId, restauranteId)));
 
         if (!existing.length) {
-          return reply.code(404).send({ error: "Prato not found" });
+          return await reply.code(404).send({ error: "Prato not found" });
         }
 
         await app.db.delete(schema.pratos).where(and(eq(schema.pratos.id, request.params.id), eq(schema.pratos.restauranteId, restauranteId)));
@@ -908,7 +908,7 @@ export function registerDishRoutes(app: App) {
         return reply.code(204).send();
       } catch (error) {
         app.logger.error({ err: error }, "Failed to delete prato");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -961,7 +961,7 @@ export function registerDishRoutes(app: App) {
 
         if (!existing.length) {
           app.logger.warn({ pratoId: request.params.id }, "Prato not found");
-          return reply.code(404).send({ error: "Prato não encontrado" });
+          return await reply.code(404).send({ error: "Prato não encontrado" });
         }
 
         let buffer: Buffer;
@@ -977,7 +977,7 @@ export function registerDishRoutes(app: App) {
 
           if (!data) {
             app.logger.warn({ pratoId: request.params.id }, "No file provided in multipart upload");
-            return reply.code(400).send({ error: "Nenhuma imagem enviada" });
+            return await reply.code(400).send({ error: "Nenhuma imagem enviada" });
           }
 
           try {
@@ -995,11 +995,11 @@ export function registerDishRoutes(app: App) {
 
           if (!imagemBase64) {
             app.logger.warn({ pratoId: request.params.id }, "No imagem_base64 provided in JSON body");
-            return reply.code(400).send({ error: "Nenhuma imagem enviada" });
+            return await reply.code(400).send({ error: "Nenhuma imagem enviada" });
           }
 
           if (typeof imagemBase64 !== "string") {
-            return reply.code(400).send({ error: "Formato base64 inválido" });
+            return await reply.code(400).send({ error: "Formato base64 inválido" });
           }
 
           // Strip the data URI prefix and decode base64 (o tipo real é detectado pelos bytes)
@@ -1008,30 +1008,30 @@ export function registerDishRoutes(app: App) {
             buffer = Buffer.from(base64String, "base64");
           } catch (error) {
             app.logger.warn({ err: error, pratoId: request.params.id }, "Invalid base64 string");
-            return reply.code(400).send({ error: "Formato base64 inválido" });
+            return await reply.code(400).send({ error: "Formato base64 inválido" });
           }
 
           if (buffer.length === 0) {
             app.logger.warn({ pratoId: request.params.id }, "Decoded base64 is empty");
-            return reply.code(400).send({ error: "Nenhuma imagem enviada" });
+            return await reply.code(400).send({ error: "Nenhuma imagem enviada" });
           }
         } else {
           app.logger.warn({ pratoId: request.params.id, contentType }, "Unsupported content type");
-          return reply.code(400).send({ error: "Content-Type deve ser multipart/form-data ou application/json" });
+          return await reply.code(400).send({ error: "Content-Type deve ser multipart/form-data ou application/json" });
         }
 
         if (buffer.length > MAX_IMAGEM_BYTES) {
           return reply.code(413).send({ error: "Imagem muito grande (máximo 5 MB)" });
         }
         if (buffer.length === 0) {
-          return reply.code(400).send({ error: "Nenhuma imagem enviada" });
+          return await reply.code(400).send({ error: "Nenhuma imagem enviada" });
         }
 
         // Tipo e extensão vêm dos bytes do arquivo, nunca do que o cliente declarou
         const tipo = detectarImagem(buffer);
         if (!tipo) {
           app.logger.warn({ pratoId: request.params.id }, "Prato photo rejected: not a JPEG/PNG/WebP image");
-          return reply.code(400).send({ error: "Formato de imagem não suportado. Envie JPEG, PNG ou WebP." });
+          return await reply.code(400).send({ error: "Formato de imagem não suportado. Envie JPEG, PNG ou WebP." });
         }
 
         const filename = chaveImagemPrato(restauranteId, request.params.id, tipo.ext);
@@ -1051,14 +1051,14 @@ export function registerDishRoutes(app: App) {
 
         app.logger.info({ pratoId: request.params.id, chave: uploadedKey }, "Prato photo uploaded successfully");
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           id: updated.id,
           url,
           imagem_url: updated.imagemUrl,
         });
       } catch (error) {
         app.logger.error({ err: error, pratoId: request.params.id }, "Failed to upload prato photo");
-        return reply.code(500).send({ error: "Erro ao salvar imagem" });
+        return await reply.code(500).send({ error: "Erro ao salvar imagem" });
       }
     }
   );
