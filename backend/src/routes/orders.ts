@@ -345,7 +345,7 @@ export function registerOrderRoutes(app: App) {
           await tx
             .update(schema.mesas)
             .set({ status: "ocupada" })
-            .where(eq(schema.mesas.id, mesaId));
+            .where(and(eq(schema.mesas.id, mesaId), eq(schema.mesas.restauranteId, restauranteId)));
 
           return newComanda;
         });
@@ -707,7 +707,7 @@ export function registerOrderRoutes(app: App) {
         await app.db
           .update(schema.comandas)
           .set({ subtotal: subtotal.toString(), total })
-          .where(eq(schema.comandas.id, comandaId));
+          .where(and(eq(schema.comandas.id, comandaId), eq(schema.comandas.restauranteId, restauranteId)));
 
         app.logger.info(
           { comandaId, insertedCount: insertedPedidos.length, newTotal: total },
@@ -780,7 +780,7 @@ export function registerOrderRoutes(app: App) {
 
         const subtotal = parseFloat(comanda[0].subtotal ?? "0");
         const novoTotal = subtotal + gorjetaValue;
-        await app.db.update(schema.comandas).set({ total: novoTotal.toString(), gorjeta: gorjetaValue.toString() }).where(eq(schema.comandas.id, request.params.id));
+        await app.db.update(schema.comandas).set({ total: novoTotal.toString(), gorjeta: gorjetaValue.toString() }).where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)));
         return await reply.code(200).send({ subtotal, gorjeta: gorjetaValue, total: novoTotal });
       } catch (err) {
         return await reply.code(500).send({ error: "Erro interno" });
@@ -1000,7 +1000,7 @@ export function registerOrderRoutes(app: App) {
             status: "cancelada",
             closedAt: new Date(),
           })
-          .where(eq(schema.comandas.id, request.params.id))
+          .where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)))
           .returning();
 
         // Check if mesa still has open comandas
@@ -1014,7 +1014,7 @@ export function registerOrderRoutes(app: App) {
           await app.db
             .update(schema.mesas)
             .set({ status: "disponivel" })
-            .where(eq(schema.mesas.id, updated.mesaId));
+            .where(and(eq(schema.mesas.id, updated.mesaId), eq(schema.mesas.restauranteId, restauranteId)));
         }
 
         app.logger.info({ comandaId: updated.id }, "Comanda cancelled successfully");
@@ -1116,18 +1116,18 @@ export function registerOrderRoutes(app: App) {
         app.logger.debug({ comandaId: request.params.id }, "Deleting pedidos for comanda");
         await app.db
           .delete(schema.pedidos)
-          .where(eq(schema.pedidos.comandaId, request.params.id));
+          .where(and(eq(schema.pedidos.comandaId, request.params.id), eq(schema.pedidos.restauranteId, restauranteId)));
 
         // Delete the comanda
         await app.db
           .delete(schema.comandas)
-          .where(eq(schema.comandas.id, request.params.id));
+          .where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)));
 
         // Update mesa status back to disponivel
         await app.db
           .update(schema.mesas)
           .set({ status: "disponivel" })
-          .where(eq(schema.mesas.id, comanda.mesaId));
+          .where(and(eq(schema.mesas.id, comanda.mesaId), eq(schema.mesas.restauranteId, restauranteId)));
 
         app.logger.info({ comandaId: request.params.id }, "Comanda deleted successfully");
 
@@ -1237,7 +1237,7 @@ export function registerOrderRoutes(app: App) {
           .set({
             observacao: request.body.observacao,
           })
-          .where(eq(schema.pedidos.id, request.params.id))
+          .where(and(eq(schema.pedidos.id, request.params.id), eq(schema.pedidos.restauranteId, restauranteId)))
           .returning();
 
         app.logger.info({ pedidoId: updated.id }, "Pedido observacao updated successfully");
@@ -1397,7 +1397,7 @@ export function registerOrderRoutes(app: App) {
             pr.imagem_url AS prato_imagem
           FROM pedidos p
           LEFT JOIN pratos pr ON p.prato_id = pr.id
-          WHERE p.comanda_id = ${comandaId}
+          WHERE p.comanda_id = ${comandaId} AND p.restaurante_id = ${restauranteId}
           ORDER BY p.created_at ASC
         `;
 
