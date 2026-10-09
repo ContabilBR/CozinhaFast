@@ -36,6 +36,10 @@ const STATUS_OPTIONS = [
   { value: "reservada", label: "Reservada" },
 ];
 
+// Mesmos limites que o servidor aplica (o servidor é quem garante).
+const MAX_NUMERO_MESA = 9999;
+const MAX_MESAS_POR_LOTE = 100;
+
 export default function GestaoMesasScreen() {
   const COLORS = useColors();
   const router = useRouter();
@@ -52,6 +56,9 @@ export default function GestaoMesasScreen() {
   const [status, setStatus] = useState("livre");
   const [saving, setSaving] = useState(false);
   const [modalError, setModalError] = useState("");
+  const [modoLote, setModoLote] = useState(false);
+  const [numeroInicial, setNumeroInicial] = useState("");
+  const [numeroFinal, setNumeroFinal] = useState("");
 
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -102,6 +109,9 @@ export default function GestaoMesasScreen() {
   const openCreate = () => {
     console.log("[GestaoMesas] Abrir modal de criação");
     setEditingMesa(null);
+    setModoLote(false);
+    setNumeroInicial("");
+    setNumeroFinal("");
     setNumero("");
     setCapacidade("4");
     setStatus("disponivel");
@@ -112,6 +122,7 @@ export default function GestaoMesasScreen() {
   const openEdit = (m: ApiMesa) => {
     console.log("[GestaoMesas] Abrir modal de edição:", m.id);
     setEditingMesa(m);
+    setModoLote(false);
     setNumero(String(m.numero));
     setCapacidade(String(m.capacidade));
     setStatus(m.status || "livre");
@@ -119,7 +130,45 @@ export default function GestaoMesasScreen() {
     setShowModal(true);
   };
 
+  const handleSaveLote = async () => {
+    const ini = parseInt(numeroInicial, 10);
+    const fim = parseInt(numeroFinal, 10);
+    const capVal = parseInt(capacidade, 10);
+    if (!numeroInicial || isNaN(ini) || ini <= 0) { setModalError("Informe o número inicial."); return; }
+    if (!numeroFinal || isNaN(fim) || fim <= 0) { setModalError("Informe o número final."); return; }
+    if (fim < ini) { setModalError("O número final deve ser maior ou igual ao inicial."); return; }
+    if (fim > MAX_NUMERO_MESA) { setModalError(`O número máximo de mesa é ${MAX_NUMERO_MESA}.`); return; }
+    if (fim - ini + 1 > MAX_MESAS_POR_LOTE) {
+      setModalError(`Você pode criar no máximo ${MAX_MESAS_POR_LOTE} mesas por vez.`);
+      return;
+    }
+    if (!capacidade || isNaN(capVal) || capVal <= 0) { setModalError("Capacidade inválida."); return; }
+    const jaExistem = mesas.filter((m) => m.numero >= ini && m.numero <= fim).map((m) => m.numero).sort((a, b) => a - b);
+    if (jaExistem.length > 0) {
+      setModalError(`${jaExistem.length === 1 ? "A mesa" : "As mesas"} ${jaExistem.join(", ")} já ${jaExistem.length === 1 ? "existe" : "existem"}. Ajuste a faixa.`);
+      return;
+    }
+    console.log("[GestaoMesas] POST /api/mesas/lote", { numero_inicial: ini, numero_final: fim, capacidade: capVal });
+    setSaving(true);
+    setModalError("");
+    try {
+      await apiPost("/api/mesas/lote", { numero_inicial: ini, numero_final: fim, capacidade: capVal });
+      console.log("[GestaoMesas] Mesas criadas em lote");
+      setShowModal(false);
+      await fetchMesas();
+    } catch (e: unknown) {
+      console.error("[GestaoMesas] Erro ao criar mesas em lote:", e);
+      setModalError(e instanceof Error ? e.message : "Não foi possível criar as mesas.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSave = async () => {
+    if (!editingMesa && modoLote) {
+      await handleSaveLote();
+      return;
+    }
     const numVal = parseInt(numero, 10);
     const capVal = parseInt(capacidade, 10);
     if (!numero || isNaN(numVal) || numVal <= 0) { setModalError("Número da mesa inválido."); return; }
@@ -279,7 +328,16 @@ export default function GestaoMesasScreen() {
     : mesas;
 
   const emptyText = search.trim() ? "Nenhum resultado encontrado" : "Nenhuma mesa cadastrada";
-  const emptySubText = search.trim() ? "Tente outro termo de busca" : "Toque em \"Incluir\" para adicionar mesas";
+  const emptySubText = search.trim() ? "Tente outro termo de busca" : "Toque em \"Incluir\" para adicionar uma ou várias mesas";
+
+  // Pré-visualização do modo "várias mesas"
+  const iniLote = parseInt(numeroInicial, 10);
+  const fimLote = parseInt(numeroFinal, 10);
+  const capLote = parseInt(capacidade, 10);
+  const qtdLote = !isNaN(iniLote) && !isNaN(fimLote) && iniLote > 0 && fimLote >= iniLote ? fimLote - iniLote + 1 : 0;
+  const conflitosLote = qtdLote > 0
+    ? mesas.filter((m) => m.numero >= iniLote && m.numero <= fimLote).map((m) => m.numero).sort((a, b) => a - b)
+    : [];
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background }} edges={["top", "left", "right"]}>
@@ -643,7 +701,7 @@ export default function GestaoMesasScreen() {
           >
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
               <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 20, color: COLORS.text }}>
-                {editingMesa ? "Editar Mesa" : "Nova Mesa"}
+                {editingMesa ? "Editar Mesa" : modoLote ? "Várias Mesas" : "Nova Mesa"}
               </Text>
               <AnimatedPressable
                 onPress={() => {
@@ -663,6 +721,99 @@ export default function GestaoMesasScreen() {
               </AnimatedPressable>
             </View>
 
+            {!editingMesa && (
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                {[
+                  { lote: false, label: "Uma mesa" },
+                  { lote: true, label: "Várias mesas" },
+                ].map((opt) => (
+                  <AnimatedPressable
+                    key={opt.label}
+                    onPress={() => {
+                      console.log("[GestaoMesas] Modo de criação:", opt.label);
+                      setModoLote(opt.lote);
+                      setModalError("");
+                    }}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      alignItems: "center",
+                      backgroundColor: modoLote === opt.lote ? COLORS.primary : COLORS.surfaceSecondary,
+                      borderWidth: 1,
+                      borderColor: modoLote === opt.lote ? COLORS.primary : COLORS.border,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontFamily: "Outfit_600SemiBold",
+                        fontSize: 13,
+                        color: modoLote === opt.lote ? "#fff" : COLORS.textSecondary,
+                      }}
+                    >
+                      {opt.label}
+                    </Text>
+                  </AnimatedPressable>
+                ))}
+              </View>
+            )}
+
+            {!editingMesa && modoLote ? (
+              <>
+                <View style={{ flexDirection: "row", gap: 12 }}>
+                  <View style={{ flex: 1, gap: 6 }}>
+                    <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 14, color: COLORS.text }}>De *</Text>
+                    <TextInput
+                      value={numeroInicial}
+                      onChangeText={(t) => { setNumeroInicial(t); setModalError(""); }}
+                      placeholder="Ex: 11"
+                      placeholderTextColor={COLORS.textTertiary}
+                      keyboardType="number-pad"
+                      style={inputStyle}
+                      autoFocus
+                    />
+                  </View>
+                  <View style={{ flex: 1, gap: 6 }}>
+                    <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 14, color: COLORS.text }}>Até *</Text>
+                    <TextInput
+                      value={numeroFinal}
+                      onChangeText={(t) => { setNumeroFinal(t); setModalError(""); }}
+                      placeholder="Ex: 20"
+                      placeholderTextColor={COLORS.textTertiary}
+                      keyboardType="number-pad"
+                      style={inputStyle}
+                    />
+                  </View>
+                  <View style={{ flex: 1, gap: 6 }}>
+                    <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 14, color: COLORS.text }}>Lugares *</Text>
+                    <TextInput
+                      value={capacidade}
+                      onChangeText={(t) => { setCapacidade(t); setModalError(""); }}
+                      placeholder="4"
+                      placeholderTextColor={COLORS.textTertiary}
+                      keyboardType="number-pad"
+                      style={inputStyle}
+                    />
+                  </View>
+                </View>
+                {qtdLote > 0 && (
+                  <Text
+                    style={{
+                      fontFamily: "Outfit_400Regular",
+                      fontSize: 13,
+                      color: conflitosLote.length > 0 || qtdLote > MAX_MESAS_POR_LOTE ? COLORS.danger : COLORS.textSecondary,
+                    }}
+                  >
+                    {conflitosLote.length > 0
+                      ? `${conflitosLote.length === 1 ? "A mesa" : "As mesas"} ${conflitosLote.join(", ")} já ${conflitosLote.length === 1 ? "existe" : "existem"}.`
+                      : qtdLote > MAX_MESAS_POR_LOTE
+                        ? `Máximo de ${MAX_MESAS_POR_LOTE} mesas por vez.`
+                        : `Serão criadas ${qtdLote} ${qtdLote === 1 ? "mesa" : "mesas"}, numeradas de ${iniLote} a ${fimLote}, com ${isNaN(capLote) ? "?" : capLote} lugares cada, todas disponíveis.`}
+                  </Text>
+                )}
+              </>
+            ) : (
+              <>
             <View style={{ flexDirection: "row", gap: 12 }}>
               <View style={{ flex: 1, gap: 6 }}>
                 <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 14, color: COLORS.text }}>
@@ -726,6 +877,8 @@ export default function GestaoMesasScreen() {
                 ))}
               </View>
             </View>
+              </>
+            )}
 
             {modalError ? (
               <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 13, color: COLORS.danger }}>
@@ -751,7 +904,11 @@ export default function GestaoMesasScreen() {
                 <ActivityIndicator color="#fff" />
               ) : (
                 <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 16, color: "#fff" }}>
-                  {editingMesa ? "Salvar alterações" : "Adicionar mesa"}
+                  {editingMesa
+                    ? "Salvar alterações"
+                    : modoLote
+                      ? (qtdLote > 0 ? `Criar ${qtdLote} ${qtdLote === 1 ? "mesa" : "mesas"}` : "Criar mesas")
+                      : "Adicionar mesa"}
                 </Text>
               )}
             </AnimatedPressable>

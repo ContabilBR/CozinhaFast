@@ -1,13 +1,28 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
-import { eq, ne, and } from "drizzle-orm";
+import { eq, ne, and, gte, lte } from "drizzle-orm";
 import * as schema from "../db/schema/schema.js";
 import type { App } from "../index.js";
 import { requireAuth as customRequireAuth, requireRole } from "../utils/auth.js";
+
+// Teto realista para o número de uma mesa. Nenhum restaurante tem mais de 9.999 mesas;
+// números acima disso só aparecem por erro ou por dados de teste gravados no banco real
+// (os testes automáticos usam números de 100000 em diante). Por isso o servidor recusa.
+const NUMERO_MAXIMO_MESA = 9999;
+
+// Quantidade máxima de mesas criadas em uma única solicitação em lote.
+// (O app aplica o mesmo limite na tela; o servidor é quem garante.)
+const MAX_MESAS_POR_LOTE = 100;
 
 interface CreateMesaBody {
   numero: number;
   capacidade?: number;
   status?: string;
+}
+
+interface CreateMesasLoteBody {
+  numero_inicial: number;
+  numero_final: number;
+  capacidade?: number;
 }
 
 interface UpdateMesaBody {
@@ -160,7 +175,12 @@ export function registerTableRoutes(app: App) {
           return await reply.code(400).send({ error: "numero é obrigatório" });
         }
 
-        app.logger.info({ tenantId, numero }, "Creating mesa");
+        if (numero > NUMERO_MAXIMO_MESA) {
+          app.logger.warn({ tenantId, numero, criadoPor: authUser.id }, "Mesa creation refused: numero above allowed maximum");
+          return await reply.code(400).send({ error: `Número da mesa inválido: o máximo permitido é ${NUMERO_MAXIMO_MESA}.` });
+        }
+
+        app.logger.info({ tenantId, numero, criadoPor: authUser.id, criadoPorRole: authUser.role }, "Creating mesa");
 
         // Check for duplicate numero within same tenant
         const existing = await app.db
@@ -199,6 +219,153 @@ export function registerTableRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to create mesa");
+        return await reply.code(500).send({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // POST /api/mesas/lote - Cria várias mesas de uma vez (do número inicial ao final)
+  // Tudo ou nada: se alguma mesa da faixa já existir, nada é criado.
+  app.fastify.post<{ Body: CreateMesasLoteBody }>(
+    "/api/mesas/lote",
+    {
+      schema: {
+        description: "Create several consecutive mesas at once, from numero_inicial to numero_final (requires admin/gerente role). All or nothing.",
+        tags: ["mesas"],
+        body: {
+          type: "object",
+          required: ["numero_inicial", "numero_final"],
+          properties: {
+            numero_inicial: { type: "number" },
+            numero_final: { type: "number" },
+            capacidade: { type: "number" },
+          },
+        },
+        response: {
+          201: {
+            type: "object",
+            properties: {
+              criadas: { type: "number" },
+              mesas: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    id: { type: "string", format: "uuid" },
+                    numero: { type: "number" },
+                    status: { type: "string" },
+                    capacidade: { type: "number" },
+                  },
+                },
+              },
+            },
+          },
+          400: { type: "object", properties: { error: { type: "string" } } },
+          401: { type: "object", properties: { error: { type: "string" } } },
+          403: { type: "object", properties: { error: { type: "string" } } },
+          409: { type: "object", properties: { error: { type: "string" } } },
+        },
+      },
+    },
+    async (request: FastifyRequest<{ Body: CreateMesasLoteBody }>, reply: FastifyReply) => {
+      const authUser = await customRequireAuth(app, request, reply);
+      if (!authUser) return;
+
+      try {
+        const tenantId = authUser.restauranteId;
+
+        // Mesma regra da criação individual: só administrador ou gerente
+        const authUserProfile = await app.db
+          .select()
+          .from(schema.profiles)
+          .where(and(
+            eq(schema.profiles.userId, authUser.id),
+            eq(schema.profiles.restauranteId, tenantId as any)
+          ))
+          .limit(1);
+
+        const dbRole = authUserProfile.length > 0 ? authUserProfile[0].role?.toLowerCase() : authUser.role?.toLowerCase();
+        const isAdmin = ["admin", "administrador", "gerente"].includes(dbRole ?? "");
+
+        if (!isAdmin) {
+          app.logger.warn({ tenantId }, "User lacks permission to create mesas in bulk");
+          return reply.code(403).send({ error: "Forbidden" });
+        }
+
+        const { numero_inicial, numero_final, capacidade = 4 } = request.body;
+
+        if (
+          !Number.isInteger(numero_inicial) || !Number.isInteger(numero_final) || !Number.isInteger(capacidade) ||
+          numero_inicial <= 0 || numero_final <= 0 || capacidade <= 0
+        ) {
+          return await reply.code(400).send({ error: "Número inicial, número final e capacidade devem ser inteiros maiores que zero." });
+        }
+
+        if (numero_final < numero_inicial) {
+          return await reply.code(400).send({ error: "O número final deve ser maior ou igual ao número inicial." });
+        }
+
+        if (numero_final > NUMERO_MAXIMO_MESA) {
+          app.logger.warn({ tenantId, numero_inicial, numero_final, criadoPor: authUser.id }, "Bulk mesa creation refused: numero above allowed maximum");
+          return await reply.code(400).send({ error: `Número da mesa inválido: o máximo permitido é ${NUMERO_MAXIMO_MESA}.` });
+        }
+
+        const quantidade = numero_final - numero_inicial + 1;
+        if (quantidade > MAX_MESAS_POR_LOTE) {
+          return await reply.code(400).send({ error: `Você pode criar no máximo ${MAX_MESAS_POR_LOTE} mesas por vez. A faixa informada tem ${quantidade}.` });
+        }
+
+        // Se alguma mesa da faixa já existir neste restaurante, recusa tudo (nada é criado)
+        const existentes = await app.db
+          .select({ numero: schema.mesas.numero })
+          .from(schema.mesas)
+          .where(and(
+            eq(schema.mesas.restauranteId, tenantId as any),
+            gte(schema.mesas.numero, numero_inicial),
+            lte(schema.mesas.numero, numero_final)
+          ));
+
+        if (existentes.length > 0) {
+          const numeros = existentes.map((m) => m.numero).sort((a, b) => a - b);
+          app.logger.warn({ tenantId, numero_inicial, numero_final, conflitos: numeros }, "Bulk mesa creation refused: numeros already exist");
+          const lista = numeros.length > 10 ? `${numeros.slice(0, 10).join(", ")} e outras ${numeros.length - 10}` : numeros.join(", ");
+          return reply.code(409).send({
+            error: `${numeros.length === 1 ? "A mesa" : "As mesas"} ${lista} já ${numeros.length === 1 ? "existe" : "existem"}. Nenhuma mesa foi criada.`,
+          });
+        }
+
+        app.logger.info(
+          { tenantId, numero_inicial, numero_final, quantidade, criadoPor: authUser.id, criadoPorRole: authUser.role },
+          "Creating mesas in bulk"
+        );
+
+        const agora = new Date();
+        const valores = Array.from({ length: quantidade }, (_, i) => ({
+          numero: numero_inicial + i,
+          capacidade,
+          status: "disponivel" as any,
+          restauranteId: tenantId as any,
+          createdAt: agora,
+        }));
+
+        // Um único INSERT: ou entram todas as mesas, ou nenhuma
+        const criadas = await app.db.insert(schema.mesas).values(valores).returning();
+
+        app.logger.info({ tenantId, quantidade: criadas.length }, "Mesas created in bulk successfully");
+
+        return await reply.code(201).send({
+          criadas: criadas.length,
+          mesas: criadas
+            .sort((a, b) => a.numero - b.numero)
+            .map((m) => ({ id: m.id, numero: m.numero, status: m.status, capacidade: m.capacidade })),
+        });
+      } catch (error) {
+        const codigo = (error as any)?.code ?? (error as any)?.cause?.code;
+        if (codigo === "23505") {
+          // Outra solicitação criou uma dessas mesas ao mesmo tempo
+          return await reply.code(409).send({ error: "Alguma mesa dessa faixa foi criada por outra solicitação ao mesmo tempo. Nenhuma mesa foi criada; tente novamente." });
+        }
+        app.logger.error({ err: error }, "Failed to create mesas in bulk");
         return await reply.code(500).send({ error: "Internal server error" });
       }
     }
@@ -343,6 +510,11 @@ export function registerTableRoutes(app: App) {
         if ((numero !== undefined && (!Number.isInteger(numero) || numero <= 0)) ||
             (capacidade !== undefined && (!Number.isInteger(capacidade) || capacidade <= 0))) {
           return await reply.code(400).send({ error: "Número e capacidade devem ser inteiros maiores que zero." });
+        }
+
+        if (numero !== undefined && numero > NUMERO_MAXIMO_MESA) {
+          app.logger.warn({ tenantId, mesaId: id, numero, editadoPor: authUser.id }, "Mesa update refused: numero above allowed maximum");
+          return await reply.code(400).send({ error: `Número da mesa inválido: o máximo permitido é ${NUMERO_MAXIMO_MESA}.` });
         }
 
         app.logger.info({ tenantId, mesaId: id }, "Updating mesa");
