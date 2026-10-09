@@ -63,20 +63,20 @@ export function registerEstoqueRoutes(app: App) {
       if (!(await requireRole(session, ["gerente", "administrador", "admin"], reply))) return;
       const restauranteId = requireTenant(session);
       const { nome, descricao, unidade, estoqueAtual, estoqueMinimo, custoUnitario } = request.body;
-      if (!nome || !unidade) return reply.code(400).send({ error: "nome e unidade são obrigatórios" });
+      if (!nome || !unidade) return await reply.code(400).send({ error: "nome e unidade são obrigatórios" });
 
       const VALID_UNITS = ["kg", "g", "l", "ml", "un", "cx", "pct", "dz"];
       if (!VALID_UNITS.includes(unidade)) {
-        return reply.code(400).send({ error: "Unidade inválida. Use: " + VALID_UNITS.join(", ") });
+        return await reply.code(400).send({ error: "Unidade inválida. Use: " + VALID_UNITS.join(", ") });
       }
 
       const estMinNum = parseFloat(estoqueMinimo || "0");
       const custUnitNum = parseFloat(custoUnitario || "0");
       if (!isFinite(estMinNum) || estMinNum < 0) {
-        return reply.code(400).send({ error: "estoqueMinimo deve ser um número não-negativo." });
+        return await reply.code(400).send({ error: "estoqueMinimo deve ser um número não-negativo." });
       }
       if (!isFinite(custUnitNum) || custUnitNum < 0) {
-        return reply.code(400).send({ error: "custoUnitario deve ser um número não-negativo." });
+        return await reply.code(400).send({ error: "custoUnitario deve ser um número não-negativo." });
       }
 
       const [insumo] = await db.insert(schema.insumos).values({
@@ -87,7 +87,7 @@ export function registerEstoqueRoutes(app: App) {
         restauranteId,
       }).returning();
 
-      return reply.code(201).send(insumo);
+      return await reply.code(201).send(insumo);
     } catch (err: any) {
       if (err.statusCode) return await reply.code(err.statusCode).send({ error: err.message });
       return await reply.code(500).send({ error: "Erro interno" });
@@ -108,26 +108,26 @@ export function registerEstoqueRoutes(app: App) {
       const body = request.body;
 
       const [existing] = await db.select().from(schema.insumos).where(and(eq(schema.insumos.id, id), eq(schema.insumos.restauranteId, restauranteId)));
-      if (!existing) return reply.code(404).send({ error: "Insumo não encontrado" });
+      if (!existing) return await reply.code(404).send({ error: "Insumo não encontrado" });
 
       if (body.unidade !== undefined) {
         const VALID_UNITS = ["kg", "g", "l", "ml", "un", "cx", "pct", "dz"];
         if (!VALID_UNITS.includes(body.unidade)) {
-          return reply.code(400).send({ error: "Unidade inválida. Use: " + VALID_UNITS.join(", ") });
+          return await reply.code(400).send({ error: "Unidade inválida. Use: " + VALID_UNITS.join(", ") });
         }
       }
 
       if (body.estoqueMinimo !== undefined) {
         const estMinNum = parseFloat(body.estoqueMinimo);
         if (!isFinite(estMinNum) || estMinNum < 0) {
-          return reply.code(400).send({ error: "estoqueMinimo deve ser um número não-negativo." });
+          return await reply.code(400).send({ error: "estoqueMinimo deve ser um número não-negativo." });
         }
       }
 
       if (body.custoUnitario !== undefined) {
         const custUnitNum = parseFloat(body.custoUnitario);
         if (!isFinite(custUnitNum) || custUnitNum < 0) {
-          return reply.code(400).send({ error: "custoUnitario deve ser um número não-negativo." });
+          return await reply.code(400).send({ error: "custoUnitario deve ser um número não-negativo." });
         }
       }
 
@@ -140,7 +140,7 @@ export function registerEstoqueRoutes(app: App) {
       if (body.ativo !== undefined) updates.ativo = body.ativo;
 
       const [updated] = await db.update(schema.insumos).set(updates).where(eq(schema.insumos.id, id)).returning();
-      return reply.code(200).send(updated);
+      return await reply.code(200).send(updated);
     } catch (err: any) {
       if (err.statusCode) return await reply.code(err.statusCode).send({ error: err.message });
       return await reply.code(500).send({ error: "Erro interno" });
@@ -160,10 +160,10 @@ export function registerEstoqueRoutes(app: App) {
       const { id } = request.params;
 
       const [existing] = await db.select().from(schema.insumos).where(and(eq(schema.insumos.id, id), eq(schema.insumos.restauranteId, restauranteId)));
-      if (!existing) return reply.code(404).send({ error: "Insumo não encontrado" });
+      if (!existing) return await reply.code(404).send({ error: "Insumo não encontrado" });
 
       await db.update(schema.insumos).set({ ativo: false, updatedAt: new Date() }).where(eq(schema.insumos.id, id));
-      return reply.code(200).send({ success: true });
+      return await reply.code(200).send({ success: true });
     } catch (err: any) {
       if (err.statusCode) return await reply.code(err.statusCode).send({ error: err.message });
       return await reply.code(500).send({ error: "Erro interno" });
@@ -184,11 +184,11 @@ export function registerEstoqueRoutes(app: App) {
       const restauranteId = requireTenant(session);
       const { insumoId, tipo, quantidade, motivo } = request.body;
 
-      if (!insumoId || !tipo || !quantidade) return reply.code(400).send({ error: "insumoId, tipo e quantidade são obrigatórios" });
-      if (!["entrada", "saida", "ajuste"].includes(tipo)) return reply.code(400).send({ error: "tipo deve ser entrada, saida ou ajuste" });
+      if (!insumoId || !tipo || !quantidade) return await reply.code(400).send({ error: "insumoId, tipo e quantidade são obrigatórios" });
+      if (!["entrada", "saida", "ajuste"].includes(tipo)) return await reply.code(400).send({ error: "tipo deve ser entrada, saida ou ajuste" });
 
       const qty = parseFloat(quantidade);
-      if (isNaN(qty) || qty <= 0) return reply.code(400).send({ error: "quantidade deve ser um número positivo" });
+      if (isNaN(qty) || qty <= 0) return await reply.code(400).send({ error: "quantidade deve ser um número positivo" });
 
       const result = await (db as any).transaction(async (tx: any) => {
         const [insumo] = await tx.select().from(schema.insumos).where(and(eq(schema.insumos.id, insumoId), eq(schema.insumos.restauranteId, restauranteId)));
@@ -221,8 +221,8 @@ export function registerEstoqueRoutes(app: App) {
         return { movimentacao: mov, estoqueNovo };
       });
 
-      if (result.error) return reply.code(400).send({ error: result.error });
-      return reply.code(201).send(result);
+      if (result.error) return await reply.code(400).send({ error: result.error });
+      return await reply.code(201).send(result);
     } catch (err: any) {
       if (err.statusCode) return await reply.code(err.statusCode).send({ error: err.message });
       return await reply.code(500).send({ error: "Erro interno" });
@@ -244,7 +244,7 @@ export function registerEstoqueRoutes(app: App) {
         .where(and(eq(schema.movimentacoesEstoque.insumoId, insumoId), eq(schema.movimentacoesEstoque.restauranteId, restauranteId)))
         .orderBy(desc(schema.movimentacoesEstoque.createdAt));
 
-      return reply.code(200).send(movimentacoes);
+      return await reply.code(200).send(movimentacoes);
     } catch (err: any) {
       if (err.statusCode) return await reply.code(err.statusCode).send({ error: err.message });
       return await reply.code(500).send({ error: "Erro interno" });
@@ -274,7 +274,7 @@ export function registerEstoqueRoutes(app: App) {
         .leftJoin(schema.insumos, eq(schema.pratoInsumos.insumoId, schema.insumos.id))
         .where(and(eq(schema.pratoInsumos.pratoId, pratoId), eq(schema.pratoInsumos.restauranteId, restauranteId)));
 
-      return reply.code(200).send(items);
+      return await reply.code(200).send(items);
     } catch (err: any) {
       if (err.statusCode) return await reply.code(err.statusCode).send({ error: err.message });
       return await reply.code(500).send({ error: "Erro interno" });
@@ -294,30 +294,30 @@ export function registerEstoqueRoutes(app: App) {
       const { pratoId } = request.params;
       const { insumo_id, quantidade } = request.body;
 
-      if (!insumo_id || !quantidade) return reply.code(400).send({ error: "insumo_id e quantidade são obrigatórios" });
+      if (!insumo_id || !quantidade) return await reply.code(400).send({ error: "insumo_id e quantidade são obrigatórios" });
 
       const qty = parseFloat(quantidade);
       if (!isFinite(qty) || qty <= 0) {
-        return reply.code(400).send({ error: "quantidade deve ser um número maior que zero." });
+        return await reply.code(400).send({ error: "quantidade deve ser um número maior que zero." });
       }
 
       // Check if prato exists and belongs to tenant
       const [prato] = await db.select().from(schema.pratos).where(and(eq(schema.pratos.id, pratoId), eq(schema.pratos.restauranteId, restauranteId)));
-      if (!prato) return reply.code(404).send({ error: "Prato não encontrado" });
+      if (!prato) return await reply.code(404).send({ error: "Prato não encontrado" });
 
       // Check if insumo exists and belongs to tenant
       const [insumo] = await db.select().from(schema.insumos).where(and(eq(schema.insumos.id, insumo_id), eq(schema.insumos.restauranteId, restauranteId)));
-      if (!insumo) return reply.code(404).send({ error: "Insumo não encontrado" });
+      if (!insumo) return await reply.code(404).send({ error: "Insumo não encontrado" });
 
       // Check for duplicate link
       const [existing] = await db.select().from(schema.pratoInsumos).where(and(eq(schema.pratoInsumos.pratoId, pratoId), eq(schema.pratoInsumos.insumoId, insumo_id)));
-      if (existing) return reply.code(400).send({ error: "Este insumo já está vinculado a este prato." });
+      if (existing) return await reply.code(400).send({ error: "Este insumo já está vinculado a este prato." });
 
       const [item] = await db.insert(schema.pratoInsumos).values({
         pratoId, insumoId: insumo_id, quantidadeUsada: quantidade, restauranteId,
       }).returning();
 
-      return reply.code(201).send(item);
+      return await reply.code(201).send(item);
     } catch (err: any) {
       if (err.statusCode) return await reply.code(err.statusCode).send({ error: err.message });
       return await reply.code(500).send({ error: "Erro interno" });
@@ -337,10 +337,10 @@ export function registerEstoqueRoutes(app: App) {
       const { id } = request.params;
 
       const [existing] = await db.select().from(schema.pratoInsumos).where(and(eq(schema.pratoInsumos.id, id), eq(schema.pratoInsumos.restauranteId, restauranteId)));
-      if (!existing) return reply.code(404).send({ error: "Vínculo não encontrado" });
+      if (!existing) return await reply.code(404).send({ error: "Vínculo não encontrado" });
 
       await db.delete(schema.pratoInsumos).where(eq(schema.pratoInsumos.id, id));
-      return reply.code(200).send({ success: true });
+      return await reply.code(200).send({ success: true });
     } catch (err: any) {
       if (err.statusCode) return await reply.code(err.statusCode).send({ error: err.message });
       return await reply.code(500).send({ error: "Erro interno" });

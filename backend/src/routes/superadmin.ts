@@ -260,7 +260,7 @@ export function registerSuperAdminRoutes(app: App) {
             { responsavelEmail },
             "Email already exists in usuarios"
           );
-          return reply.code(409).send({ error: "E-mail já cadastrado" });
+          return await reply.code(409).send({ error: "E-mail já cadastrado" });
         }
 
         // Transaction: create restaurant and user
@@ -333,7 +333,7 @@ export function registerSuperAdminRoutes(app: App) {
           "Restaurant creation completed successfully"
         );
 
-        return reply.code(201).send({
+        return await reply.code(201).send({
           restaurante: {
             id: result.restaurante.id,
             nome: result.restaurante.nome,
@@ -424,7 +424,7 @@ export function registerSuperAdminRoutes(app: App) {
 
         if (restaurantes.length === 0) {
           app.logger.warn({ restauranteId: id }, "Restaurant not found");
-          return reply.code(404).send({ error: "Restaurant not found" });
+          return await reply.code(404).send({ error: "Restaurant not found" });
         }
 
         // Update restaurant status
@@ -438,7 +438,7 @@ export function registerSuperAdminRoutes(app: App) {
           "Restaurant status updated successfully"
         );
 
-        return reply.code(200).send({ success: true, ativo });
+        return await reply.code(200).send({ success: true, ativo });
       } catch (err) {
         app.logger.error({ err, restauranteId: id }, "Failed to update restaurant status");
         throw err;
@@ -511,7 +511,7 @@ export function registerSuperAdminRoutes(app: App) {
         // Check if at least one field is provided
         if (plano === undefined && assinatura_status === undefined) {
           app.logger.warn({ restauranteId: id }, "No fields provided for update");
-          return reply.code(400).send({ error: "Nenhum campo para atualizar" });
+          return await reply.code(400).send({ error: "Nenhum campo para atualizar" });
         }
 
         // Check if restaurant exists
@@ -522,7 +522,7 @@ export function registerSuperAdminRoutes(app: App) {
 
         if (restaurantes.length === 0) {
           app.logger.warn({ restauranteId: id }, "Restaurant not found");
-          return reply.code(404).send({ error: "Restaurant not found" });
+          return await reply.code(404).send({ error: "Restaurant not found" });
         }
 
         // Build update object with only provided fields
@@ -541,7 +541,7 @@ export function registerSuperAdminRoutes(app: App) {
           "Restaurant subscription updated successfully"
         );
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           success: true,
           plano: plano ?? null,
           assinatura_status: assinatura_status ?? null,

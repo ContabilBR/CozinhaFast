@@ -109,7 +109,7 @@ export function registerCustomAuthRoutes(app: App) {
         // Incrementar mesmo assim para não deixar o contador parar de crescer
         increment(keyEmailIp, WIN_15);
         increment(keyIp, WIN_15);
-        return reply.code(429).send({ error: 'Muitas tentativas. Tente novamente em 15 minutos.' });
+        return await reply.code(429).send({ error: 'Muitas tentativas. Tente novamente em 15 minutos.' });
       }
 
       // Normalize email
@@ -200,7 +200,7 @@ export function registerCustomAuthRoutes(app: App) {
       resetKey(keyEmailIp);
       resetKey(keyIp);
 
-      return reply.code(200).send({
+      return await reply.code(200).send({
         token,
         user: {
           id: user.id,
@@ -314,7 +314,7 @@ export function registerCustomAuthRoutes(app: App) {
       const user = usuarios[0];
       app.logger.info({ userId: user.id, email: user.email }, 'User profile fetched successfully via custom auth');
 
-      return reply.code(200).send({
+      return await reply.code(200).send({
         id: user.id,
         nome: user.nome,
         email: user.email,
@@ -361,7 +361,7 @@ export function registerCustomAuthRoutes(app: App) {
     const countIp = getCount(keyIp);
     if (countEmail >= 3 || countIp >= 10) {
       // Silencioso: retornar mensagem genérica SEM gerar token nem enviar e-mail
-      return reply.code(200).send({ message: 'Se esse e-mail estiver cadastrado, você receberá um link em instantes.' });
+      return await reply.code(200).send({ message: 'Se esse e-mail estiver cadastrado, você receberá um link em instantes.' });
     }
     // Incrementar antes de processar (mesmo que o e-mail não exista)
     increment(keyEmail, WIN_1H);
@@ -419,11 +419,11 @@ export function registerCustomAuthRoutes(app: App) {
         app.logger.error({ err, userId: user.id, email: user.email }, 'Failed to send password reset email');
       });
 
-      return reply.code(200).send({ message: genericMessage });
+      return await reply.code(200).send({ message: genericMessage });
     } catch (err) {
       app.logger.error({ err, email }, 'Password reset request error');
       // Always return generic message even on error
-      return reply.code(200).send({ message: 'Se esse e-mail estiver cadastrado, você receberá um link em instantes.' });
+      return await reply.code(200).send({ message: 'Se esse e-mail estiver cadastrado, você receberá um link em instantes.' });
     }
   });
 
@@ -472,7 +472,7 @@ export function registerCustomAuthRoutes(app: App) {
     const countIp = getCount(keyIp);
     if (countIp >= 10) {
       increment(keyIp, WIN_1H);
-      return reply.code(429).send({ error: 'Muitas tentativas. Tente novamente mais tarde.' });
+      return await reply.code(429).send({ error: 'Muitas tentativas. Tente novamente mais tarde.' });
     }
     increment(keyIp, WIN_1H);
 
@@ -544,10 +544,10 @@ export function registerCustomAuthRoutes(app: App) {
 
       app.logger.info({ usuarioId: resetToken.usuarioId }, 'Password reset completed, all sessions invalidated');
 
-      return reply.code(200).send({ message: 'Senha redefinida com sucesso. Faça login com sua nova senha.' });
+      return await reply.code(200).send({ message: 'Senha redefinida com sucesso. Faça login com sua nova senha.' });
     } catch (err) {
       app.logger.error({ err }, 'Password reset error');
-      return reply.code(500).send({ error: 'Erro interno ao redefinir senha.' });
+      return await reply.code(500).send({ error: 'Erro interno ao redefinir senha.' });
     }
   });
 

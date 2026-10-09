@@ -125,7 +125,7 @@ export function registerFiscalRoutes(app: App) {
         const rest = await db.select().from(schema.restaurante).where(eq(schema.restaurante.id, restauranteId));
         if (!rest.length) {
           app.logger.warn({ restauranteId }, "Restaurant not found");
-          return reply.code(404).send({ error: "Restaurante não encontrado" });
+          return await reply.code(404).send({ error: "Restaurante não encontrado" });
         }
         const restaurante = rest[0];
         if (!restaurante.cnpj) {
@@ -237,7 +237,7 @@ export function registerFiscalRoutes(app: App) {
             mensagemSefaz: focusErr.message
           }).where(eq(schema.notasFiscais.id, notaFiscal.id));
           app.logger.error({ err: focusErr, notaId: notaFiscal.id }, "Focus API error");
-          return reply.code(502).send({ error: "Erro ao comunicar com Focus NFe", detail: focusErr.message, cnpjUsado: cnpjLimpo, ref, stack: focusErr.stack?.slice(0, 300) });
+          return await reply.code(502).send({ error: "Erro ao comunicar com Focus NFe", detail: focusErr.message, cnpjUsado: cnpjLimpo, ref, stack: focusErr.stack?.slice(0, 300) });
         }
 
       } catch (err: any) {
@@ -289,7 +289,7 @@ export function registerFiscalRoutes(app: App) {
           .where(eq(schema.notasFiscais.referenciaFocus, ref));
         if (!nota || nota.restauranteId !== restauranteId) {
           app.logger.warn({ ref, restauranteId }, "NFSe not found");
-          return reply.code(404).send({ error: "Nota não encontrada" });
+          return await reply.code(404).send({ error: "Nota não encontrada" });
         }
 
         try {
@@ -392,7 +392,7 @@ export function registerFiscalRoutes(app: App) {
           .where(eq(schema.notasFiscais.referenciaFocus, ref));
         if (!nota || nota.restauranteId !== restauranteId) {
           app.logger.warn({ ref, restauranteId }, "NFSe not found for cancellation");
-          return reply.code(404).send({ error: "Nota não encontrada" });
+          return await reply.code(404).send({ error: "Nota não encontrada" });
         }
 
         const resultado = await focusRequest("DELETE", "/nfsen/" + ref, {
@@ -446,7 +446,7 @@ export function registerFiscalRoutes(app: App) {
           .orderBy(desc(schema.notasFiscais.createdAt));
 
         app.logger.info({ count: notas.length }, "Listed notas fiscais");
-        return reply.code(200).send(notas);
+        return await reply.code(200).send(notas);
       } catch (err: any) {
         app.logger.error({ err }, "Failed to list notas fiscais");
         return await reply.code(500).send({ error: err.message });

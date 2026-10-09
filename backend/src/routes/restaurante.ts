@@ -227,7 +227,7 @@ export function registerRestauranteRoutes(app: App) {
           return await reply.code(404).send({ error: "Nenhum dado cadastrado" });
         }
 
-        return reply.code(200).send(serializar(result[0]));
+        return await reply.code(200).send(serializar(result[0]));
       } catch (error) {
         app.logger.error({ err: error }, "Failed to get restaurante info");
         return await reply.code(500).send({ error: "Internal server error" });
@@ -399,7 +399,7 @@ export function registerRestauranteRoutes(app: App) {
 
         app.logger.info({ restauranteId: updated.id }, "Restaurante updated successfully");
 
-        return reply.code(200).send(serializar(updated));
+        return await reply.code(200).send(serializar(updated));
       } catch (error) {
         app.logger.error({ err: error }, "Failed to upsert restaurante");
         return await reply.code(500).send({ error: "Internal server error" });

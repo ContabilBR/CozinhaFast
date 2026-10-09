@@ -62,7 +62,7 @@ export function registerGarconRoutes(app: App) {
           .from(userTable)
           .where(and(eq(userTable.role, "garcom"), contaDoRestaurante(app, restauranteId)));
 
-        return reply.code(200).send(
+        return await reply.code(200).send(
           garcons.map((u) => ({
             id: u.id,
             name: u.name,
@@ -208,7 +208,7 @@ export function registerGarconRoutes(app: App) {
 
         const restauranteId = requireTenant(authUser);
         if (!restauranteId) {
-          return reply.code(404).send({ error: "Nenhum restaurante associado" });
+          return await reply.code(404).send({ error: "Nenhum restaurante associado" });
         }
 
         app.logger.info({ email: request.body.email, restauranteId }, "Creating new garcon");
@@ -221,7 +221,7 @@ export function registerGarconRoutes(app: App) {
           .limit(1);
 
         if (existing && existing.length > 0) {
-          return reply.code(409).send({ error: "Email already exists" });
+          return await reply.code(409).send({ error: "Email already exists" });
         }
 
         // Create user
@@ -264,7 +264,7 @@ export function registerGarconRoutes(app: App) {
 
         app.logger.info({ userId, email: request.body.email }, "Garcon created successfully");
 
-        return reply.code(201).send({
+        return await reply.code(201).send({
           id: userId,
           name: request.body.name,
           email: request.body.email,
@@ -345,7 +345,7 @@ export function registerGarconRoutes(app: App) {
           ));
 
         if (!existing.length) {
-          return reply.code(404).send({ error: "Garcon not found" });
+          return await reply.code(404).send({ error: "Garcon not found" });
         }
         const emailAntigo = existing[0].email;
 
@@ -440,7 +440,7 @@ export function registerGarconRoutes(app: App) {
           ));
 
         if (!existing.length) {
-          return reply.code(404).send({ error: "Garcon not found" });
+          return await reply.code(404).send({ error: "Garcon not found" });
         }
 
         // Remove a conta (user, com account/session em cascata) E o espelho em usuarios, com as
@@ -460,7 +460,7 @@ export function registerGarconRoutes(app: App) {
 
         app.logger.info({ userId: request.params.id }, "Garcon deleted successfully");
 
-        return reply.code(204).send();
+        return await reply.code(204).send();
       } catch (error) {
         app.logger.error({ err: error }, "Failed to delete garcon");
         return await reply.code(500).send({ error: "Internal server error" });

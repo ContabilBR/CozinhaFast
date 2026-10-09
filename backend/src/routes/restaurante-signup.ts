@@ -198,7 +198,7 @@ export function registerRestauranteSignupRoutes(app: App) {
         }
 
         app.logger.error({ err: error, adminEmail, body: request.body }, "Failed to create restaurante signup");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );

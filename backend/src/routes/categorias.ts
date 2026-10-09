@@ -53,7 +53,7 @@ export function registerCategoriasRoutes(app: App) {
           .where(eq(schema.categorias.restauranteId, tenantId as any))
           .orderBy(schema.categorias.nome);
 
-        return reply.code(200).send(
+        return await reply.code(200).send(
           result.map((c) => ({
             id: c.id,
             nome: c.nome,

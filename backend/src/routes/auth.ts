@@ -83,7 +83,7 @@ export function registerAuthRoutes(app: App) {
       // por trafego real.
       // Producao DEVE definir NODE_ENV=production para bloquear essa rota.
       if (process.env.NODE_ENV === "production") {
-        return reply.code(404).send();
+        return await reply.code(404).send();
       }
       try {
         app.logger.info({ email: request.body.email }, "Sign up attempt");
@@ -111,7 +111,7 @@ export function registerAuthRoutes(app: App) {
 
         if (existing && existing.length > 0) {
           app.logger.info({ email: normalizedEmail }, "Sign up failed: email already exists");
-          return reply.code(409).send({ error: "Email já cadastrado" });
+          return await reply.code(409).send({ error: "Email já cadastrado" });
         }
 
         // "role" vem direto do corpo da requisicao sem validacao de quem esta

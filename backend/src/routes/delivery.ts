@@ -237,7 +237,7 @@ export function registerDeliveryRoutes(app: App) {
           return { comanda, entrega };
         });
 
-        if (result.error) return reply.code(400).send({ error: result.error });
+        if (result.error) return await reply.code(400).send({ error: result.error });
 
         // Publicar evento realtime para a cozinha
         try {
@@ -304,7 +304,7 @@ export function registerDeliveryRoutes(app: App) {
         if (!authUser) return;
         const restauranteId = requireTenant(authUser);
         if (!restauranteId) {
-          return reply.code(401).send({ error: "Nenhum restaurante associado" });
+          return await reply.code(401).send({ error: "Nenhum restaurante associado" });
         }
 
         const statusFiltro = (request.query as any)?.status;
@@ -445,7 +445,7 @@ export function registerDeliveryRoutes(app: App) {
         const restauranteId = requireTenant(authUser);
 
         const [entrega] = await db.select().from(schema.entregas).where(and(eq(schema.entregas.id, request.params.id), eq(schema.entregas.restauranteId, restauranteId)));
-        if (!entrega) return reply.code(404).send({ error: "Pedido não encontrado" });
+        if (!entrega) return await reply.code(404).send({ error: "Pedido não encontrado" });
 
         const [comanda] = await db.select().from(schema.comandas).where(eq(schema.comandas.id, entrega.comandaId));
         const itensRaw = await db
@@ -655,23 +655,23 @@ export function registerDeliveryRoutes(app: App) {
         const restauranteId = requireTenant(authUser);
 
         if (request.body.status === "entregue") {
-          return reply.code(409).send({ error: "Para confirmar a entrega use PUT /api/delivery/pedidos/:id/confirmar-entrega (registra o pagamento e fecha a comanda)." });
+          return await reply.code(409).send({ error: "Para confirmar a entrega use PUT /api/delivery/pedidos/:id/confirmar-entrega (registra o pagamento e fecha a comanda)." });
         }
 
         const [entrega] = await db.select().from(schema.entregas)
           .where(and(eq(schema.entregas.id, request.params.id), eq(schema.entregas.restauranteId, restauranteId)));
-        if (!entrega) return reply.code(404).send({ error: "Entrega não encontrada" });
+        if (!entrega) return await reply.code(404).send({ error: "Entrega não encontrada" });
 
         const { status, entregador_nome, entregador_telefone } = request.body;
 
         if (status === "cancelada") {
-          return reply.code(409).send({ error: "Para cancelar um pedido de delivery use PUT /api/delivery/pedidos/:id/cancelar (motivo obrigatório)." });
+          return await reply.code(409).send({ error: "Para cancelar um pedido de delivery use PUT /api/delivery/pedidos/:id/cancelar (motivo obrigatório)." });
         }
 
         // Bug 1: para saiu_entrega, aceitar tanto "pendente" quanto "preparando" como status atual
         if (status === "saiu_entrega") {
           if (!["pendente", "preparando"].includes(entrega.status)) {
-            return reply.code(409).send({ error: `Não é possível despachar uma entrega com status "${entrega.status}". O pedido precisa estar em "pendente" ou "preparando".` });
+            return await reply.code(409).send({ error: `Não é possível despachar uma entrega com status "${entrega.status}". O pedido precisa estar em "pendente" ou "preparando".` });
           }
 
           if (!entregador_nome?.trim()) {
@@ -683,19 +683,19 @@ export function registerDeliveryRoutes(app: App) {
           const ativos = itens.filter((i: any) => i.status !== "cancelado");
           const prontos = ativos.filter((i: any) => i.status === "pronto");
           if (ativos.length === 0) {
-            return reply.code(409).send({ error: "Não há itens ativos neste pedido." });
+            return await reply.code(409).send({ error: "Não há itens ativos neste pedido." });
           }
           if (prontos.length < ativos.length) {
-            return reply.code(409).send({ error: `Ainda há itens em preparo. ${prontos.length} de ${ativos.length} itens prontos.` });
+            return await reply.code(409).send({ error: `Ainda há itens em preparo. ${prontos.length} de ${ativos.length} itens prontos.` });
           }
         } else {
           // Para outros status futuros, manter verificação de sequência
           const SEQUENCIA = ["pendente", "preparando", "saiu_entrega", "entregue"];
           const idxAtual = SEQUENCIA.indexOf(entrega.status);
           const idxNovo = SEQUENCIA.indexOf(status);
-          if (idxNovo === -1) return reply.code(400).send({ error: "Status inválido." });
+          if (idxNovo === -1) return await reply.code(400).send({ error: "Status inválido." });
           if (idxNovo !== idxAtual + 1) {
-            return reply.code(409).send({ error: `Não é possível passar de "${entrega.status}" para "${status}". A sequência correta é: ${SEQUENCIA.join(" → ")}.` });
+            return await reply.code(409).send({ error: `Não é possível passar de "${entrega.status}" para "${status}". A sequência correta é: ${SEQUENCIA.join(" → ")}.` });
           }
         }
 
@@ -784,7 +784,7 @@ export function registerDeliveryRoutes(app: App) {
         // Cozinheiro nunca cancela
         const role = (authUser.role || "").toLowerCase();
         if (["cozinheiro", "kitchen"].includes(role)) {
-          return reply.code(403).send({ error: "Cozinheiro não pode cancelar pedidos de delivery." });
+          return await reply.code(403).send({ error: "Cozinheiro não pode cancelar pedidos de delivery." });
         }
 
         const ehGestor = ["gerente", "administrador", "admin", "manager", "superadmin", "super_admin"].includes(role);
@@ -942,7 +942,7 @@ export function registerDeliveryRoutes(app: App) {
         });
 
         if (resultado.erro) {
-          return reply.code(resultado.code).send({ error: resultado.erro });
+          return await reply.code(resultado.code).send({ error: resultado.erro });
         }
 
         // Publicar evento realtime após a transação
@@ -1011,7 +1011,7 @@ export function registerDeliveryRoutes(app: App) {
         if (!authUser) return;
         const role = (authUser.role || "").toLowerCase();
         if (["cozinheiro", "kitchen"].includes(role)) {
-          return reply.code(403).send({ error: "Cozinheiro não pode confirmar entregas." });
+          return await reply.code(403).send({ error: "Cozinheiro não pode confirmar entregas." });
         }
         const restauranteId = requireTenant(authUser);
         const { forma_pagamento, valor_recebido } = request.body;
@@ -1119,7 +1119,7 @@ export function registerDeliveryRoutes(app: App) {
         });
 
         if (resultado.erro) {
-          return reply.code(resultado.code).send({ error: resultado.erro });
+          return await reply.code(resultado.code).send({ error: resultado.erro });
         }
 
         // Publicar evento realtime

@@ -42,9 +42,9 @@ export function registerPagamentoRoutes(app: App) {
 
         // Verificar se comanda existe e pertence ao tenant
         const comanda = await db.select({ id: schema.comandas.id, status: schema.comandas.status, total: schema.comandas.total, tipo: schema.comandas.tipo }).from(schema.comandas).where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)));
-        if (!comanda.length) return reply.code(404).send({ error: "Comanda não encontrada" });
-        if (comanda[0].tipo === 'delivery') return reply.code(400).send({ error: "Este é um pedido de delivery. Use a tela de Delivery." });
-        if (comanda[0].status !== "aberta") return reply.code(400).send({ error: "Comanda não está aberta" });
+        if (!comanda.length) return await reply.code(404).send({ error: "Comanda não encontrada" });
+        if (comanda[0].tipo === 'delivery') return await reply.code(400).send({ error: "Este é um pedido de delivery. Use a tela de Delivery." });
+        if (comanda[0].status !== "aberta") return await reply.code(400).send({ error: "Comanda não está aberta" });
 
         const { forma_pagamento, valor, troco, referencia } = request.body;
 
@@ -94,7 +94,7 @@ export function registerPagamentoRoutes(app: App) {
           restauranteId,
         }).returning();
 
-        return reply.code(201).send({
+        return await reply.code(201).send({
           pagamento,
           resumo: { total_comanda: totalComandaFinal, total_pago: totalPago + (statusPagamento === "confirmado" ? valor : 0), restante: restanteFinal - (statusPagamento === "confirmado" ? valor : 0) },
         });
@@ -120,8 +120,8 @@ export function registerPagamentoRoutes(app: App) {
         const restauranteId = requireTenant(authUser);
 
         const comanda = await db.select({ id: schema.comandas.id, tipo: schema.comandas.tipo }).from(schema.comandas).where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)));
-        if (!comanda.length) return reply.code(404).send({ error: "Comanda não encontrada" });
-        if (comanda[0].tipo === 'delivery') return reply.code(400).send({ error: "Este é um pedido de delivery. Use a tela de Delivery." });
+        if (!comanda.length) return await reply.code(404).send({ error: "Comanda não encontrada" });
+        if (comanda[0].tipo === 'delivery') return await reply.code(400).send({ error: "Este é um pedido de delivery. Use a tela de Delivery." });
 
         const pagamentos = await db.select().from(schema.pagamentos).where(eq(schema.pagamentos.comandaId, request.params.id));
 
@@ -151,8 +151,8 @@ export function registerPagamentoRoutes(app: App) {
         const restauranteId = requireTenant(authUser);
 
         const pagamento = await db.select().from(schema.pagamentos).where(and(eq(schema.pagamentos.id, request.params.id), eq(schema.pagamentos.restauranteId, restauranteId)));
-        if (!pagamento.length) return reply.code(404).send({ error: "Pagamento não encontrado" });
-        if (pagamento[0].status === "confirmado") return reply.code(400).send({ error: "Pagamento já confirmado não pode ser cancelado" });
+        if (!pagamento.length) return await reply.code(404).send({ error: "Pagamento não encontrado" });
+        if (pagamento[0].status === "confirmado") return await reply.code(400).send({ error: "Pagamento já confirmado não pode ser cancelado" });
 
         await db.update(schema.pagamentos).set({ status: "cancelado" }).where(eq(schema.pagamentos.id, request.params.id));
 
@@ -190,8 +190,8 @@ export function registerPagamentoRoutes(app: App) {
 
         // Verificar comanda
         const comanda = await db.select({ id: schema.comandas.id, status: schema.comandas.status, total: schema.comandas.total, tipo: schema.comandas.tipo }).from(schema.comandas).where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)));
-        if (!comanda.length) return reply.code(404).send({ error: "Comanda não encontrada" });
-        if (comanda[0].tipo === 'delivery') return reply.code(400).send({ error: "Este é um pedido de delivery. Use a tela de Delivery." });
+        if (!comanda.length) return await reply.code(404).send({ error: "Comanda não encontrada" });
+        if (comanda[0].tipo === 'delivery') return await reply.code(400).send({ error: "Este é um pedido de delivery. Use a tela de Delivery." });
 
         const totalComanda = await subtotalDaComanda(db, request.params.id);
         const gorjeta = request.body.gorjeta || 0;
@@ -219,7 +219,7 @@ export function registerPagamentoRoutes(app: App) {
         if (tipo === "igual") {
           // Divisão igualitária
           const numPessoas = request.body.num_pessoas || 2;
-          if (numPessoas < 2) return reply.code(400).send({ error: "Número de pessoas deve ser pelo menos 2" });
+          if (numPessoas < 2) return await reply.code(400).send({ error: "Número de pessoas deve ser pelo menos 2" });
 
           const valorPorPessoa = Math.ceil(restante / numPessoas * 100) / 100;
           const ajuste = Math.round((valorPorPessoa * numPessoas - restante) * 100) / 100;
@@ -243,7 +243,7 @@ export function registerPagamentoRoutes(app: App) {
         } else if (tipo === "por_itens") {
           // Divisão por itens
           const pessoas = request.body.pessoas;
-          if (!pessoas || pessoas.length < 2) return reply.code(400).send({ error: "Informe pelo menos 2 pessoas com seus pedido_ids" });
+          if (!pessoas || pessoas.length < 2) return await reply.code(400).send({ error: "Informe pelo menos 2 pessoas com seus pedido_ids" });
 
           // Mapear pedidos por ID
           const pedidoMap = new Map(pedidos.map((p: any) => [p.id, p]));

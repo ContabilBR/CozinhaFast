@@ -114,7 +114,7 @@ export function registerAssinaturaRoutes(app: App) {
         const restauranteId = requireTenant(authUser);
 
         const rest = await db.select().from(schema.restaurante).where(eq(schema.restaurante.id, restauranteId));
-        if (!rest.length) return reply.code(404).send({ error: "Restaurante não encontrado" });
+        if (!rest.length) return await reply.code(404).send({ error: "Restaurante não encontrado" });
 
         const restaurante = rest[0];
         const trialExpirado = restaurante.plano === "trial" && restaurante.trialExpiraEm ? new Date(restaurante.trialExpiraEm) < new Date() : false;
@@ -191,7 +191,7 @@ export function registerAssinaturaRoutes(app: App) {
         app.logger.info({ restauranteId, plano, email }, "Upgrading subscription");
 
         const rest = await db.select().from(schema.restaurante).where(eq(schema.restaurante.id, restauranteId));
-        if (!rest.length) return reply.code(404).send({ error: "Restaurante não encontrado" });
+        if (!rest.length) return await reply.code(404).send({ error: "Restaurante não encontrado" });
 
         const valor = PLANOS[plano as keyof typeof PLANOS].preco;
 
@@ -249,7 +249,7 @@ export function registerAssinaturaRoutes(app: App) {
         app.logger.info({ restauranteId }, "Cancelling subscription");
 
         const rest = await db.select().from(schema.restaurante).where(eq(schema.restaurante.id, restauranteId));
-        if (!rest.length) return reply.code(404).send({ error: "Restaurante não encontrado" });
+        if (!rest.length) return await reply.code(404).send({ error: "Restaurante não encontrado" });
 
         await db.update(schema.restaurante).set({
           assinaturaStatus: "cancelada",

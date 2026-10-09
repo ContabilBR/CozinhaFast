@@ -375,7 +375,7 @@ export function registerUsuariosRoutes(app: App) {
           .where(and(eq(schema.usuarios.role, "garcom"), eq(schema.usuarios.restauranteId, restauranteId)))
           .orderBy(schema.usuarios.nome);
 
-        return reply.code(200).send(
+        return await reply.code(200).send(
           garcons.map((g) => ({
             id: g.id,
             nome: g.nome,

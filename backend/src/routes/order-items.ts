@@ -76,7 +76,7 @@ export function registerOrderItemRoutes(app: App) {
 
         const restauranteId = requireTenant(authUser);
         if (!restauranteId) {
-          return reply.code(401).send({ error: "Nenhum restaurante associado" });
+          return await reply.code(401).send({ error: "Nenhum restaurante associado" });
         }
 
         const tenantCondition = eq(schema.comandas.restauranteId, restauranteId);
@@ -204,7 +204,7 @@ export function registerOrderItemRoutes(app: App) {
 
         const restauranteId = requireTenant(session);
         if (!restauranteId) {
-          return reply.code(404).send({ error: "Nenhum restaurante associado" });
+          return await reply.code(404).send({ error: "Nenhum restaurante associado" });
         }
 
         app.logger.info({ comandaId, pratoId, restauranteId }, "Creating pedido");
@@ -216,7 +216,7 @@ export function registerOrderItemRoutes(app: App) {
           .limit(1);
 
         if (!prato.length) {
-          return reply.code(404).send({ error: "Prato not found" });
+          return await reply.code(404).send({ error: "Prato not found" });
         }
 
         const comanda = await app.db
@@ -226,7 +226,7 @@ export function registerOrderItemRoutes(app: App) {
           .limit(1);
 
         if (!comanda.length) {
-          return reply.code(404).send({ error: "Comanda not found" });
+          return await reply.code(404).send({ error: "Comanda not found" });
         }
 
         const quantidade = request.body.quantidade || 1;
@@ -282,7 +282,7 @@ export function registerOrderItemRoutes(app: App) {
           app.logger.error({ err }, "Failed to publish pedido.created event");
         }
 
-        return reply.code(201).send({
+        return await reply.code(201).send({
           pedido: {
             id: pedido.id,
             comanda_id: pedido.comandaId,
@@ -361,7 +361,7 @@ export function registerOrderItemRoutes(app: App) {
           .where(and(eq(schema.pedidos.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)));
 
         if (!pedidos.length) {
-          return reply.code(404).send({ error: "Pedido não encontrado" });
+          return await reply.code(404).send({ error: "Pedido não encontrado" });
         }
 
         const p = pedidos[0];
@@ -433,7 +433,7 @@ export function registerOrderItemRoutes(app: App) {
 
         const restauranteIdAtual = requireTenant(session);
         if (!restauranteIdAtual) {
-          return reply.code(404).send({ error: "Nenhum restaurante associado" });
+          return await reply.code(404).send({ error: "Nenhum restaurante associado" });
         }
 
         // Cancelar tem rota própria (motivo obrigatório, permissões e registro de quem cancelou)
@@ -447,11 +447,11 @@ export function registerOrderItemRoutes(app: App) {
           .where(and(eq(schema.pedidos.id, request.params.id), eq(schema.pedidos.restauranteId, restauranteIdAtual)));
 
         if (!existing.length) {
-          return reply.code(404).send({ error: "Pedido not found" });
+          return await reply.code(404).send({ error: "Pedido not found" });
         }
 
         if (existing[0].status === "cancelado") {
-          return reply.code(409).send({ error: "Item cancelado não pode mudar de status." });
+          return await reply.code(409).send({ error: "Item cancelado não pode mudar de status." });
         }
 
         // Bug 6: verificar se é delivery e se a entrega já saiu/foi entregue/cancelada
@@ -475,7 +475,7 @@ export function registerOrderItemRoutes(app: App) {
 
           if (entregaCheck) {
             if (["saiu_entrega", "entregue", "cancelada"].includes(entregaCheck.status)) {
-              return reply.code(409).send({ error: `Não é possível alterar itens de um delivery que já ${entregaCheck.status === "saiu_entrega" ? "saiu para entrega" : entregaCheck.status === "entregue" ? "foi entregue" : "foi cancelado"}.` });
+              return await reply.code(409).send({ error: `Não é possível alterar itens de um delivery que já ${entregaCheck.status === "saiu_entrega" ? "saiu para entrega" : entregaCheck.status === "entregue" ? "foi entregue" : "foi cancelado"}.` });
             }
             entregaDelivery = entregaCheck;
           }
@@ -673,7 +673,7 @@ export function registerOrderItemRoutes(app: App) {
       try {
         const restauranteId = requireTenant(session);
         if (!restauranteId) {
-          return reply.code(404).send({ error: "Nenhum restaurante associado" });
+          return await reply.code(404).send({ error: "Nenhum restaurante associado" });
         }
 
         const detalhe = request.body.detalhe?.trim() || null;
@@ -692,15 +692,15 @@ export function registerOrderItemRoutes(app: App) {
         if (resultado.tipo !== "cancelado") {
           switch (resultado.tipo) {
             case "nao_encontrado":
-              return reply.code(404).send({ error: "Pedido not found" });
+              return await reply.code(404).send({ error: "Pedido not found" });
             case "comanda_nao_aberta":
-              return reply.code(409).send({ error: "Só é possível cancelar itens de uma comanda aberta." });
+              return await reply.code(409).send({ error: "Só é possível cancelar itens de uma comanda aberta." });
             case "ja_cancelado":
-              return reply.code(409).send({ error: "Item já está cancelado." });
+              return await reply.code(409).send({ error: "Item já está cancelado." });
             case "ja_entregue":
-              return reply.code(409).send({ error: "Item já entregue não pode ser cancelado. Cortesia e estorno ainda não estão disponíveis." });
+              return await reply.code(409).send({ error: "Item já entregue não pode ser cancelado. Cortesia e estorno ainda não estão disponíveis." });
             case "requer_gestor":
-              return reply.code(403).send({ error: "Só gerente ou administrador pode cancelar um item que já está em preparo ou pronto." });
+              return await reply.code(403).send({ error: "Só gerente ou administrador pode cancelar um item que já está em preparo ou pronto." });
           }
         }
 
@@ -819,7 +819,7 @@ export function registerOrderItemRoutes(app: App) {
 
         const restauranteIdAtual = requireTenant(session);
         if (!restauranteIdAtual) {
-          return reply.code(404).send({ error: "Nenhum restaurante associado" });
+          return await reply.code(404).send({ error: "Nenhum restaurante associado" });
         }
 
         // Cancelar tem rota própria (motivo obrigatório, permissões e registro de quem cancelou)
@@ -833,11 +833,11 @@ export function registerOrderItemRoutes(app: App) {
           .where(and(eq(schema.pedidos.id, request.params.id), eq(schema.pedidos.restauranteId, restauranteIdAtual)));
 
         if (!existing.length) {
-          return reply.code(404).send({ error: "Pedido not found" });
+          return await reply.code(404).send({ error: "Pedido not found" });
         }
 
         if (existing[0].status === "cancelado") {
-          return reply.code(409).send({ error: "Item cancelado não pode ser alterado." });
+          return await reply.code(409).send({ error: "Item cancelado não pode ser alterado." });
         }
 
         // Bug 6b: bloquear mudança de status em itens de delivery pela rota genérica
@@ -847,7 +847,7 @@ export function registerOrderItemRoutes(app: App) {
             .from(schema.comandas)
             .where(eq(schema.comandas.id, existing[0].comandaId));
           if (cmdCheck?.tipo === "delivery") {
-            return reply.code(409).send({ error: "Para alterar o status de um item de delivery use PUT /api/pedidos/:id/status." });
+            return await reply.code(409).send({ error: "Para alterar o status de um item de delivery use PUT /api/pedidos/:id/status." });
           }
         }
 
@@ -960,7 +960,7 @@ export function registerOrderItemRoutes(app: App) {
       try {
         const restauranteId = requireTenant(session);
         if (!restauranteId) {
-          return reply.code(404).send({ error: "Nenhum restaurante associado" });
+          return await reply.code(404).send({ error: "Nenhum restaurante associado" });
         }
 
         app.logger.info({ pedidoId: request.params.id, restauranteId }, "Deleting pedido");
@@ -971,7 +971,7 @@ export function registerOrderItemRoutes(app: App) {
           .where(and(eq(schema.pedidos.id, request.params.id), eq(schema.pedidos.restauranteId, restauranteId)));
 
         if (!existing.length) {
-          return reply.code(404).send({ error: "Pedido not found" });
+          return await reply.code(404).send({ error: "Pedido not found" });
         }
 
         const pedido = existing[0];
@@ -1089,13 +1089,13 @@ export function registerOrderItemRoutes(app: App) {
               "Pedido deleted and comanda archived"
             );
 
-            return reply.code(204).send();
+            return await reply.code(204).send();
           }
         }
 
         app.logger.info({ pedidoId: request.params.id }, "Pedido deleted successfully");
 
-        return reply.code(204).send();
+        return await reply.code(204).send();
       } catch (error) {
         app.logger.error({ err: error }, "Failed to delete pedido");
         return await reply.code(500).send({ error: "Internal server error" });

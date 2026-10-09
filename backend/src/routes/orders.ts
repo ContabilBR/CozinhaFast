@@ -763,8 +763,8 @@ export function registerOrderRoutes(app: App) {
         }
 
         const comanda = await app.db.select().from(schema.comandas).where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)));
-        if (!comanda.length) return reply.code(404).send({ error: "Comanda não encontrada" });
-        if (comanda[0].status !== "aberta") return reply.code(400).send({ error: "Comanda não está aberta" });
+        if (!comanda.length) return await reply.code(404).send({ error: "Comanda não encontrada" });
+        if (comanda[0].status !== "aberta") return await reply.code(400).send({ error: "Comanda não está aberta" });
 
         // Delivery guard
         if (comanda[0].tipo === 'delivery') {

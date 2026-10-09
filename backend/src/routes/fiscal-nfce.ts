@@ -188,7 +188,7 @@ export function registerFiscalNfceRoutes(app: App) {
           .from(schema.restaurante)
           .where(eq(schema.restaurante.id, restauranteId));
         if (!restRows.length) {
-          return reply.code(404).send({ error: "Restaurante nao encontrado" });
+          return await reply.code(404).send({ error: "Restaurante nao encontrado" });
         }
         const restaurante = restRows[0];
         const restauranteInput = montarRestauranteInput(restaurante);
@@ -208,7 +208,7 @@ export function registerFiscalNfceRoutes(app: App) {
         // 2. Comanda (viva ou arquivada)
         const encontrada = await carregarComandaFiscal(db, comanda_id, restauranteId);
         if (!encontrada) {
-          return reply.code(404).send({ error: "Comanda nao encontrada neste restaurante" });
+          return await reply.code(404).send({ error: "Comanda nao encontrada neste restaurante" });
         }
         const { arquivada } = encontrada;
 
@@ -221,7 +221,7 @@ export function registerFiscalNfceRoutes(app: App) {
         // 3. Idempotencia
         const bloqueante = await buscarNfceBloqueante(db, comanda_id, restauranteId);
         if (bloqueante) {
-          return reply.code(409).send({
+          return await reply.code(409).send({
             error: "Ja existe NFC-e " + bloqueante.status + " para esta comanda",
             referencia_focus: bloqueante.referenciaFocus,
             nota_id: bloqueante.id,
@@ -358,7 +358,7 @@ export function registerFiscalNfceRoutes(app: App) {
             .where(eq(schema.notasFiscais.id, notaFiscal.id));
 
           app.logger.error({ err: focusErr, notaId: notaFiscal.id, ref }, "Erro Focus NFe na NFC-e");
-          return reply.code(502).send({
+          return await reply.code(502).send({
             error: "Erro ao comunicar com Focus NFe",
             detail: focusErr.message,
             ref,
@@ -410,7 +410,7 @@ export function registerFiscalNfceRoutes(app: App) {
             )
           );
         if (!rows.length) {
-          return reply.code(404).send({ error: "NFC-e nao encontrada" });
+          return await reply.code(404).send({ error: "NFC-e nao encontrada" });
         }
         let nota = rows[0];
 
@@ -433,7 +433,7 @@ export function registerFiscalNfceRoutes(app: App) {
             app.logger.info({ ref, status: updateData.status }, "NFC-e atualizada via consulta");
           } catch (focusErr: any) {
             app.logger.error({ err: focusErr, ref }, "Erro ao consultar NFC-e na Focus");
-            return reply.code(502).send({
+            return await reply.code(502).send({
               error: "Erro ao consultar Focus NFe",
               detail: focusErr.message,
               nota,

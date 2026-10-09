@@ -32,10 +32,10 @@ export function registerLgpdRoutes(app: App) {
       };
 
       reply.header("Content-Disposition", "attachment; filename=meus-dados-lgpd.json");
-      return reply.code(200).send(exportData);
+      return await reply.code(200).send(exportData);
     } catch (err) {
       app.logger.error({ error: (err as any).message }, "Erro ao exportar dados LGPD");
-      return reply.code(500).send({ error: "Erro interno" });
+      return await reply.code(500).send({ error: "Erro interno" });
     }
   });
 
@@ -117,7 +117,7 @@ export function registerLgpdRoutes(app: App) {
         const outrosAdmins = usuarios.filter((u: any) => u.id !== authUser.id);
 
         if (outrosAdmins.length === 0) {
-          return reply.code(400).send({
+          return await reply.code(400).send({
             error: "Você é o único administrador. A exclusão apagaria todo o restaurante. Transfira a administração para outro usuário antes ou solicite a exclusão completa do restaurante pelo suporte.",
           });
         }
@@ -129,16 +129,16 @@ export function registerLgpdRoutes(app: App) {
 
       app.logger.info({ userId: authUser.id, restauranteId }, "Dados pessoais anonimizados via LGPD");
 
-      return reply.code(200).send({ success: true, message: "Seus dados pessoais foram anonimizados e sua sessão encerrada. Você não conseguirá mais fazer login com esta conta." });
+      return await reply.code(200).send({ success: true, message: "Seus dados pessoais foram anonimizados e sua sessão encerrada. Você não conseguirá mais fazer login com esta conta." });
     } catch (err) {
       app.logger.error({ error: (err as any).message }, "Erro ao excluir dados LGPD");
-      return reply.code(500).send({ error: "Erro interno" });
+      return await reply.code(500).send({ error: "Erro interno" });
     }
   });
 
   // GET /api/lgpd/politica — retornar política de privacidade
   app.fastify.get("/api/lgpd/politica", async (_request: FastifyRequest, reply: FastifyReply) => {
-    return reply.code(200).send({
+    return await reply.code(200).send({
       politica: {
         titulo: "Política de Privacidade - Cozinha Fast Pro",
         versao: "1.0",
