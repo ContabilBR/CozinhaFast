@@ -1,5 +1,5 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, and } from "drizzle-orm";
 import * as schema from "../db/schema/schema.js";
 import type { App } from "../index.js";
 import { requireAuth as customRequireAuth, requireTenant } from "../utils/auth.js";
@@ -97,10 +97,12 @@ export function registerHistoricoRoutes(app: App) {
             const pedidos = await app.db
               .select()
               .from(schema.pedidosHistorico)
-              .where(eq(schema.pedidosHistorico.comandaId, comanda.id))
+              .where(and(
+                eq(schema.pedidosHistorico.comandaId, comanda.id),
+                eq(schema.pedidosHistorico.restauranteId, tenantId)
+              ))
               .then((allPedidos) =>
                 allPedidos
-                  .filter((p) => p.restauranteId === tenantId)
                   .sort((a, b) => {
                     const dateA = new Date(b.archivedAt).getTime();
                     const dateB = new Date(a.archivedAt).getTime();
