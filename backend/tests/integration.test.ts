@@ -1260,7 +1260,7 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 200);
     const data = await res.json();
     expect(data).toBeDefined();
-    expect(data.comanda === null || !!data.comanda?.id).toBeTruthy();
+    expect(data.comanda).toBeNull();
   });
 
   test("Get current comanda for non-existent mesa returns 404", async () => {
