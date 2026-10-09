@@ -83,7 +83,7 @@ export function registerHistoricoRoutes(app: App) {
             COALESCE(u.nome, 'Não informado') as garcom_nome
           FROM comandas_historico ch
           LEFT JOIN usuarios u ON u.id::text = ch.garcom_id
-          WHERE ch.restaurante_id = ${tenantId}::uuid
+          WHERE ch.restaurante_id = ${tenantId}
           ORDER BY ch.archived_at DESC
         `;
 

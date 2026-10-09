@@ -139,19 +139,19 @@ export async function seedDatabase(app: App) {
 
     // Ensure seed restaurante exists with specific ID and CNPJ
     let seedRestauranteId: string;
-    const seedRestauranteSpecificId = '00000000-0000-0000-0000-000000000001';
+    const seedRestauranteSpecificId = '52893314000164';
 
     try {
       // Try to upsert the specific seed restaurante with the CNPJ
       const [r] = await app.db.insert(schema.restaurante).values({
         id: seedRestauranteSpecificId,
         nome: 'Cozinha Fast Pro',
-        cnpj: '52.893.314/0001-64',
+        cnpj: '52893314000164',
       }).onConflictDoUpdate({
         target: schema.restaurante.id,
         set: {
           nome: 'Cozinha Fast Pro',
-          cnpj: '52.893.314/0001-64',
+          cnpj: '52893314000164',
         },
       }).returning();
       seedRestauranteId = r.id;
@@ -160,12 +160,13 @@ export async function seedDatabase(app: App) {
       const existingRestaurante = await app.db.select().from(schema.restaurante).limit(1);
       if (existingRestaurante.length > 0) {
         // Update CNPJ in fallback path
-        await app.db.update(schema.restaurante).set({ cnpj: '52.893.314/0001-64', nome: 'Cozinha Fast Pro' }).where(eq(schema.restaurante.id, existingRestaurante[0].id));
+        await app.db.update(schema.restaurante).set({ cnpj: '52893314000164', nome: 'Cozinha Fast Pro' }).where(eq(schema.restaurante.id, existingRestaurante[0].id));
         seedRestauranteId = existingRestaurante[0].id;
       } else {
         const [r] = await app.db.insert(schema.restaurante).values({
+          id: '52893314000164',
           nome: 'Cozinha Fast Pro',
-          cnpj: '52.893.314/0001-64',
+          cnpj: '52893314000164',
         }).returning();
         seedRestauranteId = r.id;
       }
@@ -174,9 +175,9 @@ export async function seedDatabase(app: App) {
     // Force-correct CNPJ on every startup — runs unconditionally
     try {
       await (app.db as any).execute(
-        `UPDATE restaurante SET cnpj = '52.893.314/0001-64', nome = 'Cozinha Fast Pro' WHERE id = '00000000-0000-0000-0000-000000000001'`
+        `UPDATE restaurante SET cnpj = '52893314000164', nome = 'Cozinha Fast Pro' WHERE id = '52893314000164'`
       );
-      app.logger.info("Force-corrected restaurante CNPJ to 52.893.314/0001-64");
+      app.logger.info("Force-corrected restaurante CNPJ to 52893314000164");
     } catch (forceErr) {
       app.logger.warn({ err: forceErr }, "Failed to force-correct restaurante CNPJ");
     }

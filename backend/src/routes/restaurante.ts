@@ -4,6 +4,7 @@ import * as schema from "../db/schema/schema.js";
 import type { App } from "../index.js";
 import { requireAuth as customRequireAuth, requireTenant, requireRole } from "../utils/auth.js";
 import { validarRestauranteParaNfce } from "../utils/fiscal-payloads.js";
+import { cnpjValido, idEhCnpj } from "../utils/cnpj.js";
 
 interface UpdateRestauranteBody {
   nome: string;
@@ -93,6 +94,7 @@ function validarBodyFiscal(body: UpdateRestauranteBody): string | null {
   if (body.cnpj !== undefined && body.cnpj !== null && body.cnpj !== "") {
     const d = somenteDigitos(body.cnpj);
     if (d && d.length !== 14) return "cnpj deve ter 14 digitos";
+    if (d && !cnpjValido(d)) return "cnpj inválido (dígitos verificadores não conferem)";
   }
   if (body.cep !== undefined && body.cep !== null && body.cep !== "") {
     const d = somenteDigitos(body.cep);
@@ -136,7 +138,7 @@ function serializar(r: any) {
 }
 
 const RESTAURANTE_PROPS = {
-  id: { type: "string", format: "uuid" },
+  id: { type: "string" },
   nome: { type: "string" },
   filial: { type: "string", nullable: true },
   endereco: { type: "string", nullable: true },
@@ -362,7 +364,18 @@ export function registerRestauranteRoutes(app: App) {
           updatedAt: new Date(),
         };
 
-        if (body.cnpj !== undefined) updates.cnpj = somenteDigitos(body.cnpj);
+        if (body.cnpj !== undefined) {
+          const novoCnpj = somenteDigitos(body.cnpj);
+          // O id do restaurante É o CNPJ: depois de criado, ele não pode mudar.
+          if (idEhCnpj(tenantId)) {
+            if (novoCnpj && novoCnpj !== tenantId) {
+              return await reply.code(400).send({ error: "O CNPJ é o identificador do restaurante e não pode ser alterado" });
+            }
+            updates.cnpj = tenantId;
+          } else {
+            updates.cnpj = novoCnpj;
+          }
+        }
 
         // Campos fiscais: parcial - so aplica o que veio no body
         if (body.inscricao_estadual !== undefined) updates.inscricaoEstadual = somenteDigitos(body.inscricao_estadual);

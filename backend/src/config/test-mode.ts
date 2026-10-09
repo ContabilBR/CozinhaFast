@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import * as schema from '../db/schema/schema.js';
 import * as bcryptjs from 'bcryptjs';
 import { randomUUID } from 'crypto';
+import { ID_RESTAURANTE_PLATAFORMA } from '../utils/cnpj.js';
 
 // Test Mode Configuration
 export const TEST_MODE = process.env.TEST_MODE !== 'false'; // Default: true
@@ -37,7 +38,7 @@ export async function seedTestAdmin(app: App): Promise<void> {
       restauranteId = restaurantes[0].id;
       app.logger.info({ restauranteId }, 'Test restaurante found, reusing');
     } else {
-      const newId = randomUUID();
+      const newId = ID_RESTAURANTE_PLATAFORMA;
       const now = new Date();
       await app.db.insert(schema.restaurante).values({
         id: newId,

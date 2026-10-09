@@ -29,6 +29,7 @@ import { registerRenovacaoDeImagens } from './utils/imagem-assinada.js';
 import { seedDatabase } from './db/seed.js';
 import { enableSelectRetry } from './db/withRetry.js';
 import { garantirColunasDeCancelamento } from './db/ensure-schema.js';
+import { garantirRestauranteIdTexto } from './db/ensure-restaurante-id.js';
 
 // Combine schemas
 const schema = { ...appSchema, ...authSchema };
@@ -53,6 +54,14 @@ process.on('uncaughtException', (error) => {
 // This transparently handles transient connection failures without requiring
 // changes to individual query call sites
 enableSelectRetry(app.db);
+
+// O id do restaurante é o CNPJ (texto): converte bancos antigos (uuid) antes de qualquer consulta
+try {
+  await garantirRestauranteIdTexto(app);
+} catch (error) {
+  app.logger.error({ err: error }, 'Failed to convert restaurante.id to text');
+  throw error; // sem a conversão o código novo não funciona; melhor falhar na subida
+}
 
 // Garante as colunas de cancelamento de item (as migrações não rodam sozinhas no deploy)
 try {
@@ -104,41 +113,6 @@ app.fastify.setErrorHandler((error: any, request, reply) => {
   // Never leak raw SQL, bound params, or driver internals to the client
   reply.code(500).send({ error: 'Erro interno do servidor. Tente novamente em instantes.' });
 });
-
-// Ensure a default restaurante exists for authentication
-app.logger.info('Checking for default restaurante');
-let defaultRestauranteCreated = false;
-try {
-  const existingRestaurantes = await app.db
-    .select()
-    .from(appSchema.restaurante)
-    .limit(1);
-
-  if (!existingRestaurantes || existingRestaurantes.length === 0) {
-    app.logger.info('Creating default restaurante');
-    try {
-      const inserted = await app.db
-        .insert(appSchema.restaurante)
-        .values({
-          nome: 'Default Restaurant',
-        })
-        .returning();
-      if (inserted && inserted.length > 0) {
-        app.logger.info({ restauranteId: inserted[0].id }, 'Default restaurante created');
-        defaultRestauranteCreated = true;
-      } else {
-        app.logger.warn('Default restaurante insert returned no rows');
-      }
-    } catch (insertErr) {
-      app.logger.error({ err: insertErr }, 'Failed to insert default restaurante');
-    }
-  } else {
-    app.logger.debug({ restauranteId: existingRestaurantes[0].id }, 'Default restaurante already exists');
-  }
-} catch (selectErr) {
-  app.logger.error({ err: selectErr }, 'Failed to query restaurante table - migrations may not have run');
-}
-
 
 // Register routes - IMPORTANT: Always use registration functions to avoid circular dependency issues
 // Register custom auth routes FIRST so they take priority

@@ -5,6 +5,7 @@ import type { App } from "../index.js";
 import { requireSuperAdmin } from "../utils/auth.js";
 import { verifyAndAttachUser } from "./auth-custom.js";
 import { randomUUID } from "crypto";
+import { cnpjValido, somenteDigitosCnpj } from "../utils/cnpj.js";
 import * as bcryptjs from "bcryptjs";
 
 interface GetRestaurantesResponse {
@@ -52,7 +53,7 @@ export function registerSuperAdminRoutes(app: App) {
             items: {
               type: "object",
               properties: {
-                id: { type: "string", format: "uuid" },
+                id: { type: "string" },
                 nome: { type: "string" },
                 cnpj: { type: "string", nullable: true },
                 uf: { type: "string", nullable: true },
@@ -189,7 +190,7 @@ export function registerSuperAdminRoutes(app: App) {
               restaurante: {
                 type: "object",
                 properties: {
-                  id: { type: "string", format: "uuid" },
+                  id: { type: "string" },
                   nome: { type: "string" },
                 },
               },
@@ -248,6 +249,22 @@ export function registerSuperAdminRoutes(app: App) {
             .send({ error: "Missing required fields" });
         }
 
+        // O id do restaurante é o CNPJ: obrigatório, válido e único
+        const cnpjDigitos = somenteDigitosCnpj(cnpj);
+        if (!cnpjValido(cnpjDigitos)) {
+          return reply
+            .code(400)
+            .send({ error: "CNPJ inválido. Informe os 14 dígitos de um CNPJ válido." });
+        }
+        const existingRestaurante = await app.db
+          .select({ id: schema.restaurante.id })
+          .from(schema.restaurante)
+          .where(eq(schema.restaurante.id, cnpjDigitos))
+          .limit(1);
+        if (existingRestaurante.length > 0) {
+          return await reply.code(409).send({ error: "Já existe um restaurante cadastrado com este CNPJ" });
+        }
+
         // Check if email already exists
         const existingUsuario = await app.db
           .select()
@@ -270,8 +287,9 @@ export function registerSuperAdminRoutes(app: App) {
           const restauranteResult = await tx
             .insert(schema.restaurante)
             .values({
+              id: cnpjDigitos,
               nome,
-              cnpj: cnpj || null,
+              cnpj: cnpjDigitos,
               telefone: telefone || null,
               uf: uf || null,
               plano: "trial",
@@ -346,6 +364,9 @@ export function registerSuperAdminRoutes(app: App) {
           },
         });
       } catch (err) {
+        if ((err as any)?.code === "23505") {
+          return await reply.code(409).send({ error: "CNPJ ou e-mail já cadastrado" });
+        }
         app.logger.error(
           { err, responsavelEmail, body: request.body },
           "Failed to create restaurant"
@@ -369,7 +390,7 @@ export function registerSuperAdminRoutes(app: App) {
           type: "object",
           required: ["id"],
           properties: {
-            id: { type: "string", format: "uuid" },
+            id: { type: "string" },
           },
         },
         body: {
@@ -460,7 +481,7 @@ export function registerSuperAdminRoutes(app: App) {
           type: "object",
           required: ["id"],
           properties: {
-            id: { type: "string", format: "uuid" },
+            id: { type: "string" },
           },
         },
         body: {

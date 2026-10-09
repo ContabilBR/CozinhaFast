@@ -5,6 +5,7 @@ import * as schema from "../db/schema/schema.js";
 import type { App } from "../index.js";
 import { randomUUID } from "crypto";
 import * as bcryptjs from "bcryptjs";
+import { ID_RESTAURANTE_PLATAFORMA } from "../utils/cnpj.js";
 
 interface SignInBody {
   email: string;
@@ -121,25 +122,17 @@ export function registerAuthRoutes(app: App) {
         // o requireAuth os autentica via schema.usuarios.restauranteId diretamente,
         // sem passar pela verificação de profiles. Este comportamento é intencional
         // para o ambiente de testes.
-        app.logger.debug({}, "TEST SIGNUP: looking for existing restaurante (NOT NULL constraint workaround)");
-        let restaurantes: any = [];
-        try {
-          restaurantes = await app.db.select().from(schema.restaurante).limit(1);
-        } catch (err) {
-          app.logger.error({ err }, "Failed to query restaurante table");
-          restaurantes = [];
-        }
-
-        let restauranteId: string = "";
-
-        if (restaurantes && restaurantes.length > 0) {
-          restauranteId = restaurantes[0].id;
-          app.logger.debug({ restauranteId }, "TEST SIGNUP: using existing restaurante (NOT NULL workaround)");
-        }
-
-        if (!restauranteId) {
-          app.logger.error({}, "TEST SIGNUP: no restaurante found and cannot create user without one (NOT NULL constraint)");
-          return await reply.code(500).send({ error: "Nenhum restaurante disponível para usuário de teste. Crie um restaurante primeiro via /api/restaurantes/signup." });
+        // O usuário de teste é sempre vinculado ao restaurante interno da plataforma,
+        // nunca a um restaurante real (antes pegava "o primeiro da tabela").
+        const restauranteId: string = ID_RESTAURANTE_PLATAFORMA;
+        const plataforma = await app.db
+          .select({ id: schema.restaurante.id })
+          .from(schema.restaurante)
+          .where(eq(schema.restaurante.id, restauranteId))
+          .limit(1);
+        if (plataforma.length === 0) {
+          app.logger.error({}, "TEST SIGNUP: restaurante interno da plataforma não encontrado");
+          return await reply.code(500).send({ error: "Restaurante interno da plataforma não encontrado. Reinicie o backend com TEST_MODE ativo." });
         }
 
         // Hash password

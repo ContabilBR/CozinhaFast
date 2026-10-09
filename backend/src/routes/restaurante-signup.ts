@@ -4,6 +4,7 @@ import * as schema from "../db/schema/schema.js";
 import type { App } from "../index.js";
 import { randomUUID } from "crypto";
 import * as bcrypt from "bcrypt";
+import { cnpjValido, somenteDigitosCnpj } from "../utils/cnpj.js";
 
 interface SignupBody {
   nome: string;
@@ -103,6 +104,11 @@ export function registerRestauranteSignupRoutes(app: App) {
           return await reply.code(400).send({ error: "nome, adminNome, adminEmail, adminSenha are required" });
         }
 
+        const cnpjDigitos = somenteDigitosCnpj(cnpj);
+        if (!cnpjValido(cnpjDigitos)) {
+          return await reply.code(400).send({ error: "CNPJ inválido" });
+        }
+
         app.logger.info({ restauranteName: nome, adminEmail }, "Creating new restaurante signup");
 
         // 2. Check if email already exists
@@ -123,7 +129,7 @@ export function registerRestauranteSignupRoutes(app: App) {
           const trialExpiraEm = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
           const restauranteResult = await tx
             .insert(schema.restaurante)
-            .values({ nome, cnpj, plano: "trial", assinaturaStatus: "trial", trialExpiraEm })
+            .values({ id: cnpjDigitos, nome, cnpj: cnpjDigitos, plano: "trial", assinaturaStatus: "trial", trialExpiraEm })
             .returning();
 
           const newRestaurante = Array.isArray(restauranteResult) ? restauranteResult[0] : restauranteResult;

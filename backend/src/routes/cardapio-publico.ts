@@ -4,7 +4,8 @@ import type { App } from "../index.js";
 import * as schema from "../db/schema/schema.js";
 import { checkRateLimit } from "../utils/rate-limit.js";
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Id do restaurante: CNPJ (14 dígitos) ou uuid (restaurantes antigos)
+const UUID_RE = /^(?:\d{14}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
 
 // Escape para texto colocado dentro de HTML (título e cabeçalho da página do cardápio)
 function escHtml(s: string): string {
@@ -43,7 +44,7 @@ export function registerCardapioPublicoRoutes(app: App) {
   app.fastify.get("/cardapio", async (request: FastifyRequest, reply: FastifyReply) => {
     if (!checkRateLimit(request, reply, { routeKey: "cardapio-html", max: 60, windowMs: 60_000 })) return;
     const q = request.query as any;
-    // r e m entram dentro do JavaScript da página: só aceitamos UUID e número inteiro curto
+    // r e m entram dentro do JavaScript da página: só aceitamos CNPJ/UUID e número inteiro curto
     const rBruto = typeof q.r === "string" ? q.r : "";
     const mBruto = typeof q.m === "string" ? q.m : "";
     const r = UUID_RE.test(rBruto) ? rBruto : "";

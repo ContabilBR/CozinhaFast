@@ -37,7 +37,9 @@ export const assinaturaStatusEnum = pgEnum("assinatura_status", ["trial", "ativa
 
 // Restaurante (Restaurant information) - Define early since many tables reference it
 export const restaurante = pgTable("restaurante", {
-  id: uuid("id").primaryKey().defaultRandom(),
+  // O id do restaurante É o CNPJ (14 dígitos, sem pontuação). Exceção: a plataforma interna
+  // usa o id fixo "00000000000000" (não é um CNPJ válido, então nunca colide com um real).
+  id: text("id").primaryKey(),
   nome: text("nome").notNull(),
   filial: text("filial"),
   endereco: text("endereco"),
@@ -77,7 +79,7 @@ export const mesas = pgTable("mesas", {
   status: mesaStatusEnum("status").default("disponivel").notNull(),
   capacidade: integer("capacidade").default(4).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  restauranteId: uuid("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
+  restauranteId: text("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
 }, (table) => ({
   unqNumeroRestaurante: unique().on(table.numero, table.restauranteId),
 }));
@@ -88,7 +90,7 @@ export const categorias = pgTable("categorias", {
   nome: text("nome").notNull(),
   descricao: text("descricao"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  restauranteId: uuid("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
+  restauranteId: text("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
 });
 
 // Categoria Pratos (Dish Categories)
@@ -97,7 +99,7 @@ export const categoriaPratos = pgTable("categoria_pratos", {
   nome: text("nome").notNull(),
   descricao: text("descricao"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  restauranteId: uuid("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
+  restauranteId: text("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
 });
 
 // Pratos (Dishes)
@@ -120,7 +122,7 @@ export const pratos = pgTable("pratos", {
   csosn: text("csosn"),
   cstIcms: text("cst_icms"),
   aliquotaIcms: numeric("aliquota_icms", { precision: 5, scale: 2 }),
-  restauranteId: uuid("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
+  restauranteId: text("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
 });
 
 // Comandas (Orders/Bills)
@@ -136,7 +138,7 @@ export const comandas = pgTable("comandas", {
   gorjeta: numeric("gorjeta", { precision: 10, scale: 2 }).default("0").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   closedAt: timestamp("closed_at", { withTimezone: true }),
-  restauranteId: uuid("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
+  restauranteId: text("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
 });
 
 // Pedidos (Order Items)
@@ -149,7 +151,7 @@ export const pedidos = pgTable("pedidos", {
   observacao: text("observacao"),
   status: pedidoStatusEnum("status").default("pendente").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  restauranteId: uuid("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
+  restauranteId: text("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
   // Cancelamento do item: preenchido só quando status = 'cancelado'.
   // canceladoAposInicio = true quando o item já estava em preparo ou pronto (conta como perda, não como venda).
   canceladoEm: timestamp("cancelado_em", { withTimezone: true }),
@@ -177,7 +179,7 @@ export const pagamentos = pgTable("pagamentos", {
   referencia: text("referencia"),
   confirmadoEm: timestamp("confirmado_em", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  restauranteId: uuid("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
+  restauranteId: text("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
 });
 
 // Profiles for users
@@ -187,7 +189,7 @@ export const profiles = pgTable("profiles", {
   role: text("role").notNull().default("garcom"),
   name: text("name"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  restauranteId: uuid("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
+  restauranteId: text("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
 });
 
 // Usuarios (App-level user management, separate from auth users)
@@ -200,7 +202,7 @@ export const usuarios = pgTable("usuarios", {
   ativo: boolean("ativo").default(true).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-  restauranteId: uuid("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
+  restauranteId: text("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
 });
 
 // Usuarios Session (for custom auth token management)
@@ -242,7 +244,7 @@ export const comandasHistorico = pgTable("comandas_historico", {
   fechadoPorId: text("fechado_por_id"),
   fechadoPorNome: text("fechado_por_nome"),
   fechadoPorRole: text("fechado_por_role"),
-  restauranteId: uuid("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
+  restauranteId: text("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
 });
 
 // Pedidos Historico (Archived Order Items)
@@ -257,7 +259,7 @@ export const pedidosHistorico = pgTable("pedidos_historico", {
   status: text("status").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   archivedAt: timestamp("archived_at", { withTimezone: true }).defaultNow().notNull(),
-  restauranteId: uuid("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
+  restauranteId: text("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
   canceladoEm: timestamp("cancelado_em", { withTimezone: true }),
   canceladoPorId: text("cancelado_por_id"),
   canceladoPorNome: text("cancelado_por_nome"),
@@ -282,7 +284,7 @@ export const pagamentosHistorico = pgTable("pagamentos_historico", {
   confirmadoEm: timestamp("confirmado_em", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   archivedAt: timestamp("archived_at", { withTimezone: true }).defaultNow().notNull(),
-  restauranteId: uuid("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
+  restauranteId: text("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
 });
 
 export const notasFiscais = pgTable("notas_fiscais", {
@@ -309,7 +311,7 @@ export const notasFiscais = pgTable("notas_fiscais", {
   mensagemSefaz: text("mensagem_sefaz"),
   motivoCancelamento: text("motivo_cancelamento"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  restauranteId: uuid("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
+  restauranteId: text("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
 }, (table) => ({
   idxRestauranteTipo: index("idx_notas_fiscais_restaurante_tipo").on(table.restauranteId, table.tipoDocumento),
   idxReferenciaFocus: index("idx_notas_fiscais_referencia_focus").on(table.referenciaFocus),
@@ -328,7 +330,7 @@ export const insumos = pgTable("insumos", {
   ativo: boolean("ativo").default(true).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-  restauranteId: uuid("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
+  restauranteId: text("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
 });
 
 export const movimentacoesEstoque = pgTable("movimentacoes_estoque", {
@@ -341,7 +343,7 @@ export const movimentacoesEstoque = pgTable("movimentacoes_estoque", {
   motivo: text("motivo"),
   usuarioId: text("usuario_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  restauranteId: uuid("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
+  restauranteId: text("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
 });
 
 export const pratoInsumos = pgTable("prato_insumos", {
@@ -349,7 +351,7 @@ export const pratoInsumos = pgTable("prato_insumos", {
   pratoId: uuid("prato_id").notNull().references(() => pratos.id, { onDelete: "cascade" }),
   insumoId: uuid("insumo_id").notNull().references(() => insumos.id, { onDelete: "cascade" }),
   quantidadeUsada: numeric("quantidade_usada", { precision: 10, scale: 3 }).notNull(),
-  restauranteId: uuid("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
+  restauranteId: text("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
 });
 
 export const entregas = pgTable("entregas", {
@@ -372,5 +374,5 @@ export const entregas = pgTable("entregas", {
   saiuEm: timestamp("saiu_em", { withTimezone: true }),
   entregueEm: timestamp("entregue_em", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  restauranteId: uuid("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
+  restauranteId: text("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
 });

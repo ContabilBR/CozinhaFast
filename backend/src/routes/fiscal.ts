@@ -48,7 +48,7 @@ export function registerFiscalRoutes(app: App) {
       comandaHistoricoId: { type: "string", format: "uuid", nullable: true },
       referenciaFocus: { type: "string" },
       status: { type: "string", enum: ["processando", "autorizada", "rejeitada", "cancelada", "erro"] },
-      restauranteId: { type: "string", format: "uuid" },
+      restauranteId: { type: "string" },
       chaveAcesso: { type: "string", nullable: true },
       numeroNota: { type: "integer", nullable: true },
       protocolo: { type: "string", nullable: true },

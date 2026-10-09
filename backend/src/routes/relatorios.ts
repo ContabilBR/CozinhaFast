@@ -274,7 +274,7 @@ export function registerRelatoriosRoutes(app: App) {
             FROM pedidos p
             INNER JOIN comandas c ON p.comanda_id = c.id
             LEFT JOIN pratos pr ON p.prato_id = pr.id
-            WHERE p.restaurante_id = ${tenantId}::uuid
+            WHERE p.restaurante_id = ${tenantId}
               AND p.status = 'em_preparo'
               AND c.status = 'aberta'
               AND (
@@ -291,7 +291,7 @@ export function registerRelatoriosRoutes(app: App) {
           sql`
             SELECT COALESCE(SUM(total), 0)::float AS total
             FROM comandas
-            WHERE restaurante_id = ${tenantId}::uuid
+            WHERE restaurante_id = ${tenantId}
               AND status = 'fechada'
               AND closed_at >= ${inicio.toISOString()}::timestamptz
               AND closed_at < ${fim.toISOString()}::timestamptz
@@ -302,7 +302,7 @@ export function registerRelatoriosRoutes(app: App) {
           sql`
             SELECT COALESCE(SUM(total), 0)::float AS total
             FROM comandas_historico
-            WHERE restaurante_id = ${tenantId}::uuid
+            WHERE restaurante_id = ${tenantId}
               AND status = 'fechada'
               AND closed_at >= ${inicio.toISOString()}::timestamptz
               AND closed_at < ${fim.toISOString()}::timestamptz
@@ -318,7 +318,7 @@ export function registerRelatoriosRoutes(app: App) {
           sql`
             SELECT COALESCE(SUM(total), 0)::float AS total
             FROM comandas
-            WHERE restaurante_id = ${tenantId}::uuid
+            WHERE restaurante_id = ${tenantId}
               AND status = 'fechada'
           `
         ) as any[];
@@ -327,7 +327,7 @@ export function registerRelatoriosRoutes(app: App) {
           sql`
             SELECT COALESCE(SUM(total), 0)::float AS total
             FROM comandas_historico
-            WHERE restaurante_id = ${tenantId}::uuid
+            WHERE restaurante_id = ${tenantId}
               AND status = 'fechada'
           `
         ) as any[];
@@ -392,7 +392,7 @@ export function registerRelatoriosRoutes(app: App) {
                 SUM(p.quantidade)::integer as quantity_sold
               FROM pedidos p
               INNER JOIN pratos pr ON p.prato_id = pr.id
-              WHERE p.restaurante_id = ${tenantId}::uuid
+              WHERE p.restaurante_id = ${tenantId}
                 AND p.created_at >= ${inicio.toISOString()}::timestamptz
                 AND p.created_at < ${fim.toISOString()}::timestamptz
               GROUP BY pr.nome
@@ -406,7 +406,7 @@ export function registerRelatoriosRoutes(app: App) {
                 prato_nome as dish_name,
                 SUM(quantidade)::integer as quantity_sold
               FROM pedidos_historico
-              WHERE restaurante_id = ${tenantId}::uuid AND prato_nome IS NOT NULL
+              WHERE restaurante_id = ${tenantId} AND prato_nome IS NOT NULL
                 AND created_at >= ${inicio.toISOString()}::timestamptz
                 AND created_at < ${fim.toISOString()}::timestamptz
               GROUP BY prato_nome
@@ -537,7 +537,7 @@ export function registerRelatoriosRoutes(app: App) {
                 COALESCE(SUM(total), 0)::float AS faturamento,
                 COUNT(*)::integer AS quantidade
               FROM comandas
-              WHERE restaurante_id = ${tenantId}::uuid
+              WHERE restaurante_id = ${tenantId}
                 AND status = 'fechada'
                 AND closed_at >= ${inicio.toISOString()}::timestamptz
                 AND closed_at < ${fim.toISOString()}::timestamptz
@@ -553,7 +553,7 @@ export function registerRelatoriosRoutes(app: App) {
                 COALESCE(SUM(total), 0)::float AS faturamento,
                 COUNT(*)::integer AS quantidade
               FROM comandas_historico
-              WHERE restaurante_id = ${tenantId}::uuid
+              WHERE restaurante_id = ${tenantId}
                 AND status = 'fechada'
                 AND closed_at >= ${inicio.toISOString()}::timestamptz
                 AND closed_at < ${fim.toISOString()}::timestamptz
@@ -566,7 +566,7 @@ export function registerRelatoriosRoutes(app: App) {
               SELECT COALESCE(SUM(CAST(e.taxa_entrega AS DECIMAL(10,2))), 0)::float AS total_taxa
               FROM entregas e
               INNER JOIN comandas c ON e.comanda_id = c.id
-              WHERE c.restaurante_id = ${tenantId}::uuid
+              WHERE c.restaurante_id = ${tenantId}
                 AND c.status = 'fechada'
                 AND c.tipo = 'delivery'
                 AND c.closed_at >= ${inicio.toISOString()}::timestamptz
@@ -700,11 +700,11 @@ export function registerRelatoriosRoutes(app: App) {
             SELECT mesa_numero, AVG(subtotal)::float AS ticket_medio, COUNT(*)::integer AS comandas_fechadas, COALESCE(SUM(COALESCE(gorjeta_val, 0)), 0)::float AS gorjeta_total
             FROM (
               SELECT mesa_numero, total AS subtotal, COALESCE(gorjeta, 0) AS gorjeta_val FROM comandas
-              WHERE restaurante_id = ${tenantId}::uuid AND status = 'fechada' AND mesa_numero IS NOT NULL
+              WHERE restaurante_id = ${tenantId} AND status = 'fechada' AND mesa_numero IS NOT NULL
                 AND closed_at >= ${inicio.toISOString()}::timestamptz AND closed_at < ${fim.toISOString()}::timestamptz
               UNION ALL
               SELECT mesa_numero, total AS subtotal, COALESCE(gorjeta, 0) AS gorjeta_val FROM comandas_historico
-              WHERE restaurante_id = ${tenantId}::uuid AND status = 'fechada' AND mesa_numero IS NOT NULL
+              WHERE restaurante_id = ${tenantId} AND status = 'fechada' AND mesa_numero IS NOT NULL
                 AND closed_at >= ${inicio.toISOString()}::timestamptz AND closed_at < ${fim.toISOString()}::timestamptz
             ) t
             GROUP BY mesa_numero
@@ -720,13 +720,13 @@ export function registerRelatoriosRoutes(app: App) {
               FROM pedidos p
               INNER JOIN comandas c ON p.comanda_id = c.id
               INNER JOIN pratos pr ON p.prato_id = pr.id
-              WHERE p.restaurante_id = ${tenantId}::uuid AND c.mesa_numero IS NOT NULL
+              WHERE p.restaurante_id = ${tenantId} AND c.mesa_numero IS NOT NULL
                 AND p.created_at >= ${inicio.toISOString()}::timestamptz AND p.created_at < ${fim.toISOString()}::timestamptz
               UNION ALL
               SELECT ch.mesa_numero AS mesa_numero, ph.prato_nome AS dish_name, ph.quantidade AS quantidade
               FROM pedidos_historico ph
               INNER JOIN comandas_historico ch ON ph.comanda_id = ch.id
-              WHERE ph.restaurante_id = ${tenantId}::uuid AND ch.mesa_numero IS NOT NULL AND ph.prato_nome IS NOT NULL
+              WHERE ph.restaurante_id = ${tenantId} AND ch.mesa_numero IS NOT NULL AND ph.prato_nome IS NOT NULL
                 AND ph.created_at >= ${inicio.toISOString()}::timestamptz AND ph.created_at < ${fim.toISOString()}::timestamptz
             ),
             agregado AS (
