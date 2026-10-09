@@ -6,6 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { apiGet, apiPost } from "@/utils/api";
 import { formatCurrency } from "@/utils/helpers";
+import { CampoMoeda } from "@/components/CampoMoeda";
 
 export default function DivisaoScreen() {
   const COLORS = useColors();
@@ -85,7 +86,7 @@ export default function DivisaoScreen() {
         )}
 
         <Text style={{ fontSize: 12, fontWeight: "600", color: COLORS.primary, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>Gorjeta (R$)</Text>
-        <TextInput value={gorjeta} onChangeText={setGorjeta} keyboardType="decimal-pad" placeholder="0,00" placeholderTextColor={COLORS.textTertiary} style={{ backgroundColor: COLORS.surface, borderRadius: 10, borderWidth: 0.5, borderColor: COLORS.surfaceSecondary, padding: 12, fontSize: 16, color: COLORS.text, marginBottom: 16 }} />
+        <CampoMoeda value={gorjeta} onChangeText={setGorjeta} placeholder="0,00" placeholderTextColor={COLORS.textTertiary} style={{ backgroundColor: COLORS.surface, borderRadius: 10, borderWidth: 0.5, borderColor: COLORS.surfaceSecondary, padding: 12, fontSize: 16, color: COLORS.text, marginBottom: 16 }} />
 
         <Pressable onPress={calcular} disabled={loading} style={{ backgroundColor: loading ? COLORS.textTertiary : COLORS.primary, borderRadius: 12, padding: 16, alignItems: "center", marginBottom: 16 }}>
           {loading ? <ActivityIndicator color="white" /> : <Text style={{ color: "white", fontSize: 16, fontWeight: "600" }}>Calcular divisão</Text>}
