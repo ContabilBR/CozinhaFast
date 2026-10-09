@@ -20,26 +20,6 @@ function escHtml(s: string): string {
 export function registerCardapioPublicoRoutes(app: App) {
   const db = app.db as any;
 
-  // GET /api/public/restaurantes — lista restaurantes ativos (sem auth)
-  app.fastify.get(
-    "/api/public/restaurantes",
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      if (!checkRateLimit(request, reply, { routeKey: "public-restaurantes", max: 60, windowMs: 60_000 })) return;
-      try {
-        const restaurantes = await db
-          .select({
-            id: schema.restaurante.id,
-            nome: schema.restaurante.nome,
-          })
-          .from(schema.restaurante);
-
-        return await reply.code(200).send({ restaurantes });
-      } catch (err) {
-        return await reply.code(500).send({ error: "Erro interno" });
-      }
-    }
-  );
-
   // GET /cardapio — página web do cardápio digital
   app.fastify.get("/cardapio", async (request: FastifyRequest, reply: FastifyReply) => {
     if (!checkRateLimit(request, reply, { routeKey: "cardapio-html", max: 60, windowMs: 60_000 })) return;
