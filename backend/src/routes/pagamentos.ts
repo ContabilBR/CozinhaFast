@@ -49,14 +49,14 @@ export function registerPagamentoRoutes(app: App) {
         const { forma_pagamento, valor, troco, referencia } = request.body;
 
         if (!isFinite(valor) || valor <= 0) {
-          return reply.code(400).send({ error: "O valor do pagamento deve ser um número maior que zero." });
+          return await reply.code(400).send({ error: "O valor do pagamento deve ser um número maior que zero." });
         }
         if (troco !== undefined && (!isFinite(troco) || troco < 0)) {
-          return reply.code(400).send({ error: "O troco deve ser um número maior ou igual a zero." });
+          return await reply.code(400).send({ error: "O troco deve ser um número maior ou igual a zero." });
         }
         const _gorjetaCheck = (request.body as any).gorjeta;
         if (_gorjetaCheck !== undefined && (!isFinite(_gorjetaCheck) || _gorjetaCheck < 0)) {
-          return reply.code(400).send({ error: "A gorjeta deve ser um número maior ou igual a zero." });
+          return await reply.code(400).send({ error: "A gorjeta deve ser um número maior ou igual a zero." });
         }
 
         // Calcular total já pago
@@ -75,7 +75,7 @@ export function registerPagamentoRoutes(app: App) {
         // Only validate overpayment if comanda has a total
         const restanteFinal = totalComandaFinal - totalPago;
         if (totalComandaFinal > 0 && valor > restanteFinal + 0.01) {
-          return reply.code(400).send({ error: `Valor excede o restante da comanda. Restante: R$ ${restanteFinal.toFixed(2)}` });
+          return await reply.code(400).send({ error: `Valor excede o restante da comanda. Restante: R$ ${restanteFinal.toFixed(2)}` });
         }
 
         // Todas as formas de pagamento (dinheiro, cartão, Pix) são reconciliação manual
@@ -100,7 +100,7 @@ export function registerPagamentoRoutes(app: App) {
         });
       } catch (err) {
         app.logger.error({ error: (err as any).message }, "Erro ao registrar pagamento");
-        return reply.code(500).send({ error: "Erro interno do servidor" });
+        return await reply.code(500).send({ error: "Erro interno do servidor" });
       }
     }
   );
@@ -127,10 +127,10 @@ export function registerPagamentoRoutes(app: App) {
 
         const totalPago = pagamentos.filter((p: any) => p.status === "confirmado").reduce((sum: number, p: any) => sum + parseFloat(p.valor), 0);
 
-        return reply.code(200).send({ pagamentos, total_pago: totalPago });
+        return await reply.code(200).send({ pagamentos, total_pago: totalPago });
       } catch (err) {
         app.logger.error({ error: (err as any).message }, "Erro ao listar pagamentos");
-        return reply.code(500).send({ error: "Erro interno do servidor" });
+        return await reply.code(500).send({ error: "Erro interno do servidor" });
       }
     }
   );
@@ -156,10 +156,10 @@ export function registerPagamentoRoutes(app: App) {
 
         await db.update(schema.pagamentos).set({ status: "cancelado" }).where(eq(schema.pagamentos.id, request.params.id));
 
-        return reply.code(200).send({ success: true, message: "Pagamento cancelado" });
+        return await reply.code(200).send({ success: true, message: "Pagamento cancelado" });
       } catch (err) {
         app.logger.error({ error: (err as any).message }, "Erro ao cancelar pagamento");
-        return reply.code(500).send({ error: "Erro interno do servidor" });
+        return await reply.code(500).send({ error: "Erro interno do servidor" });
       }
     }
   );
@@ -229,7 +229,7 @@ export function registerPagamentoRoutes(app: App) {
             valor: i === numPessoas - 1 ? Math.round((valorPorPessoa - ajuste) * 100) / 100 : valorPorPessoa,
           }));
 
-          return reply.code(200).send({
+          return await reply.code(200).send({
             tipo: "igual",
             total_comanda: totalComanda,
             gorjeta,
@@ -283,7 +283,7 @@ export function registerPagamentoRoutes(app: App) {
             };
           });
 
-          return reply.code(200).send({
+          return await reply.code(200).send({
             tipo: "por_itens",
             total_comanda: totalComanda,
             gorjeta,
@@ -296,11 +296,11 @@ export function registerPagamentoRoutes(app: App) {
           });
 
         } else {
-          return reply.code(400).send({ error: "Tipo de divisão inválido. Use 'igual' ou 'por_itens'." });
+          return await reply.code(400).send({ error: "Tipo de divisão inválido. Use 'igual' ou 'por_itens'." });
         }
       } catch (err) {
         app.logger.error({ error: (err as any).message }, "Erro ao calcular divisão");
-        return reply.code(500).send({ error: "Erro interno do servidor" });
+        return await reply.code(500).send({ error: "Erro interno do servidor" });
       }
     }
   );

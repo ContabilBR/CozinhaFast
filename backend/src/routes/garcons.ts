@@ -74,7 +74,7 @@ export function registerGarconRoutes(app: App) {
         );
       } catch (error) {
         app.logger.error({ err: error }, "Failed to list garcons");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -119,7 +119,7 @@ export function registerGarconRoutes(app: App) {
 
       if (!email || email.trim() === "") {
         app.logger.warn({}, "Check-email request missing email parameter");
-        return reply.code(400).send({ error: "email query param is required" });
+        return await reply.code(400).send({ error: "email query param is required" });
       }
 
       try {
@@ -140,20 +140,20 @@ export function registerGarconRoutes(app: App) {
           // O e-mail é único na plataforma inteira, então "exists" vale para qualquer restaurante.
           // Mas o nome só é revelado se a pessoa for do restaurante de quem pergunta.
           const mesmoRestaurante = usuario[0].restauranteId === authUser.restauranteId;
-          return reply.code(200).send({
+          return await reply.code(200).send({
             exists: true,
             nome: mesmoRestaurante ? usuario[0].nome : null,
           });
         }
 
         app.logger.info({ email }, "Email not found in usuarios table");
-        return reply.code(200).send({
+        return await reply.code(200).send({
           exists: false,
           nome: null,
         });
       } catch (error) {
         app.logger.error({ err: error, email }, "Failed to check email in usuarios table");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -203,7 +203,7 @@ export function registerGarconRoutes(app: App) {
 
       try {
         if (!request.body.name || !request.body.email || !request.body.password) {
-          return reply.code(400).send({ error: "name, email, and password are required" });
+          return await reply.code(400).send({ error: "name, email, and password are required" });
         }
 
         const restauranteId = requireTenant(authUser);
@@ -274,7 +274,7 @@ export function registerGarconRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error, body: request.body }, "Failed to create garcon");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -383,7 +383,7 @@ export function registerGarconRoutes(app: App) {
 
         app.logger.info({ userId: updated.id }, "Garcon updated successfully");
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           id: updated.id,
           name: updated.name,
           email: updated.email,
@@ -393,7 +393,7 @@ export function registerGarconRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to update garcon");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -463,7 +463,7 @@ export function registerGarconRoutes(app: App) {
         return reply.code(204).send();
       } catch (error) {
         app.logger.error({ err: error }, "Failed to delete garcon");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -634,7 +634,7 @@ export function registerGarconRoutes(app: App) {
         return comandas;
       } catch (error) {
         app.logger.error({ err: error, authUserId }, "Failed to fetch pedidos for garcom");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );

@@ -93,13 +93,13 @@ export function registerRestauranteSignupRoutes(app: App) {
 
         if (!checkRateLimit(clientIp)) {
           app.logger.warn({ clientIp }, "Rate limit exceeded for signup endpoint");
-          return reply.code(429).send({ error: "Muitas tentativas. Tente novamente em 1 hora." });
+          return await reply.code(429).send({ error: "Muitas tentativas. Tente novamente em 1 hora." });
         }
 
         // 1. Validate required fields
         if (!nome || !adminNome || !adminEmail || !adminSenha) {
           app.logger.warn({ body: request.body }, "Sign up failed: missing required fields");
-          return reply.code(400).send({ error: "nome, adminNome, adminEmail, adminSenha are required" });
+          return await reply.code(400).send({ error: "nome, adminNome, adminEmail, adminSenha are required" });
         }
 
         app.logger.info({ restauranteName: nome, adminEmail }, "Creating new restaurante signup");
@@ -113,7 +113,7 @@ export function registerRestauranteSignupRoutes(app: App) {
 
         if (existingUsuario.length > 0) {
           app.logger.warn({ adminEmail }, "Email already exists");
-          return reply.code(409).send({ error: "Email already exists" });
+          return await reply.code(409).send({ error: "Email already exists" });
         }
 
         // 3. Execute transaction
@@ -170,7 +170,7 @@ export function registerRestauranteSignupRoutes(app: App) {
 
         app.logger.info({ restauranteId: result.restaurante.id }, "Restaurante signup completed successfully");
 
-        return reply.code(201).send({
+        return await reply.code(201).send({
           restaurante: { id: result.restaurante.id, nome: result.restaurante.nome },
           usuario: {
             id: result.usuario.id,
@@ -194,7 +194,7 @@ export function registerRestauranteSignupRoutes(app: App) {
 
         if (isUniqueConstraintError) {
           app.logger.warn({ adminEmail, err: error }, "Unique constraint violation - email already exists");
-          return reply.code(409).send({ error: "Email already exists" });
+          return await reply.code(409).send({ error: "Email already exists" });
         }
 
         app.logger.error({ err: error, adminEmail, body: request.body }, "Failed to create restaurante signup");

@@ -120,7 +120,7 @@ export function registerAssinaturaRoutes(app: App) {
         const trialExpirado = restaurante.plano === "trial" && restaurante.trialExpiraEm ? new Date(restaurante.trialExpiraEm) < new Date() : false;
 
         app.logger.info({ restauranteId, plano: restaurante.plano }, "Getting subscription status");
-        return reply.code(200).send({
+        return await reply.code(200).send({
           plano: restaurante.plano,
           plano_detalhes: PLANOS[restaurante.plano as keyof typeof PLANOS],
           assinatura_status: restaurante.assinaturaStatus,
@@ -130,7 +130,7 @@ export function registerAssinaturaRoutes(app: App) {
         });
       } catch (err) {
         app.logger.error({ err }, "Erro ao obter assinatura");
-        return reply.code(500).send({ error: "Erro interno do servidor" });
+        return await reply.code(500).send({ error: "Erro interno do servidor" });
       }
     }
   );
@@ -181,11 +181,11 @@ export function registerAssinaturaRoutes(app: App) {
         const { plano, email, cpf_cnpj } = request.body;
 
         if (!["basico", "profissional", "enterprise"].includes(plano)) {
-          return reply.code(400).send({ error: "Plano inválido" });
+          return await reply.code(400).send({ error: "Plano inválido" });
         }
 
         if (!email || !cpf_cnpj) {
-          return reply.code(400).send({ error: "Email e CPF/CNPJ são obrigatórios" });
+          return await reply.code(400).send({ error: "Email e CPF/CNPJ são obrigatórios" });
         }
 
         app.logger.info({ restauranteId, plano, email }, "Upgrading subscription");
@@ -202,7 +202,7 @@ export function registerAssinaturaRoutes(app: App) {
         }).where(eq(schema.restaurante.id, restauranteId));
 
         app.logger.info({ restauranteId, plano }, "Subscription upgraded successfully");
-        return reply.code(200).send({
+        return await reply.code(200).send({
           success: true,
           plano,
           assinatura_id: null,
@@ -210,7 +210,7 @@ export function registerAssinaturaRoutes(app: App) {
         });
       } catch (err) {
         app.logger.error({ err }, "Erro ao fazer upgrade");
-        return reply.code(500).send({ error: "Erro interno do servidor" });
+        return await reply.code(500).send({ error: "Erro interno do servidor" });
       }
     }
   );
@@ -256,13 +256,13 @@ export function registerAssinaturaRoutes(app: App) {
         }).where(eq(schema.restaurante.id, restauranteId));
 
         app.logger.info({ restauranteId }, "Subscription cancelled successfully");
-        return reply.code(200).send({
+        return await reply.code(200).send({
           success: true,
           message: "Assinatura cancelada",
         });
       } catch (err) {
         app.logger.error({ err }, "Erro ao cancelar assinatura");
-        return reply.code(500).send({ error: "Erro interno do servidor" });
+        return await reply.code(500).send({ error: "Erro interno do servidor" });
       }
     }
   );

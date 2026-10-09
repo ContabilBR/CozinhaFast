@@ -122,7 +122,7 @@ export function registerOrderItemRoutes(app: App) {
 
         app.logger.info({ count: pedidos.length }, "Pedidos retrieved");
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           pedidos: pedidos.map((p) => ({
             id: p.id,
             comanda_id: p.comandaId,
@@ -142,7 +142,7 @@ export function registerOrderItemRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to list pedidos");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -199,7 +199,7 @@ export function registerOrderItemRoutes(app: App) {
         const pratoId = request.body.prato_id || request.body.pratoId;
 
         if (!comandaId || !pratoId) {
-          return reply.code(400).send({ error: "comanda_id and prato_id are required" });
+          return await reply.code(400).send({ error: "comanda_id and prato_id are required" });
         }
 
         const restauranteId = requireTenant(session);
@@ -296,7 +296,7 @@ export function registerOrderItemRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error, body: request.body }, "Failed to create pedido");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -365,7 +365,7 @@ export function registerOrderItemRoutes(app: App) {
         }
 
         const p = pedidos[0];
-        return reply.code(200).send({
+        return await reply.code(200).send({
           id: p.id,
           comanda_id: p.comandaId,
           prato_id: p.pratoId,
@@ -379,7 +379,7 @@ export function registerOrderItemRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to get pedido");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -438,7 +438,7 @@ export function registerOrderItemRoutes(app: App) {
 
         // Cancelar tem rota própria (motivo obrigatório, permissões e registro de quem cancelou)
         if (request.body.status === "cancelado") {
-          return reply.code(400).send({ error: "Para cancelar um item use PUT /api/pedidos/:id/cancelar (motivo obrigatório)." });
+          return await reply.code(400).send({ error: "Para cancelar um item use PUT /api/pedidos/:id/cancelar (motivo obrigatório)." });
         }
 
         const existing = await app.db
@@ -602,7 +602,7 @@ export function registerOrderItemRoutes(app: App) {
           app.logger.warn({ err: deliveryErr }, "Failed to publish delivery realtime events");
         }
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           id: updated.id,
           comandaId: updated.comandaId,
           pratoId: updated.pratoId,
@@ -614,7 +614,7 @@ export function registerOrderItemRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to update pedido status");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -678,7 +678,7 @@ export function registerOrderItemRoutes(app: App) {
 
         const detalhe = request.body.detalhe?.trim() || null;
         if (request.body.motivo === "outro" && !detalhe) {
-          return reply.code(400).send({ error: "Informe o detalhe do motivo quando o motivo for 'outro'." });
+          return await reply.code(400).send({ error: "Informe o detalhe do motivo quando o motivo for 'outro'." });
         }
 
         const resultado = await cancelarPedido(app, {
@@ -752,7 +752,7 @@ export function registerOrderItemRoutes(app: App) {
           }
         }
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           success: true,
           id: resultado.pedidoId,
           comanda_id: resultado.comandaId,
@@ -763,7 +763,7 @@ export function registerOrderItemRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to cancel pedido");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -824,7 +824,7 @@ export function registerOrderItemRoutes(app: App) {
 
         // Cancelar tem rota própria (motivo obrigatório, permissões e registro de quem cancelou)
         if (request.body.status === "cancelado") {
-          return reply.code(400).send({ error: "Para cancelar um item use PUT /api/pedidos/:id/cancelar (motivo obrigatório)." });
+          return await reply.code(400).send({ error: "Para cancelar um item use PUT /api/pedidos/:id/cancelar (motivo obrigatório)." });
         }
 
         const existing = await app.db
@@ -917,7 +917,7 @@ export function registerOrderItemRoutes(app: App) {
           app.logger.debug({ err: pubErr }, "Failed to publish pedido event");
         }
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           id: updated.id,
           comanda_id: updated.comandaId,
           prato_id: updated.pratoId,
@@ -929,7 +929,7 @@ export function registerOrderItemRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to update pedido");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -1098,7 +1098,7 @@ export function registerOrderItemRoutes(app: App) {
         return reply.code(204).send();
       } catch (error) {
         app.logger.error({ err: error }, "Failed to delete pedido");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );

@@ -211,7 +211,7 @@ export function registerRestauranteRoutes(app: App) {
           tenantId = requireTenant(authUser);
         } catch {
           app.logger.warn({}, "User has no tenant for get operation");
-          return reply.code(404).send({ error: "Nenhum dado cadastrado" });
+          return await reply.code(404).send({ error: "Nenhum dado cadastrado" });
         }
 
         app.logger.info({ tenantId }, "Getting restaurante info");
@@ -224,13 +224,13 @@ export function registerRestauranteRoutes(app: App) {
 
         if (result.length === 0) {
           app.logger.info({ tenantId }, "No restaurante record found");
-          return reply.code(404).send({ error: "Nenhum dado cadastrado" });
+          return await reply.code(404).send({ error: "Nenhum dado cadastrado" });
         }
 
         return reply.code(200).send(serializar(result[0]));
       } catch (error) {
         app.logger.error({ err: error }, "Failed to get restaurante info");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -267,7 +267,7 @@ export function registerRestauranteRoutes(app: App) {
         try {
           tenantId = requireTenant(authUser);
         } catch {
-          return reply.code(404).send({ error: "Nenhum dado cadastrado" });
+          return await reply.code(404).send({ error: "Nenhum dado cadastrado" });
         }
 
         const result = await app.db
@@ -277,14 +277,14 @@ export function registerRestauranteRoutes(app: App) {
           .limit(1);
 
         if (result.length === 0) {
-          return reply.code(404).send({ error: "Nenhum dado cadastrado" });
+          return await reply.code(404).send({ error: "Nenhum dado cadastrado" });
         }
 
         const r = result[0] as any;
         const validacao = validarRestauranteParaNfce(r);
         const ambiente = r.ambienteFocus ?? 2;
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           pronto_para_nfce: validacao.ok,
           campos_faltantes: validacao.camposFaltantes,
           campos_faltantes_labels: validacao.camposFaltantes.map(
@@ -295,7 +295,7 @@ export function registerRestauranteRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to get fiscal status");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -330,18 +330,18 @@ export function registerRestauranteRoutes(app: App) {
           tenantId = requireTenant(authUser);
         } catch {
           app.logger.warn({}, "User has no tenant for put operation");
-          return reply.code(404).send({ error: "Nenhum dado cadastrado" });
+          return await reply.code(404).send({ error: "Nenhum dado cadastrado" });
         }
 
         const body = request.body;
 
         if (!body.nome) {
-          return reply.code(400).send({ error: "nome e obrigatorio" });
+          return await reply.code(400).send({ error: "nome e obrigatorio" });
         }
 
         const erroValidacao = validarBodyFiscal(body);
         if (erroValidacao) {
-          return reply.code(400).send({ error: erroValidacao });
+          return await reply.code(400).send({ error: erroValidacao });
         }
 
         const existing = await app.db
@@ -351,7 +351,7 @@ export function registerRestauranteRoutes(app: App) {
 
         if (existing.length === 0) {
           app.logger.warn({ tenantId }, "Tenant restaurante not found for update");
-          return reply.code(404).send({ error: "Restaurante not found" });
+          return await reply.code(404).send({ error: "Restaurante not found" });
         }
 
         // Campos legados: comportamento original preservado
@@ -402,7 +402,7 @@ export function registerRestauranteRoutes(app: App) {
         return reply.code(200).send(serializar(updated));
       } catch (error) {
         app.logger.error({ err: error }, "Failed to upsert restaurante");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -433,7 +433,7 @@ export function registerRestauranteRoutes(app: App) {
           tenantId = requireTenant(authUser);
         } catch {
           app.logger.warn({}, "User has no tenant for delete operation");
-          return reply.code(404).send({ error: "Nenhum dado cadastrado" });
+          return await reply.code(404).send({ error: "Nenhum dado cadastrado" });
         }
 
         app.logger.info({ tenantId }, "Deleting restaurante");
@@ -446,7 +446,7 @@ export function registerRestauranteRoutes(app: App) {
 
         if (!existing || existing.length === 0) {
           app.logger.warn({ tenantId }, "Restaurante not found for deletion");
-          return reply.code(404).send({ error: "Nenhum dado cadastrado" });
+          return await reply.code(404).send({ error: "Nenhum dado cadastrado" });
         }
 
         let deleteError: any = null;
@@ -475,7 +475,7 @@ export function registerRestauranteRoutes(app: App) {
 
           if (isFKError) {
             app.logger.warn({ tenantId }, "Cannot delete restaurante - has dependent records");
-            return reply.code(400).send({ error: "Nao e possivel deletar restaurante com registros relacionados" });
+            return await reply.code(400).send({ error: "Nao e possivel deletar restaurante com registros relacionados" });
           }
 
           app.logger.error({ err: deleteError, code, message }, "Delete failed with non-FK error");
@@ -483,10 +483,10 @@ export function registerRestauranteRoutes(app: App) {
         }
 
         app.logger.info({ restauranteId: tenantId }, "Restaurante deleted successfully");
-        return reply.code(200).send({ success: true });
+        return await reply.code(200).send({ success: true });
       } catch (error: any) {
         app.logger.error({ err: error }, "Failed to delete restaurante");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );

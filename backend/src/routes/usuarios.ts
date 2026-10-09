@@ -60,7 +60,7 @@ export function registerUsuariosRoutes(app: App) {
 
       const restauranteId = requireTenant(session);
       if (!restauranteId) {
-        return reply.code(404).send({ error: "Nenhum restaurante associado" });
+        return await reply.code(404).send({ error: "Nenhum restaurante associado" });
       }
 
       try {
@@ -78,7 +78,7 @@ export function registerUsuariosRoutes(app: App) {
           .where(eq(schema.usuarios.restauranteId, restauranteId))
           .orderBy(schema.usuarios.nome);
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           data: result.map((u) => ({
             id: u.id,
             nome: u.nome,
@@ -89,7 +89,7 @@ export function registerUsuariosRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to list usuarios");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -134,16 +134,16 @@ export function registerUsuariosRoutes(app: App) {
 
       try {
         if (!request.body.nome || !request.body.email || !request.body.senha) {
-          return reply.code(400).send({ error: "nome, email, and senha are required" });
+          return await reply.code(400).send({ error: "nome, email, and senha are required" });
         }
 
         if (request.body.role !== undefined && !VALID_ROLES.includes(request.body.role as any)) {
-          return reply.code(400).send({ error: "role inválido" });
+          return await reply.code(400).send({ error: "role inválido" });
         }
 
         const restauranteId = requireTenant(authUser);
         if (!restauranteId) {
-          return reply.code(404).send({ error: "Nenhum restaurante associado" });
+          return await reply.code(404).send({ error: "Nenhum restaurante associado" });
         }
 
         app.logger.info({ email: request.body.email, restauranteId, authUserId: authUser.id, authUserEmail: authUser.email }, "Creating usuario");
@@ -167,7 +167,7 @@ export function registerUsuariosRoutes(app: App) {
 
         app.logger.info({ usuarioId: usuario.id }, "Usuario created successfully");
 
-        return reply.code(201).send({
+        return await reply.code(201).send({
           id: usuario.id,
           nome: usuario.nome,
           email: usuario.email,
@@ -176,7 +176,7 @@ export function registerUsuariosRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error, body: request.body }, "Failed to create usuario");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -228,14 +228,14 @@ export function registerUsuariosRoutes(app: App) {
 
       const restauranteId = requireTenant(authUser);
       if (!restauranteId) {
-        return reply.code(404).send({ error: "Nenhum restaurante associado" });
+        return await reply.code(404).send({ error: "Nenhum restaurante associado" });
       }
 
       try {
         app.logger.info({ usuarioId: request.params.id }, "Updating usuario");
 
         if (request.body.role !== undefined && !VALID_ROLES.includes(request.body.role as any)) {
-          return reply.code(400).send({ error: "role inválido" });
+          return await reply.code(400).send({ error: "role inválido" });
         }
 
         const existing = await app.db
@@ -244,7 +244,7 @@ export function registerUsuariosRoutes(app: App) {
           .where(and(eq(schema.usuarios.id, request.params.id), eq(schema.usuarios.restauranteId, restauranteId)));
 
         if (!existing.length) {
-          return reply.code(404).send({ error: "Usuario not found" });
+          return await reply.code(404).send({ error: "Usuario not found" });
         }
 
         const updates: any = {};
@@ -263,7 +263,7 @@ export function registerUsuariosRoutes(app: App) {
 
         app.logger.info({ usuarioId: updated.id }, "Usuario updated successfully");
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           id: updated.id,
           nome: updated.nome,
           email: updated.email,
@@ -272,7 +272,7 @@ export function registerUsuariosRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to update usuario");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -305,7 +305,7 @@ export function registerUsuariosRoutes(app: App) {
 
       const restauranteId = requireTenant(authUser);
       if (!restauranteId) {
-        return reply.code(404).send({ error: "Nenhum restaurante associado" });
+        return await reply.code(404).send({ error: "Nenhum restaurante associado" });
       }
 
       try {
@@ -317,17 +317,17 @@ export function registerUsuariosRoutes(app: App) {
           .where(and(eq(schema.usuarios.id, request.params.id), eq(schema.usuarios.restauranteId, restauranteId)));
 
         if (!existing.length) {
-          return reply.code(404).send({ error: "Usuario not found" });
+          return await reply.code(404).send({ error: "Usuario not found" });
         }
 
         await app.db.delete(schema.usuarios).where(and(eq(schema.usuarios.id, request.params.id), eq(schema.usuarios.restauranteId, restauranteId)));
 
         app.logger.info({ usuarioId: request.params.id }, "Usuario deleted successfully");
 
-        return reply.code(204).send();
+        return await reply.code(204).send();
       } catch (error) {
         app.logger.error({ err: error }, "Failed to delete usuario");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -385,7 +385,7 @@ export function registerUsuariosRoutes(app: App) {
         );
       } catch (error) {
         app.logger.error({ err: error }, "Failed to list garcons");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );

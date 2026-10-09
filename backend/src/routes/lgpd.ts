@@ -109,7 +109,7 @@ export function registerLgpdRoutes(app: App) {
       if (!usuario) {
         // For Better Auth users without usuarios record, still allow deletion
         app.logger.info({ userId: authUser.id, restauranteId }, "Better Auth user requesting LGPD deletion");
-        return reply.code(200).send({ success: true, message: "Seus dados pessoais foram anonimizados e sua sessão encerrada. Você não conseguirá mais fazer login com esta conta." });
+        return await reply.code(200).send({ success: true, message: "Seus dados pessoais foram anonimizados e sua sessão encerrada. Você não conseguirá mais fazer login com esta conta." });
       }
 
       if (usuario.role === "administrador") {

@@ -2,38 +2,15 @@ import { afterAll } from "bun:test";
 
 const BASE_URL = process.env.TEST_BASE_URL || "http://localhost:8083";
 
-// ---------------------------------------------------------------------------
-// Trava de segurança: os testes criam usuários, restaurantes, pratos e outros
-// registros reais. Para evitar poluição do banco de produção, é obrigatório
-// configurar um banco de testes separado e explícito antes de rodar qualquer
-// teste.
-//
-// Regras (todas precisam ser satisfeitas, senão os testes param aqui):
-//   1. Se rodando contra um servidor remoto (não-localhost), TEST_DATABASE_URL
-//      deve estar definida E ser diferente de DATABASE_URL.
-//   2. Se rodando contra localhost, testes são permitidos mesmo sem
-//      TEST_DATABASE_URL explícita (assumes desenvolvimento local).
-// ---------------------------------------------------------------------------
-
-const TEST_DB_URL = process.env.TEST_DATABASE_URL;
-const REAL_DB_URL = process.env.DATABASE_URL;
-const IS_LOCALHOST = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/i.test(BASE_URL);
-
-// Only enforce TEST_DATABASE_URL for remote servers
-if (!IS_LOCALHOST && !TEST_DB_URL) {
+// Trava de segurança: estes testes CRIAM usuários, garçons e restaurantes de verdade.
+// Rodar contra o backend publicado polui o banco de produção (já aconteceu: milhares de
+// contas @example.com). Só roda contra servidor remoto com confirmação explícita.
+const ENDERECO_LOCAL = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/i;
+if (!ENDERECO_LOCAL.test(BASE_URL) && process.env.ALLOW_REMOTE_TESTS !== "true") {
   throw new Error(
-    "Testes bloqueados: rodando contra servidor remoto sem TEST_DATABASE_URL definida. " +
-    "Configure um banco de dados de testes separado antes de rodar os testes contra produção. " +
-    "Os testes nunca devem gravar no banco real."
-  );
-}
-
-// If TEST_DATABASE_URL is set, it must differ from DATABASE_URL
-if (TEST_DB_URL && REAL_DB_URL && TEST_DB_URL === REAL_DB_URL) {
-  throw new Error(
-    "Testes bloqueados: TEST_DATABASE_URL aponta para o mesmo banco que DATABASE_URL. " +
-    "Configure um banco de dados de testes completamente separado. " +
-    "Os testes nunca devem gravar no banco real."
+    `Recusando rodar os testes contra ${BASE_URL}: não é um servidor local e eles gravam dados reais. ` +
+    `Use um backend local com banco de desenvolvimento. Se tiver CERTEZA de que o banco alvo é de teste, ` +
+    `defina ALLOW_REMOTE_TESTS=true.`
   );
 }
 

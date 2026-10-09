@@ -605,7 +605,7 @@ export function registerRelatoriosRoutes(app: App) {
           "Resumo retrieved successfully"
         );
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           total_mesas: totalMesas,
           mesas_ocupadas: mesasOcupadas,
           comandas_abertas: comandasAbertas,
@@ -629,7 +629,7 @@ export function registerRelatoriosRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to get resumo");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
@@ -771,13 +771,13 @@ export function registerRelatoriosRoutes(app: App) {
 
         app.logger.info({ tenantId, mesasCount: mesas.length }, "Relatorio por mesa retrieved successfully");
 
-        return reply.code(200).send({
+        return await reply.code(200).send({
           periodo_label: periodoLabel,
           mesas,
         });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to get relatorio por mesa");
-        return reply.code(500).send({ error: "Internal server error" });
+        return await reply.code(500).send({ error: "Internal server error" });
       }
     }
   );
