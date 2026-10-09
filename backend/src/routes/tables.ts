@@ -4,11 +4,10 @@ import * as schema from "../db/schema/schema.js";
 import type { App } from "../index.js";
 import { requireAuth as customRequireAuth, requireRole } from "../utils/auth.js";
 
-// Teto realista para o número de uma mesa em produção: 9.999.
-// Porém, números >= 100000 são reservados para dados de teste (e.g., números de 100000 em diante)
-// para fácil identificação e limpeza durante testes automáticos.
+// Teto realista para o número de uma mesa. Nenhum restaurante tem mais de 9.999 mesas;
+// números acima disso só aparecem por erro ou por dados de teste gravados no banco real
+// (os testes automáticos usam números de 100000 em diante). Por isso o servidor recusa.
 const NUMERO_MAXIMO_MESA = 9999;
-const NUMERO_MINIMO_TESTE = 100000;
 
 // Quantidade máxima de mesas criadas em uma única solicitação em lote.
 // (O app aplica o mesmo limite na tela; o servidor é quem garante.)
@@ -176,10 +175,9 @@ export function registerTableRoutes(app: App) {
           return await reply.code(400).send({ error: "numero é obrigatório" });
         }
 
-        // Allow production numbers (1-9999) or test numbers (>= 100000)
-        if ((numero > NUMERO_MAXIMO_MESA && numero < NUMERO_MINIMO_TESTE) || numero < 1) {
-          app.logger.warn({ tenantId, numero, criadoPor: authUser.id }, "Mesa creation refused: numero in invalid range");
-          return await reply.code(400).send({ error: "Número da mesa inválido: use 1-9999 para produção ou >= 100000 para testes." });
+        if (numero > NUMERO_MAXIMO_MESA) {
+          app.logger.warn({ tenantId, numero, criadoPor: authUser.id }, "Mesa creation refused: numero above allowed maximum");
+          return await reply.code(400).send({ error: `Número da mesa inválido: o máximo permitido é ${NUMERO_MAXIMO_MESA}.` });
         }
 
         app.logger.info({ tenantId, numero, criadoPor: authUser.id, criadoPorRole: authUser.role }, "Creating mesa");
@@ -307,14 +305,9 @@ export function registerTableRoutes(app: App) {
           return await reply.code(400).send({ error: "O número final deve ser maior ou igual ao número inicial." });
         }
 
-        // Allow production range (1-9999) or test range (>= 100000)
-        const isValidRange =
-          (numero_inicial >= 1 && numero_final <= NUMERO_MAXIMO_MESA) ||
-          (numero_inicial >= NUMERO_MINIMO_TESTE);
-
-        if (!isValidRange) {
-          app.logger.warn({ tenantId, numero_inicial, numero_final, criadoPor: authUser.id }, "Bulk mesa creation refused: range in invalid range");
-          return await reply.code(400).send({ error: "Faixa de números inválida: use 1-9999 para produção ou >= 100000 para testes." });
+        if (numero_final > NUMERO_MAXIMO_MESA) {
+          app.logger.warn({ tenantId, numero_inicial, numero_final, criadoPor: authUser.id }, "Bulk mesa creation refused: numero above allowed maximum");
+          return await reply.code(400).send({ error: `Número da mesa inválido: o máximo permitido é ${NUMERO_MAXIMO_MESA}.` });
         }
 
         const quantidade = numero_final - numero_inicial + 1;
@@ -519,10 +512,9 @@ export function registerTableRoutes(app: App) {
           return await reply.code(400).send({ error: "Número e capacidade devem ser inteiros maiores que zero." });
         }
 
-        // Allow production numbers (1-9999) or test numbers (>= 100000)
-        if (numero !== undefined && ((numero > NUMERO_MAXIMO_MESA && numero < NUMERO_MINIMO_TESTE) || numero < 1)) {
-          app.logger.warn({ tenantId, mesaId: id, numero, editadoPor: authUser.id }, "Mesa update refused: numero in invalid range");
-          return await reply.code(400).send({ error: "Número da mesa inválido: use 1-9999 para produção ou >= 100000 para testes." });
+        if (numero !== undefined && numero > NUMERO_MAXIMO_MESA) {
+          app.logger.warn({ tenantId, mesaId: id, numero, editadoPor: authUser.id }, "Mesa update refused: numero above allowed maximum");
+          return await reply.code(400).send({ error: `Número da mesa inválido: o máximo permitido é ${NUMERO_MAXIMO_MESA}.` });
         }
 
         app.logger.info({ tenantId, mesaId: id }, "Updating mesa");
