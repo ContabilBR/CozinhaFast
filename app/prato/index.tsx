@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
 import { apiGet, apiPost, apiPut, apiDelete } from '@/utils/api';
+import { CampoMoeda } from '@/components/CampoMoeda';
 
 interface Categoria { id: string; nome: string; }
 interface Prato {
@@ -424,10 +425,10 @@ export default function GerenciarPratosScreen() {
               />
 
               <Text style={{ fontSize: 14, fontWeight: '600', color: COLORS.text, marginBottom: 6 }}>Preço (R$) *</Text>
-              <TextInput
+              <CampoMoeda
                 value={modalPreco} onChangeText={setModalPreco}
                 placeholder="0,00" placeholderTextColor={COLORS.textTertiary}
-                style={inputStyle} keyboardType="decimal-pad"
+                style={inputStyle}
               />
 
               <Text style={{ fontSize: 14, fontWeight: '600', color: COLORS.text, marginBottom: 6 }}>Categoria</Text>
