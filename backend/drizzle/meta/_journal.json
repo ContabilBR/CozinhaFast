@@ -330,6 +330,13 @@
       "when": 1791555922066,
       "tag": "20261009142522_restaurante_id_cnpj",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1791761640763,
+      "tag": "20261011233400_short_human_robot",
+      "breakpoints": true
     }
   ]
 }

@@ -34,6 +34,7 @@ export const tipoDocumentoFiscalEnum = pgEnum("tipo_documento_fiscal", ["nfce", 
 export const regimeTributarioEnum = pgEnum("regime_tributario", ["simples_nacional", "simples_excesso", "regime_normal", "mei"]);
 export const planoEnum = pgEnum("plano", ["trial", "basico", "profissional", "enterprise"]);
 export const assinaturaStatusEnum = pgEnum("assinatura_status", ["trial", "ativa", "inadimplente", "cancelada", "expirada"]);
+export const modoComandaEnum = pgEnum("modo_comanda", ["mesa", "individual"]);
 
 // Restaurante (Restaurant information) - Define early since many tables reference it
 export const restaurante = pgTable("restaurante", {
@@ -68,6 +69,7 @@ export const restaurante = pgTable("restaurante", {
   telefone: text("telefone"),
   email: text("email"),
   ativo: boolean("ativo").default(true).notNull(),
+  modoComanda: modoComandaEnum("modo_comanda").default("mesa").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -129,6 +131,7 @@ export const pratos = pgTable("pratos", {
 export const comandas = pgTable("comandas", {
   id: uuid("id").primaryKey().defaultRandom(),
   mesaId: uuid("mesa_id").references(() => mesas.id, { onDelete: "restrict" }),
+  rotulo: text("rotulo"),
   tipo: tipoComandaEnum("tipo").default("mesa").notNull(),
   mesaNumero: integer("mesa_numero"),
   garcomId: text("garcom_id"),
@@ -232,6 +235,7 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
 export const comandasHistorico = pgTable("comandas_historico", {
   id: uuid("id").primaryKey(),
   mesaId: uuid("mesa_id"),
+  rotulo: text("rotulo"),
   mesaNumero: integer("mesa_numero"),
   garcomId: text("garcom_id"),
   status: text("status").notNull(),
