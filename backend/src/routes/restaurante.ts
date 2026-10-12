@@ -34,6 +34,8 @@ interface UpdateRestauranteBody {
 
 const REGIMES_VALIDOS = ["simples_nacional", "simples_excesso", "regime_normal", "mei"];
 
+const MODOS_COMANDA = ["mesa", "individual"] as const;
+
 const UFS_VALIDAS = [
   "AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG",
   "PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"
@@ -299,6 +301,145 @@ export function registerRestauranteRoutes(app: App) {
         });
       } catch (error) {
         app.logger.error({ err: error }, "Failed to get fiscal status");
+        return await reply.code(500).send({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // GET /api/restaurante/modo-comanda - modo de controle de comandas do restaurante
+  app.fastify.get(
+    "/api/restaurante/modo-comanda",
+    {
+      schema: {
+        description: "Get the comanda mode of the restaurant (mesa or individual)",
+        tags: ["restaurante"],
+        response: {
+          200: {
+            type: "object",
+            properties: { modo_comanda: { type: "string", enum: ["mesa", "individual"] } },
+          },
+          401: { type: "object", properties: { error: { type: "string" } } },
+          404: { type: "object", properties: { error: { type: "string" } } },
+        },
+      },
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const authUser = await customRequireAuth(app, request, reply);
+      if (!authUser) return;
+
+      try {
+        let tenantId: string;
+        try {
+          tenantId = requireTenant(authUser);
+        } catch {
+          return await reply.code(404).send({ error: "Nenhum dado cadastrado" });
+        }
+
+        const result = await app.db
+          .select({ modoComanda: schema.restaurante.modoComanda })
+          .from(schema.restaurante)
+          .where(eq(schema.restaurante.id, tenantId))
+          .limit(1);
+
+        if (result.length === 0) {
+          return await reply.code(404).send({ error: "Nenhum dado cadastrado" });
+        }
+
+        return await reply.code(200).send({ modo_comanda: result[0].modoComanda });
+      } catch (error) {
+        app.logger.error({ err: error }, "Failed to get modo_comanda");
+        return await reply.code(500).send({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // PUT /api/restaurante/modo-comanda - só o administrador altera; bloqueado com comanda de mesa aberta
+  app.fastify.put<{ Body: { modo_comanda: string } }>(
+    "/api/restaurante/modo-comanda",
+    {
+      schema: {
+        description: "Change the comanda mode of the restaurant (administrador only; blocked while there are open mesa comandas)",
+        tags: ["restaurante"],
+        body: { type: "object", required: ["modo_comanda"], properties: { modo_comanda: { type: "string" } } },
+        response: {
+          200: {
+            type: "object",
+            properties: { modo_comanda: { type: "string", enum: ["mesa", "individual"] } },
+          },
+          400: { type: "object", properties: { error: { type: "string" } } },
+          401: { type: "object", properties: { error: { type: "string" } } },
+          403: { type: "object", properties: { error: { type: "string" } } },
+          404: { type: "object", properties: { error: { type: "string" } } },
+          409: { type: "object", properties: { error: { type: "string" } } },
+        },
+      },
+    },
+    async (
+      request: FastifyRequest<{ Body: { modo_comanda: string } }>,
+      reply: FastifyReply
+    ) => {
+      const authUser = await customRequireAuth(app, request, reply);
+      if (!authUser) return;
+      if (!(await requireRole(authUser, ["administrador"], reply))) return;
+
+      try {
+        let tenantId: string;
+        try {
+          tenantId = requireTenant(authUser);
+        } catch {
+          return await reply.code(404).send({ error: "Nenhum dado cadastrado" });
+        }
+
+        const novoModo = request.body.modo_comanda;
+        if (!(MODOS_COMANDA as readonly string[]).includes(novoModo)) {
+          return await reply.code(400).send({ error: "modo_comanda invalido. Valores aceitos: " + MODOS_COMANDA.join(", ") });
+        }
+
+        const atual = await app.db
+          .select({ modoComanda: schema.restaurante.modoComanda })
+          .from(schema.restaurante)
+          .where(eq(schema.restaurante.id, tenantId))
+          .limit(1);
+
+        if (atual.length === 0) {
+          return await reply.code(404).send({ error: "Nenhum dado cadastrado" });
+        }
+
+        // Mesmo modo: nada a fazer
+        if (atual[0].modoComanda === novoModo) {
+          return await reply.code(200).send({ modo_comanda: novoModo });
+        }
+
+        // Comandas de delivery não entram na conta: só as de mesa travam a troca
+        const abertas = await app.db
+          .select({ id: schema.comandas.id })
+          .from(schema.comandas)
+          .where(
+            and(
+              eq(schema.comandas.restauranteId, tenantId),
+              eq(schema.comandas.status, "aberta" as any),
+              eq(schema.comandas.tipo, "mesa" as any)
+            )
+          )
+          .limit(1);
+
+        if (abertas.length > 0) {
+          app.logger.warn({ tenantId }, "Cannot change modo_comanda with open mesa comandas");
+          return await reply
+            .code(409)
+            .send({ error: "Feche ou cancele as comandas abertas antes de mudar o modo de comanda." });
+        }
+
+        await app.db
+          .update(schema.restaurante)
+          .set({ modoComanda: novoModo as any, updatedAt: new Date() })
+          .where(eq(schema.restaurante.id, tenantId));
+
+        app.logger.info({ tenantId, de: atual[0].modoComanda, para: novoModo }, "modo_comanda changed");
+
+        return await reply.code(200).send({ modo_comanda: novoModo });
+      } catch (error) {
+        app.logger.error({ err: error }, "Failed to change modo_comanda");
         return await reply.code(500).send({ error: "Internal server error" });
       }
     }

@@ -82,3 +82,80 @@ export async function garantirColunasDeCancelamento(app: App): Promise<number> {
 
   return criadas;
 }
+
+/**
+ * Comanda individual (modo de comanda do restaurante e nome da comanda).
+ *
+ * Cria, só se faltarem, o tipo `modo_comanda` e as colunas:
+ *  - restaurante.modo_comanda (NOT NULL, padrão 'mesa': restaurantes existentes ficam em "mesa");
+ *  - comandas.rotulo e comandas_historico.rotulo (texto, opcional).
+ * Idempotente: confere o information_schema antes e usa IF NOT EXISTS, então convive com
+ * colunas já criadas à mão no banco e com uma eventual migração do Drizzle.
+ * Devolve quantas colunas foram criadas (0 quando o banco já estava em dia).
+ */
+const COLUNAS_MODO_COMANDA: Array<[tabela: string, coluna: string, definicao: string]> = [
+  ["restaurante", "modo_comanda", "modo_comanda NOT NULL DEFAULT 'mesa'"],
+  ["comandas", "rotulo", "text"],
+  ["comandas_historico", "rotulo", "text"],
+];
+
+export async function garantirColunasDeModoComanda(app: App): Promise<number> {
+  const db = app.db as any;
+  let criadas = 0;
+
+  try {
+    let existentes: any[] = [];
+
+    try {
+      const result = await db.execute(
+        sql`SELECT table_name, column_name
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND ((table_name = 'restaurante' AND column_name = 'modo_comanda')
+                OR (table_name IN ('comandas', 'comandas_historico') AND column_name = 'rotulo'))`
+      );
+      existentes = linhasDe(result);
+    } catch (queryErr) {
+      app.logger.warn({ err: queryErr }, "Failed to query information_schema for modo_comanda columns - proceeding anyway");
+    }
+
+    const jaExiste = new Set(existentes.map((r: any) => `${r.table_name}.${r.column_name}`));
+    const faltando = COLUNAS_MODO_COMANDA.filter(([tabela, coluna]) => !jaExiste.has(`${tabela}.${coluna}`));
+
+    if (faltando.length === 0) {
+      app.logger.debug("Modo comanda columns already present");
+      return 0;
+    }
+
+    // O tipo precisa existir antes da coluna que o usa
+    if (faltando.some(([, coluna]) => coluna === "modo_comanda")) {
+      try {
+        await db.execute(
+          sql.raw(
+            `DO $$ BEGIN IF to_regtype('modo_comanda') IS NULL THEN CREATE TYPE modo_comanda AS ENUM ('mesa', 'individual'); END IF; END $$;`
+          )
+        );
+      } catch (err) {
+        app.logger.error({ err }, "Failed to create modo_comanda type at startup");
+      }
+    }
+
+    for (const [tabela, coluna, definicao] of faltando) {
+      try {
+        await db.execute(sql.raw(`ALTER TABLE "${tabela}" ADD COLUMN IF NOT EXISTS "${coluna}" ${definicao}`));
+        criadas++;
+      } catch (err) {
+        // Não derruba o backend: o erro aparece no log e as demais colunas seguem
+        app.logger.error({ err, tabela, coluna }, "Failed to add missing modo_comanda column at startup");
+      }
+    }
+
+    if (criadas > 0) {
+      app.logger.warn({ criadas }, "Missing modo_comanda columns were created at startup");
+    }
+  } catch (err) {
+    app.logger.error({ err }, "Failed to check modo_comanda columns at startup");
+  }
+
+  return criadas;
+}
