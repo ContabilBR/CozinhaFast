@@ -34,6 +34,7 @@ export const tipoDocumentoFiscalEnum = pgEnum("tipo_documento_fiscal", ["nfce", 
 export const regimeTributarioEnum = pgEnum("regime_tributario", ["simples_nacional", "simples_excesso", "regime_normal", "mei"]);
 export const planoEnum = pgEnum("plano", ["trial", "basico", "profissional", "enterprise"]);
 export const assinaturaStatusEnum = pgEnum("assinatura_status", ["trial", "ativa", "inadimplente", "cancelada", "expirada"]);
+export const modoComandaEnum = pgEnum("modo_comanda", ["mesa", "individual"]);
 
 // Restaurante (Restaurant information) - Define early since many tables reference it
 export const restaurante = pgTable("restaurante", {
@@ -68,6 +69,8 @@ export const restaurante = pgTable("restaurante", {
   telefone: text("telefone"),
   email: text("email"),
   ativo: boolean("ativo").default(true).notNull(),
+  // Como o restaurante controla o consumo: "mesa" (uma comanda por mesa) ou "individual" (várias comandas por mesa, cada uma com nome)
+  modoComanda: modoComandaEnum("modo_comanda").default("mesa").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -139,6 +142,8 @@ export const comandas = pgTable("comandas", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   closedAt: timestamp("closed_at", { withTimezone: true }),
   restauranteId: text("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
+  // Nome da comanda (modo individual). Nulo no modo "mesa".
+  rotulo: text("rotulo"),
 });
 
 // Pedidos (Order Items)
@@ -245,6 +250,8 @@ export const comandasHistorico = pgTable("comandas_historico", {
   fechadoPorNome: text("fechado_por_nome"),
   fechadoPorRole: text("fechado_por_role"),
   restauranteId: text("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
+  // Nome da comanda (modo individual). Nulo no modo "mesa".
+  rotulo: text("rotulo"),
 });
 
 // Pedidos Historico (Archived Order Items)
