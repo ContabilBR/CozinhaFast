@@ -142,8 +142,6 @@ export const comandas = pgTable("comandas", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   closedAt: timestamp("closed_at", { withTimezone: true }),
   restauranteId: text("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
-  // Nome da comanda (modo individual). Nulo no modo "mesa".
-  rotulo: text("rotulo"),
 });
 
 // Pedidos (Order Items)
@@ -251,8 +249,6 @@ export const comandasHistorico = pgTable("comandas_historico", {
   fechadoPorNome: text("fechado_por_nome"),
   fechadoPorRole: text("fechado_por_role"),
   restauranteId: text("restaurante_id").notNull().references(() => restaurante.id, { onDelete: "restrict" }),
-  // Nome da comanda (modo individual). Nulo no modo "mesa".
-  rotulo: text("rotulo"),
 });
 
 // Pedidos Historico (Archived Order Items)

@@ -35,6 +35,7 @@ import * as schema from "../db/schema/schema.js";
 import type { App } from "../index.js";
 import { realtimeHub } from "../realtime/hub.js";
 import { subtotalDaComanda } from "./total-comanda.js";
+import { liberarMesaSeVazia } from "./liberar-mesa.js";
 
 export interface QuemFechou {
   id: string;
@@ -66,6 +67,7 @@ export type ResultadoFechamento =
   | {
       tipo: "fechada";
       mesaNumero: number | null;
+      rotulo?: string | null;
       subtotal: number;
       gorjeta: number;
       totalFinal: number;
@@ -98,6 +100,7 @@ export async function fecharComanda(
         .select({
           id: schema.comandas.id,
           mesaId: schema.comandas.mesaId,
+          rotulo: schema.comandas.rotulo,
           garcomId: schema.comandas.garcomId,
           status: schema.comandas.status,
           tipo: schema.comandas.tipo,
@@ -204,6 +207,7 @@ export async function fecharComanda(
       await tx.insert(schema.comandasHistorico).values({
         id: comanda.id,
         mesaId: comanda.mesaId,
+        rotulo: comanda.rotulo ?? null,
         mesaNumero,
         garcomId: comanda.garcomId,
         status: "fechada",
@@ -284,20 +288,14 @@ export async function fecharComanda(
       await tx.delete(schema.pedidos).where(eq(schema.pedidos.comandaId, comandaId));
       await tx.delete(schema.comandas).where(eq(schema.comandas.id, comandaId));
 
-      // Depois de arquivar, SEMPRE libera a mesa (quando a comanda tinha mesa)
-      if (mesaId) {
-        try {
-          await tx.update(schema.mesas).set({ status: "disponivel" }).where(eq(schema.mesas.id, mesaId));
-          app.logger.info({ mesaId }, "Mesa released to disponivel");
-        } catch (err) {
-          app.logger.error({ mesaId, error: (err as any).message }, "Failed to release mesa");
-          throw err;
-        }
-      }
+      // Depois de arquivar, libera a mesa se não tiver outras comandas abertas
+      await liberarMesaSeVazia(tx, mesaId, restauranteId);
+      app.logger.info({ mesaId }, "Mesa release check completed");
 
       return {
         tipo: "fechada",
         mesaNumero,
+        rotulo: comanda.rotulo ?? null,
         subtotal,
         gorjeta: gorjetaValue,
         totalFinal,

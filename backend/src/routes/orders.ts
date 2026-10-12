@@ -7,6 +7,7 @@ import { requireAuth as customRequireAuth, requireTenant, requireRole } from "..
 import { resolveGarcomId } from "../utils/garcom.js";
 import { realtimeHub } from "../realtime/hub.js";
 import { fecharComanda } from "../services/fechamento-comanda.js";
+import { liberarMesaSeVazia } from "../services/liberar-mesa.js";
 
 interface CreateComandaBody {
   mesaId?: string;
@@ -813,6 +814,7 @@ export function registerOrderRoutes(app: App) {
             properties: {
               success: { type: "boolean" },
               mesa_numero: { type: "number" },
+              rotulo: { type: "string", nullable: true },
               subtotal: { type: "number" },
               gorjeta: { type: "number" },
               total_final: { type: "number" },
@@ -918,6 +920,7 @@ export function registerOrderRoutes(app: App) {
         return await reply.code(200).send({
           success: true,
           mesa_numero: resultado.mesaNumero,
+          rotulo: resultado.rotulo ?? null,
           subtotal: resultado.subtotal,
           gorjeta: resultado.gorjeta,
           total_final: resultado.totalFinal,
@@ -994,28 +997,22 @@ export function registerOrderRoutes(app: App) {
         }
         // gerente, administrador, admin can cancel any comanda of the tenant
 
-        const [updated] = await app.db
-          .update(schema.comandas)
-          .set({
-            status: "cancelada",
-            closedAt: new Date(),
-          })
-          .where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)))
-          .returning();
+        // Update and release mesa within a transaction
+        const [updated] = await (app.db as any).transaction(async (tx: any) => {
+          const updateResult = await tx
+            .update(schema.comandas)
+            .set({
+              status: "cancelada",
+              closedAt: new Date(),
+            })
+            .where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)))
+            .returning();
 
-        // Check if mesa still has open comandas
-        const remainingComandasResult = await (app.db as any).execute(
-          sql`SELECT COUNT(*) as count FROM comandas WHERE mesa_id = ${updated.mesaId} AND status = 'aberta'`
-        ) as any[];
+          // Release mesa if no other open comandas
+          await liberarMesaSeVazia(tx, updateResult[0]?.mesaId, restauranteId);
 
-        const remainingCount = remainingComandasResult[0]?.count || 0;
-
-        if (remainingCount === 0) {
-          await app.db
-            .update(schema.mesas)
-            .set({ status: "disponivel" })
-            .where(and(eq(schema.mesas.id, updated.mesaId), eq(schema.mesas.restauranteId, restauranteId)));
-        }
+          return updateResult;
+        });
 
         app.logger.info({ comandaId: updated.id }, "Comanda cancelled successfully");
 
@@ -1112,22 +1109,21 @@ export function registerOrderRoutes(app: App) {
           return await reply.code(409).send({ error: "Não é possível excluir uma comanda com itens. Cancele os itens primeiro." });
         }
 
-        // Delete all pedidos for this comanda
-        app.logger.debug({ comandaId: request.params.id }, "Deleting pedidos for comanda");
-        await app.db
-          .delete(schema.pedidos)
-          .where(and(eq(schema.pedidos.comandaId, request.params.id), eq(schema.pedidos.restauranteId, restauranteId)));
+        // Delete pedidos and comanda within transaction, then release mesa
+        await (app.db as any).transaction(async (tx: any) => {
+          app.logger.debug({ comandaId: request.params.id }, "Deleting pedidos for comanda");
+          await tx
+            .delete(schema.pedidos)
+            .where(and(eq(schema.pedidos.comandaId, request.params.id), eq(schema.pedidos.restauranteId, restauranteId)));
 
-        // Delete the comanda
-        await app.db
-          .delete(schema.comandas)
-          .where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)));
+          // Delete the comanda
+          await tx
+            .delete(schema.comandas)
+            .where(and(eq(schema.comandas.id, request.params.id), eq(schema.comandas.restauranteId, restauranteId)));
 
-        // Update mesa status back to disponivel
-        await app.db
-          .update(schema.mesas)
-          .set({ status: "disponivel" })
-          .where(and(eq(schema.mesas.id, comanda.mesaId), eq(schema.mesas.restauranteId, restauranteId)));
+          // Release mesa if no other open comandas
+          await liberarMesaSeVazia(tx, comanda.mesaId, restauranteId);
+        });
 
         app.logger.info({ comandaId: request.params.id }, "Comanda deleted successfully");
 
@@ -1492,6 +1488,7 @@ export function registerOrderRoutes(app: App) {
                     total: { type: "number" },
                     subtotal: { type: "number" },
                     gorjeta: { type: "number" },
+                    rotulo: { type: "string", nullable: true },
                     garcom_id: { type: ["string", "null"] },
                     garcom_nome: { type: "string" },
                     created_at: { type: "string", format: "date-time", nullable: true },
@@ -1548,7 +1545,7 @@ export function registerOrderRoutes(app: App) {
           sql`
             SELECT
               ch.id, ch.mesa_id, ch.mesa_numero, ch.garcom_id, ch.status,
-              ch.total, ch.subtotal, ch.gorjeta,
+              ch.total, ch.subtotal, ch.gorjeta, ch.rotulo,
               ch.created_at, ch.closed_at, ch.archived_at,
               COALESCE(u.name, 'Não informado') as garcom_nome
             FROM comandas_historico ch
@@ -1564,7 +1561,7 @@ export function registerOrderRoutes(app: App) {
           sql`
             SELECT
               c.id, c.mesa_id, c.mesa_numero, c.garcom_id, c.status,
-              c.total, c.subtotal, c.gorjeta,
+              c.total, c.subtotal, c.gorjeta, c.rotulo,
               c.created_at, c.closed_at,
               COALESCE(u.name, 'Não informado') as garcom_nome
             FROM comandas c
@@ -1667,6 +1664,7 @@ export function registerOrderRoutes(app: App) {
             total: parseFloat(comanda.total || "0"),
             subtotal: parseFloat(comanda.subtotal || "0"),
             gorjeta: parseFloat(comanda.gorjeta || "0"),
+            rotulo: comanda.rotulo ?? null,
             garcom_id: comanda.garcom_id || null,
             garcom_nome: comanda.garcom_nome,
             created_at: comanda.created_at ? new Date(comanda.created_at).toISOString() : null,
