@@ -440,7 +440,8 @@ export default function NovaComandaScreen() {
     mesa_numero: string;
   }>();
 
-  const { modo } = useModoComanda();
+  const { modo, loading: modoLoading } = useModoComanda();
+  const individual = modo === "individual";
 
   const [pratos, setPratos] = useState<ApiPrato[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -454,11 +455,6 @@ export default function NovaComandaScreen() {
   const [selectedCategory, setSelectedCategory] = useState<string>("Todos");
   const [rotulo, setRotulo] = useState("");
   const [rotuloError, setRotuloError] = useState("");
-
-  // Modo do restaurante: no modo "individual" cada comanda da mesa precisa de um nome
-  const { modo, loading: modoLoading } = useModoComanda();
-  const individual = modo === "individual";
-  const [rotulo, setRotulo] = useState("");
   const TAMANHO_MAXIMO_NOME = 40;
 
   const mesaNumeroDisplay = mesa_numero ? String(mesa_numero) : "?";
