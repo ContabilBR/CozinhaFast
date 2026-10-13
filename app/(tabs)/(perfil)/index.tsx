@@ -285,29 +285,26 @@ export default function PerfilScreen() {
           </AnimatedPressable>
         </Animated.View>
 
-        {/* Exclusão de conta — self-service apenas para gerente/administrador.
-            Contas de garçom/cozinheiro são geridas pelo gerente da equipe. */}
-        {canAdmin && (
-          <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
-            <AnimatedPressable
-              onPress={() => setShowDeleteConfirm(true)}
-              disabled={deletingAccount}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 8,
-                paddingVertical: 14,
-                opacity: deletingAccount ? 0.5 : 1,
-              }}
-            >
-              <Trash2 size={16} color={COLORS.textTertiary} />
-              <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 14, color: COLORS.textTertiary }}>
-                {deletingAccount ? "Excluindo conta..." : "Excluir minha conta"}
-              </Text>
-            </AnimatedPressable>
-          </Animated.View>
-        )}
+        {/* Exclusão de conta — disponível para todos os usuários (exigência Apple/Google) */}
+        <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+          <AnimatedPressable
+            onPress={() => setShowDeleteConfirm(true)}
+            disabled={deletingAccount}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              paddingVertical: 14,
+              opacity: deletingAccount ? 0.5 : 1,
+            }}
+          >
+            <Trash2 size={16} color={COLORS.textTertiary} />
+            <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 14, color: COLORS.textTertiary }}>
+              {deletingAccount ? "Excluindo conta..." : "Excluir minha conta"}
+            </Text>
+          </AnimatedPressable>
+        </Animated.View>
 
         <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 12, color: COLORS.textTertiary, textAlign: "center" }}>
           CozinhaFast Pro v{appVersion}
