@@ -353,12 +353,12 @@ export function registerRestauranteRoutes(app: App) {
     }
   );
 
-  // PUT /api/restaurante/modo-comanda - só o administrador altera; bloqueado com comanda de mesa aberta
+  // PUT /api/restaurante/modo-comanda - administrador, admin ou gerente alteram; bloqueado com comanda de mesa aberta
   app.fastify.put<{ Body: { modo_comanda: string } }>(
     "/api/restaurante/modo-comanda",
     {
       schema: {
-        description: "Change the comanda mode of the restaurant (administrador only; blocked while there are open mesa comandas)",
+        description: "Change the comanda mode of the restaurant (administrador, admin or gerente; blocked while there are open mesa comandas)",
         tags: ["restaurante"],
         body: { type: "object", required: ["modo_comanda"], properties: { modo_comanda: { type: "string" } } },
         response: {
@@ -380,7 +380,7 @@ export function registerRestauranteRoutes(app: App) {
     ) => {
       const authUser = await customRequireAuth(app, request, reply);
       if (!authUser) return;
-      if (!(await requireRole(authUser, ["administrador"], reply))) return;
+      if (!(await requireRole(authUser, ["administrador", "admin", "gerente"], reply))) return;
 
       try {
         let tenantId: string;
