@@ -33,7 +33,6 @@ interface ApiComanda {
   pedidos?: unknown[];
   opened_at?: string;
   created_at?: string;
-  rotulo?: string | null;
 }
 
 function ComandaCard({ comanda, onPress, index }: { comanda: ApiComanda; onPress: () => void; index: number }) {
@@ -107,9 +106,12 @@ function ComandaCard({ comanda, onPress, index }: { comanda: ApiComanda; onPress
               <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 17, color: COLORS.text }}>
                 Mesa {mesaNum}
               </Text>
-              {comanda.rotulo ? (
-                <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 12, color: COLORS.textSecondary }}>
-                  {comanda.rotulo}
+              {typeof comanda.rotulo === "string" && comanda.rotulo.trim().length > 0 ? (
+                <Text
+                  numberOfLines={1}
+                  style={{ fontFamily: "Outfit_600SemiBold", fontSize: 14, color: COLORS.primary }}
+                >
+                  {comanda.rotulo.trim()}
                 </Text>
               ) : null}
               <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 13, color: COLORS.textSecondary }}>
