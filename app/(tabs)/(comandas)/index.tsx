@@ -23,6 +23,7 @@ interface ApiComanda {
   mesa_id?: string;
   mesa_numero: number;
   mesa_capacidade?: number;
+  rotulo?: string | null;
   status: string;
   tipo?: string;
   total: number;
@@ -105,6 +106,14 @@ function ComandaCard({ comanda, onPress, index }: { comanda: ApiComanda; onPress
               <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 17, color: COLORS.text }}>
                 Mesa {mesaNum}
               </Text>
+              {typeof comanda.rotulo === "string" && comanda.rotulo.trim().length > 0 ? (
+                <Text
+                  numberOfLines={1}
+                  style={{ fontFamily: "Outfit_600SemiBold", fontSize: 14, color: COLORS.primary }}
+                >
+                  {comanda.rotulo.trim()}
+                </Text>
+              ) : null}
               <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 13, color: COLORS.textSecondary }}>
                 {itemCountDisplay}
               </Text>
