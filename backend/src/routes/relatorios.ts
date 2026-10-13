@@ -1,5 +1,5 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
-import { eq, sum, count, gte, lt, and, sql, not } from "drizzle-orm";
+import { eq, sum, count, gte, lt, and, sql, not, gt } from "drizzle-orm";
 import * as schema from "../db/schema/schema.js";
 import type { App } from "../index.js";
 import { requireAuth as customRequireAuth, requireTenant, requireRole } from "../utils/auth.js";
@@ -365,7 +365,8 @@ export function registerRelatoriosRoutes(app: App) {
             eq(schema.comandas.restauranteId, tenantId as any),
             eq(schema.comandas.status, "fechada"),
             gte(schema.comandas.closedAt, inicio),
-            lt(schema.comandas.closedAt, fim)
+            lt(schema.comandas.closedAt, fim),
+            gt(schema.comandas.total, "0")
           ));
         const totalClosedComandasPeriodoHist = await app.db
           .select({ count: count() })
@@ -374,7 +375,8 @@ export function registerRelatoriosRoutes(app: App) {
             eq(schema.comandasHistorico.restauranteId, tenantId as any),
             eq(schema.comandasHistorico.status, "fechada"),
             gte(schema.comandasHistorico.closedAt, inicio),
-            lt(schema.comandasHistorico.closedAt, fim)
+            lt(schema.comandasHistorico.closedAt, fim),
+            gt(schema.comandasHistorico.total, "0")
           ));
 
         const countClosedPeriodoCom = totalClosedComandasPeriodoCom[0]?.count || 0;
@@ -701,10 +703,12 @@ export function registerRelatoriosRoutes(app: App) {
             FROM (
               SELECT mesa_numero, total AS subtotal, COALESCE(gorjeta, 0) AS gorjeta_val FROM comandas
               WHERE restaurante_id = ${tenantId} AND status = 'fechada' AND mesa_numero IS NOT NULL
+                AND total > 0
                 AND closed_at >= ${inicio.toISOString()}::timestamptz AND closed_at < ${fim.toISOString()}::timestamptz
               UNION ALL
               SELECT mesa_numero, total AS subtotal, COALESCE(gorjeta, 0) AS gorjeta_val FROM comandas_historico
               WHERE restaurante_id = ${tenantId} AND status = 'fechada' AND mesa_numero IS NOT NULL
+                AND total > 0
                 AND closed_at >= ${inicio.toISOString()}::timestamptz AND closed_at < ${fim.toISOString()}::timestamptz
             ) t
             GROUP BY mesa_numero
