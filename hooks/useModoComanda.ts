@@ -1,40 +1,38 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { apiGet } from "@/utils/api";
 
-type ModoComanda = "mesa" | "individual";
-let cachedModo: ModoComanda | null = null;
-let fetchPromise: Promise<ModoComanda> | null = null;
+export type ModoComanda = "mesa" | "individual";
 
-async function fetchModo(): Promise<ModoComanda> {
-  if (cachedModo) return cachedModo;
-  if (!fetchPromise) {
-    fetchPromise = apiGet<any>("/api/restaurante/modo-comanda")
-      .then((res) => {
-        const m = res?.modo_comanda === "individual" ? "individual" : "mesa";
-        cachedModo = m;
-        console.log("[useModoComanda] GET /api/restaurante/modo-comanda — modo:", m);
-        return m;
-      })
-      .catch((err) => {
-        console.warn("[useModoComanda] Falha ao buscar modo-comanda, usando 'mesa':", err);
-        fetchPromise = null; // allow retry next mount
-        return "mesa" as ModoComanda;
-      });
-  }
-  return fetchPromise;
+// Último modo conhecido: só evita o "piscar" na tela. Nunca é a fonte da verdade:
+// toda tela que usa o hook confirma o modo no servidor ao abrir.
+let ultimoModo: ModoComanda | null = null;
+
+async function buscarModo(): Promise<ModoComanda> {
+  const res = await apiGet<any>("/api/restaurante/modo-comanda");
+  const modo: ModoComanda = res?.modo_comanda === "individual" ? "individual" : "mesa";
+  ultimoModo = modo;
+  return modo;
 }
 
 export default function useModoComanda() {
-  const [modo, setModo] = useState<ModoComanda>(cachedModo ?? "mesa");
-  const [loading, setLoading] = useState(!cachedModo);
+  const [modo, setModo] = useState<ModoComanda>(ultimoModo ?? "mesa");
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (cachedModo) return;
-    fetchModo().then((m) => {
-      setModo(m);
+  const recarregar = useCallback(async () => {
+    try {
+      setModo(await buscarModo());
+    } catch {
+      // Em caso de erro, assume o modo "mesa" (comportamento antigo) e esquece o último valor
+      ultimoModo = null;
+      setModo("mesa");
+    } finally {
       setLoading(false);
-    });
+    }
   }, []);
 
-  return { modo, loading };
+  useEffect(() => {
+    recarregar();
+  }, [recarregar]);
+
+  return { modo, loading, recarregar };
 }
