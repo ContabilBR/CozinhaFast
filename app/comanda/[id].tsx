@@ -57,7 +57,6 @@ type Comanda = {
   rotulo?: string | null;
   status: string;
   total: number | string;
-  rotulo?: string | null;
 };
 
 // Brazilian currency formatter: 1234.5 → "R$ 1.234,50"
@@ -226,7 +225,7 @@ export default function ComandaDetailScreen() {
       }
 
       const found: Comanda | null = raw
-        ? { ...raw, mesa_numero: resolvedMesaNumero, rotulo: raw?.rotulo ?? null }
+        ? { ...raw, mesa_numero: resolvedMesaNumero }
         : null;
 
       console.log('[ComandaDetail] comanda loaded:', found?.id, 'mesa_numero:', found?.mesa_numero, '(raw mesa_numero:', raw?.mesa_numero, ', mesa.numero:', raw?.mesa?.numero, ', param:', mesaNumeroParam, ')');
@@ -353,9 +352,9 @@ export default function ComandaDetailScreen() {
   console.log("[ComandaDetail] total calculado:", totalDisplay, "— pedidos:", pedidosEnviados.length);
 
   const mesaNum = mesaNumero ?? '?';
-  const rotulo = comanda?.rotulo ?? null;
-  const headerTitle = rotulo
-    ? `Comanda — Mesa ${mesaNum} · ${rotulo}`
+  const nomeComanda = typeof comanda?.rotulo === 'string' ? comanda.rotulo.trim() : '';
+  const headerTitle = nomeComanda
+    ? `Comanda — Mesa ${mesaNum} · ${nomeComanda}`
     : `Comanda — Mesa ${mesaNum}`;
 
   const canFechar = comanda?.status === 'aberta' && pedidosEnviados.length > 0;
