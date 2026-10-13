@@ -8,12 +8,16 @@ import { resolveGarcomId } from "../utils/garcom.js";
 import { realtimeHub } from "../realtime/hub.js";
 import { fecharComanda } from "../services/fechamento-comanda.js";
 import { liberarMesaSeVazia } from "../services/liberar-mesa.js";
+import { abrirComandaNaMesa, TAMANHO_MAXIMO_NOME_COMANDA } from "../services/abrir-comanda.js";
 
 interface CreateComandaBody {
   mesaId?: string;
   mesa_id?: string;
   garcomId?: string;
   garcom_id?: string;
+  /** Nome da comanda (obrigatório no modo "individual"; ignorado no modo "mesa"). */
+  rotulo?: string;
+  nome?: string;
   itens?: Array<{
     prato_id: string;
     quantidade: number;
@@ -63,6 +67,7 @@ export function registerOrderRoutes(app: App) {
                     mesa_id: { type: "string", format: "uuid" },
                     mesa_numero: { type: "number" },
                     garcom_id: { type: "string" },
+                    rotulo: { type: ["string", "null"] },
                     status: { type: "string" },
                     total: { type: "number" },
                     created_at: { type: "string", format: "date-time" },
@@ -99,6 +104,7 @@ export function registerOrderRoutes(app: App) {
             c.mesa_id,
             m.numero AS mesa_numero,
             c.garcom_id,
+            c.rotulo,
             c.status,
             c.created_at,
             c.closed_at,
@@ -125,7 +131,7 @@ export function registerOrderRoutes(app: App) {
         }
 
         sqlQuery = sql`${sqlQuery}
-          GROUP BY c.id, c.mesa_id, m.numero, c.garcom_id, c.status, c.created_at, c.closed_at
+          GROUP BY c.id, c.mesa_id, m.numero, c.garcom_id, c.rotulo, c.status, c.created_at, c.closed_at
           ORDER BY c.created_at DESC
         `;
 
@@ -139,6 +145,7 @@ export function registerOrderRoutes(app: App) {
             mesa_id: c.mesa_id,
             mesa_numero: Number(c.mesa_numero),
             garcom_id: c.garcom_id,
+            rotulo: c.rotulo ?? null,
             status: c.status,
             total: Number(c.total),
             created_at: c.created_at ? new Date(c.created_at).toISOString() : null,
@@ -167,6 +174,8 @@ export function registerOrderRoutes(app: App) {
             mesaId: { type: "string", format: "uuid" },
             garcom_id: { type: "string" },
             garcomId: { type: "string" },
+            rotulo: { type: "string" },
+            nome: { type: "string" },
             itens: {
               type: "array",
               items: {
@@ -193,6 +202,7 @@ export function registerOrderRoutes(app: App) {
                   mesa_id: { type: "string", format: "uuid" },
                   mesa_numero: { type: "number" },
                   garcom_id: { type: "string" },
+                  rotulo: { type: ["string", "null"] },
                   status: { type: "string" },
                   total: { type: "string" },
                   created_at: { type: "string", format: "date-time" },
@@ -203,6 +213,7 @@ export function registerOrderRoutes(app: App) {
           400: { type: "object", properties: { error: { type: "string" } } },
           401: { type: "object", properties: { error: { type: "string" } } },
           404: { type: "object", properties: { error: { type: "string" } } },
+          409: { type: "object", properties: { error: { type: "string" } } },
         },
       },
     },
@@ -235,19 +246,8 @@ export function registerOrderRoutes(app: App) {
 
         const mesa = mesaRecords[0];
 
-        // Check for duplicate open comanda
-        const existingAberta = await app.db
-          .select({ id: schema.comandas.id })
-          .from(schema.comandas)
-          .where(and(
-            eq(schema.comandas.mesaId, mesaId),
-            eq(schema.comandas.status, "aberta" as any),
-            eq(schema.comandas.restauranteId, restauranteId)
-          ))
-          .limit(1);
-        if (existingAberta.length) {
-          return await reply.code(409).send({ error: "Esta mesa já tem uma comanda aberta." });
-        }
+        // A conferência de comanda já aberta (modo "mesa") e do nome (modo "individual") acontece
+        // dentro da transação, com a mesa travada (services/abrir-comanda.ts).
 
         // Store garcom_id as the authenticated user's id (text, stable across deploys)
         const garcomId = authUser.id;
@@ -301,19 +301,18 @@ export function registerOrderRoutes(app: App) {
         }
 
         // Use transaction to ensure all operations succeed together
-        const comanda = await (app.db as any).transaction(async (tx: any) => {
-          // Insert comanda with calculated total and mesa_numero
-          const [newComanda] = await tx
-            .insert(schema.comandas)
-            .values({
-              mesaId,
-              mesaNumero: mesa.numero,
-              garcomId,
-              status: "aberta",
-              total: initialTotal,
-              restauranteId,
-            })
-            .returning();
+        const aberturaResult = await (app.db as any).transaction(async (tx: any) => {
+          // Trava a mesa, confere modo/nome e grava a comanda (services/abrir-comanda.ts)
+          const abertura = await abrirComandaNaMesa(tx, {
+            restauranteId,
+            mesaId,
+            mesaNumero: mesa.numero,
+            garcomId,
+            total: initialTotal,
+            rotulo: request.body.rotulo ?? request.body.nome,
+          });
+          if (abertura.tipo !== "criada") return abertura;
+          const newComanda = abertura.comanda;
 
           // Insert pedido items if provided
           if (request.body.itens && request.body.itens.length > 0) {
@@ -348,8 +347,24 @@ export function registerOrderRoutes(app: App) {
             .set({ status: "ocupada" })
             .where(and(eq(schema.mesas.id, mesaId), eq(schema.mesas.restauranteId, restauranteId)));
 
-          return newComanda;
+          return abertura;
         });
+
+        if (aberturaResult.tipo !== "criada") {
+          switch (aberturaResult.tipo) {
+            case "mesa_nao_encontrada":
+              return await reply.code(404).send({ error: "Mesa não encontrada" });
+            case "mesa_ja_tem_comanda":
+              return await reply.code(409).send({ error: "Esta mesa já tem uma comanda aberta." });
+            case "nome_obrigatorio":
+              return await reply.code(400).send({ error: "Informe o nome da comanda." });
+            case "nome_muito_longo":
+              return await reply.code(400).send({ error: `O nome da comanda deve ter no máximo ${TAMANHO_MAXIMO_NOME_COMANDA} caracteres.` });
+            case "nome_repetido":
+              return await reply.code(409).send({ error: "Já existe uma comanda com esse nome nesta mesa." });
+          }
+        }
+        const comanda = aberturaResult.comanda;
 
         app.logger.info({ comandaId: comanda.id, mesaId }, "Comanda created successfully");
 
@@ -371,6 +386,7 @@ export function registerOrderRoutes(app: App) {
             mesa_id: comanda.mesaId,
             mesa_numero: comanda.mesaNumero,
             garcom_id: comanda.garcomId,
+            rotulo: comanda.rotulo ?? null,
             status: comanda.status,
             total: comanda.total,
             created_at: comanda.createdAt ? new Date(comanda.createdAt).toISOString() : null,
@@ -1254,6 +1270,7 @@ export function registerOrderRoutes(app: App) {
   );
 
   // GET /api/mesas/:id/comanda - Get the current open comanda for a mesa
+  // (devolve UMA comanda: a mais recente. No modo "individual" use GET /api/mesas/:id/comandas)
   app.fastify.get<{ Params: { id: string } }>(
     "/api/mesas/:id/comanda",
     {
@@ -1278,6 +1295,7 @@ export function registerOrderRoutes(app: App) {
                   garcom_id: { type: "string" },
                   garcom_nome: { type: "string" },
                   garcom_email: { type: "string" },
+                  rotulo: { type: ["string", "null"] },
                   status: { type: "string" },
                   total: { type: "string" },
                   created_at: { type: "string", format: "date-time" },
@@ -1336,6 +1354,7 @@ export function registerOrderRoutes(app: App) {
             c.mesa_id,
             c.mesa_numero,
             c.garcom_id,
+            c.rotulo,
             c.status,
             c.created_at,
             COALESCE(u.name, us.nome, 'Garçom') AS garcom_nome,
@@ -1346,7 +1365,7 @@ export function registerOrderRoutes(app: App) {
           LEFT JOIN usuarios us ON us.id::text = c.garcom_id
           LEFT JOIN pedidos p ON p.comanda_id = c.id
           WHERE c.mesa_id = ${mesaId} AND c.status = 'aberta'
-          GROUP BY c.id, c.mesa_id, c.mesa_numero, c.garcom_id, c.status, c.created_at, u.name, u.email, us.nome, us.email
+          GROUP BY c.id, c.mesa_id, c.mesa_numero, c.garcom_id, c.rotulo, c.status, c.created_at, u.name, u.email, us.nome, us.email
           ORDER BY c.created_at DESC
           LIMIT 1
         `;
@@ -1407,6 +1426,7 @@ export function registerOrderRoutes(app: App) {
             garcom_id: comandaRow.garcom_id,
             garcom_nome: comandaRow.garcom_nome,
             garcom_email: comandaRow.garcom_email,
+            rotulo: comandaRow.rotulo ?? null,
             status: comandaRow.status,
             total: comandaRow.total,
             created_at: comandaRow.created_at ? new Date(comandaRow.created_at).toISOString() : null,
@@ -1427,6 +1447,126 @@ export function registerOrderRoutes(app: App) {
         return;
       } catch (error) {
         app.logger.error({ err: error, mesaId: request.params.id }, "Failed to fetch comanda for mesa");
+        return await reply.code(500).send({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // GET /api/mesas/:id/comandas - Lista TODAS as comandas abertas da mesa (modo "individual" tem várias)
+  // Mesma regra de acesso de GET /api/mesas/:id/comanda: qualquer usuário autenticado do restaurante,
+  // porque no atendimento da mesa o garçom precisa ver todas as comandas dela.
+  app.fastify.get<{ Params: { id: string } }>(
+    "/api/mesas/:id/comandas",
+    {
+      schema: {
+        description: "List all open comandas of a mesa (with name, waiter, total and item count)",
+        tags: ["mesas"],
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string", format: "uuid" } },
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              mesa: {
+                type: "object",
+                properties: {
+                  id: { type: "string", format: "uuid" },
+                  numero: { type: "number" },
+                  status: { type: "string" },
+                },
+              },
+              modo_comanda: { type: "string", enum: ["mesa", "individual"] },
+              comandas: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    id: { type: "string", format: "uuid" },
+                    mesa_id: { type: "string", format: "uuid" },
+                    mesa_numero: { type: ["number", "null"] },
+                    rotulo: { type: ["string", "null"] },
+                    garcom_id: { type: ["string", "null"] },
+                    garcom_nome: { type: "string" },
+                    status: { type: "string" },
+                    total: { type: "number" },
+                    item_count: { type: "number" },
+                    created_at: { type: ["string", "null"] },
+                  },
+                },
+              },
+            },
+          },
+          401: { type: "object", properties: { error: { type: "string" } } },
+          404: { type: "object", properties: { error: { type: "string" } } },
+        },
+      },
+    },
+    async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      const session = await customRequireAuth(app, request, reply);
+      if (!session) return;
+
+      try {
+        const mesaId = request.params.id;
+        const restauranteId = requireTenant(session);
+
+        const mesas = await app.db
+          .select({ id: schema.mesas.id, numero: schema.mesas.numero, status: schema.mesas.status })
+          .from(schema.mesas)
+          .where(and(eq(schema.mesas.id, mesaId as any), eq(schema.mesas.restauranteId, restauranteId)));
+
+        if (!mesas.length) {
+          return await reply.code(404).send({ error: "Mesa não encontrada" });
+        }
+
+        const modos = await app.db
+          .select({ modoComanda: schema.restaurante.modoComanda })
+          .from(schema.restaurante)
+          .where(eq(schema.restaurante.id, restauranteId))
+          .limit(1);
+
+        const resultado = (await (app.db as any).execute(sql`
+          SELECT
+            c.id,
+            c.mesa_id,
+            c.mesa_numero,
+            c.rotulo,
+            c.garcom_id,
+            c.status,
+            c.created_at,
+            COALESCE(u.name, us.nome, 'Garçom') AS garcom_nome,
+            COUNT(p.id) FILTER (WHERE p.status <> 'cancelado')::integer AS item_count,
+            COALESCE(SUM(p.quantidade * p.preco_unitario) FILTER (WHERE p.status <> 'cancelado'), 0)::float AS total
+          FROM comandas c
+          LEFT JOIN "user" u ON u.id = c.garcom_id
+          LEFT JOIN usuarios us ON us.id::text = c.garcom_id
+          LEFT JOIN pedidos p ON p.comanda_id = c.id
+          WHERE c.mesa_id = ${mesaId} AND c.restaurante_id = ${restauranteId} AND c.status = 'aberta'
+          GROUP BY c.id, c.mesa_id, c.mesa_numero, c.rotulo, c.garcom_id, c.status, c.created_at, u.name, us.nome
+          ORDER BY c.created_at ASC
+        `)) as any;
+        const linhas: any[] = Array.isArray(resultado) ? resultado : resultado?.rows ?? [];
+
+        return await reply.code(200).send({
+          mesa: { id: mesas[0].id, numero: mesas[0].numero, status: mesas[0].status },
+          modo_comanda: modos[0]?.modoComanda ?? "mesa",
+          comandas: linhas.map((c: any) => ({
+            id: c.id,
+            mesa_id: c.mesa_id,
+            mesa_numero: c.mesa_numero ?? null,
+            rotulo: c.rotulo ?? null,
+            garcom_id: c.garcom_id ?? null,
+            garcom_nome: c.garcom_nome,
+            status: c.status,
+            total: Number(c.total),
+            item_count: Number(c.item_count),
+            created_at: c.created_at ? new Date(c.created_at).toISOString() : null,
+          })),
+        });
+      } catch (error) {
+        app.logger.error({ err: error, mesaId: request.params.id }, "Failed to list comandas of mesa");
         return await reply.code(500).send({ error: "Internal server error" });
       }
     }
