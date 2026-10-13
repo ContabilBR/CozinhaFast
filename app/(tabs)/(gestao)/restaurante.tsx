@@ -9,12 +9,15 @@ import {
   KeyboardAvoidingView,
   Platform,
   Modal,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { CheckCircle, Pencil, Trash2 } from 'lucide-react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
+import useModoComanda from '@/hooks/useModoComanda';
+import { useAuth } from '@/contexts/AuthContext';
 import { apiGet, apiPut, apiDelete } from '@/utils/api';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 
@@ -43,6 +46,13 @@ export default function RestauranteScreen() {
   const [nomeError, setNomeError] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+
+  // Modo de comandas (mesa | individual): só o administrador altera
+  const { user } = useAuth();
+  const isAdministrador = user?.role === 'administrador';
+  const { modo, loading: modoLoading, recarregar: recarregarModo } = useModoComanda();
+  const [modoPendente, setModoPendente] = useState<'mesa' | 'individual' | null>(null);
+  const [trocandoModo, setTrocandoModo] = useState(false);
 
   const handleBack = useCallback(() => {
     console.log('[Restaurante] Botão Voltar pressionado');
@@ -125,6 +135,47 @@ export default function RestauranteScreen() {
       setSaving(false);
     }
   }, [form]);
+
+  const handleModoPress = useCallback(
+    (novo: 'mesa' | 'individual') => {
+      if (novo === modo || trocandoModo || modoLoading) return;
+      console.log('[Restaurante] Modo de comandas: pedido de troca', modo, '->', novo);
+      setModoPendente(novo);
+    },
+    [modo, trocandoModo, modoLoading]
+  );
+
+  const handleModoConfirm = useCallback(async () => {
+    const novo = modoPendente;
+    setModoPendente(null);
+    if (!novo) return;
+    console.log('[Restaurante] PUT /api/restaurante/modo-comanda', novo);
+    setTrocandoModo(true);
+    try {
+      await apiPut('/api/restaurante/modo-comanda', { modo_comanda: novo });
+      await recarregarModo();
+      Alert.alert(
+        'Modo alterado',
+        novo === 'individual'
+          ? 'Agora cada comanda da mesa tem um nome e a mesa pode ter várias comandas abertas.'
+          : 'Agora cada mesa tem uma única comanda aberta, sem nome.'
+      );
+    } catch (err: any) {
+      console.error('[Restaurante] Erro ao trocar o modo de comandas:', err);
+      // O servidor recusa a troca (409) enquanto houver comandas de mesa abertas
+      Alert.alert(
+        'Não foi possível mudar o modo',
+        err?.message || 'Tente novamente em instantes.'
+      );
+      await recarregarModo();
+    } finally {
+      setTrocandoModo(false);
+    }
+  }, [modoPendente, recarregarModo]);
+
+  const handleModoCancel = useCallback(() => {
+    setModoPendente(null);
+  }, []);
 
   const handleEdit = useCallback(() => {
     console.log('[Restaurante] Botão Editar pressionado');
@@ -383,6 +434,50 @@ export default function RestauranteScreen() {
                 </View>
               </View>
 
+              {isAdministrador && (
+                <View style={[s.card, { marginTop: 16 }]}>
+                  <View style={s.cardRow}>
+                    <Text style={s.cardLabel}>Modo de comandas</Text>
+                    <Text style={[s.cardValue, { fontSize: 13, color: COLORS.textSecondary, marginTop: 4 }]}>
+                      Define como as comandas são abertas nas mesas. Para mudar, não pode haver comandas de mesa abertas.
+                    </Text>
+                  </View>
+                  <View style={s.divider} />
+                  {([
+                    { valor: 'mesa', titulo: 'Uma comanda por mesa', desc: 'A mesa tem uma única comanda aberta, sem nome.' },
+                    { valor: 'individual', titulo: 'Comanda individual', desc: 'A mesa pode ter várias comandas abertas, cada uma com um nome (por exemplo, o cliente).' },
+                  ] as const).map((op, i) => {
+                    const ativo = modo === op.valor;
+                    return (
+                      <React.Fragment key={op.valor}>
+                        {i > 0 && <View style={s.divider} />}
+                        <TouchableOpacity
+                          style={[s.cardRow, { flexDirection: 'row', alignItems: 'center', gap: 12 }]}
+                          onPress={() => handleModoPress(op.valor)}
+                          disabled={trocandoModo || modoLoading}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons
+                            name={ativo ? 'radio-button-on' : 'radio-button-off'}
+                            size={22}
+                            color={ativo ? COLORS.primary : COLORS.textTertiary}
+                          />
+                          <View style={{ flex: 1 }}>
+                            <Text style={[s.cardValue, { fontFamily: ativo ? 'Outfit_700Bold' : 'Outfit_600SemiBold' }]}>
+                              {op.titulo}
+                            </Text>
+                            <Text style={{ fontFamily: 'Outfit_400Regular', fontSize: 12, color: COLORS.textSecondary, marginTop: 2 }}>
+                              {op.desc}
+                            </Text>
+                          </View>
+                          {trocandoModo && !ativo ? <ActivityIndicator size="small" color={COLORS.primary} /> : null}
+                        </TouchableOpacity>
+                      </React.Fragment>
+                    );
+                  })}
+                </View>
+              )}
+
               <View style={s.rowBtns}>
                 <TouchableOpacity
                   style={[s.btnBlue, s.flex1]}
@@ -538,6 +633,21 @@ export default function RestauranteScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* ── Confirmação da troca do modo de comandas ──────────────────────── */}
+      <ConfirmDialog
+        visible={modoPendente !== null}
+        title={modoPendente === 'individual' ? 'Ativar comanda individual' : 'Voltar para uma comanda por mesa'}
+        message={
+          modoPendente === 'individual'
+            ? 'Cada comanda aberta passará a exigir um nome, e a mesma mesa poderá ter várias comandas ao mesmo tempo. Só é possível mudar se não houver comandas de mesa abertas.'
+            : 'Cada mesa voltará a ter uma única comanda aberta, sem nome. Só é possível mudar se não houver comandas de mesa abertas.'
+        }
+        confirmLabel="Mudar modo"
+        cancelLabel="Cancelar"
+        onConfirm={handleModoConfirm}
+        onCancel={handleModoCancel}
+      />
 
       {/* ── Confirm Delete Dialog ──────────────────────────────────────────── */}
       <ConfirmDialog
