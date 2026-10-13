@@ -104,6 +104,7 @@ export async function fecharComanda(
           garcomId: schema.comandas.garcomId,
           status: schema.comandas.status,
           tipo: schema.comandas.tipo,
+          rotulo: schema.comandas.rotulo,
           createdAt: schema.comandas.createdAt,
         })
         .from(schema.comandas)
@@ -209,6 +210,7 @@ export async function fecharComanda(
         mesaId: comanda.mesaId,
         rotulo: comanda.rotulo ?? null,
         mesaNumero,
+        rotulo: comanda.rotulo ?? null,
         garcomId: comanda.garcomId,
         status: "fechada",
         total: totalFinal.toString(),

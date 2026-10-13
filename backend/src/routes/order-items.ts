@@ -1045,6 +1045,7 @@ export function registerOrderItemRoutes(app: App) {
               createdAt: schema.comandas.createdAt,
               closedAt: schema.comandas.closedAt,
               mesaNumero: schema.comandas.mesaNumero,
+              rotulo: schema.comandas.rotulo,
             })
             .from(schema.comandas)
             .where(eq(schema.comandas.id, pedido.comandaId));

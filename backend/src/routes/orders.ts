@@ -1485,6 +1485,7 @@ export function registerOrderRoutes(app: App) {
                   properties: {
                     id: { type: "string", format: "uuid" },
                     status: { type: "string" },
+                    rotulo: { type: "string", nullable: true },
                     total: { type: "number" },
                     subtotal: { type: "number" },
                     gorjeta: { type: "number" },
@@ -1661,6 +1662,7 @@ export function registerOrderRoutes(app: App) {
           return {
             id: comanda.id,
             status: comanda.status,
+            rotulo: comanda.rotulo ?? null,
             total: parseFloat(comanda.total || "0"),
             subtotal: parseFloat(comanda.subtotal || "0"),
             gorjeta: parseFloat(comanda.gorjeta || "0"),
