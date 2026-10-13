@@ -455,6 +455,12 @@ export default function NovaComandaScreen() {
   const [rotulo, setRotulo] = useState("");
   const [rotuloError, setRotuloError] = useState("");
 
+  // Modo do restaurante: no modo "individual" cada comanda da mesa precisa de um nome
+  const { modo, loading: modoLoading } = useModoComanda();
+  const individual = modo === "individual";
+  const [rotulo, setRotulo] = useState("");
+  const TAMANHO_MAXIMO_NOME = 40;
+
   const mesaNumeroDisplay = mesa_numero ? String(mesa_numero) : "?";
   const titleText = `Comanda — Mesa ${mesaNumeroDisplay}`;
 
@@ -562,6 +568,11 @@ export default function NovaComandaScreen() {
     if (cartIsEmpty) return;
     if (!mesa_id) {
       Alert.alert("Erro", "Mesa não identificada. Volte e selecione uma mesa.");
+      return;
+    }
+    const nomeComanda = rotulo.trim();
+    if (individual && nomeComanda.length === 0) {
+      Alert.alert("Nome da comanda", "Informe o nome da comanda (por exemplo, o nome do cliente).");
       return;
     }
 

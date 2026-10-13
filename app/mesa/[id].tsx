@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { View, Text, ScrollView, RefreshControl, Pressable, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
+import useModoComanda from "@/hooks/useModoComanda";
 import { useAuth } from "@/contexts/AuthContext";
 import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { CardSkeleton } from "@/components/SkeletonLoader";
@@ -165,6 +166,7 @@ export default function MesaDetailScreen() {
     console.log("[Mesa] Refresh manual");
     setRefreshing(true);
     fetchMesa();
+    if (individual) fetchComandas();
   };
 
   const handleOpenComanda = () => {
@@ -183,7 +185,8 @@ export default function MesaDetailScreen() {
   const mesaCapacidade = mesa?.capacidade;
   const mesaStatus = mesa?.status ?? "livre";
   // comanda_id may live on the mesa object directly OR come from the fetched comanda
-  const comandaId = (mesa as any)?.comanda_id ?? comanda?.id ?? null;
+  // No modo individual a mesa pode ter várias comandas: não existe "a" comanda da mesa
+  const comandaId = individual ? null : ((mesa as any)?.comanda_id ?? comanda?.id ?? null);
   const garcomName = (mesa as any)?.garcom?.name;
 
   const isOcupada = (mesaStatus as string) === "ocupada";

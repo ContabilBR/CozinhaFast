@@ -23,6 +23,7 @@ interface ApiComanda {
   mesa_id?: string;
   mesa_numero: number;
   mesa_capacidade?: number;
+  rotulo?: string | null;
   status: string;
   tipo?: string;
   total: number;

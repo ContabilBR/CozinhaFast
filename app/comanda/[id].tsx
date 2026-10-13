@@ -54,6 +54,7 @@ type Comanda = {
   mesa_id: string;
   mesa_numero: number;
   mesa_capacidade?: number;
+  rotulo?: string | null;
   status: string;
   total: number | string;
   rotulo?: string | null;
