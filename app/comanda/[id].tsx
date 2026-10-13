@@ -355,6 +355,33 @@ export default function ComandaDetailScreen() {
 
   const canFechar = comanda?.status === 'aberta' && pedidosEnviados.length > 0;
 
+  // Comanda sem consumo: aberta, tem pedidos, todos cancelados
+  const semConsumo =
+    comanda?.status === 'aberta' &&
+    pedidosEnviados.length > 0 &&
+    pedidosEnviados.every((p) => p.status === 'cancelado');
+
+  const [encerrando, setEncerrando] = useState(false);
+
+  const handleEncerrarSemConsumo = async () => {
+    if (!id) return;
+    console.log('[ComandaDetail] handleEncerrarSemConsumo pressed', { comandaId: id });
+    setEncerrando(true);
+    try {
+      console.log('[ComandaDetail] POST /api/comandas/' + id + '/fechar (sem consumo)');
+      await apiPost(`/api/comandas/${id}/fechar`, { gorjeta: 0 });
+      Alert.alert(
+        'Comanda encerrada',
+        'A comanda foi encerrada sem cobrança.',
+        [{ text: 'OK', onPress: () => router.dismissAll() }]
+      );
+    } catch (e: any) {
+      Alert.alert('Erro', e?.message || 'Não foi possível encerrar a comanda. Tente novamente.');
+    } finally {
+      setEncerrando(false);
+    }
+  };
+
   // Botão de cancelar item (ou cadeado quando o item já iniciou e o perfil não pode cancelar)
   const renderAcaoCancelar = (p: Pedido, pratoNome: string) => {
     const permissao = permissaoCancelarItem(user?.role, p.status);
@@ -423,8 +450,28 @@ export default function ComandaDetailScreen() {
         <Text style={styles.backText}>Voltar</Text>
       </Pressable>
       <Text style={styles.navTitle} numberOfLines={1}>{title}</Text>
-      {canFechar ? (
-        <Pressable onPress={() => { console.log('[ComandaDetail] Fechar header button pressed', { comandaId: id }); router.push({ pathname: '/comanda/fechar-conta', params: { id } }); }} style={styles.fecharHeaderBtn}>
+      {semConsumo ? (
+        <Pressable
+          onPress={() =>
+            Alert.alert(
+              'Encerrar sem consumo',
+              'Todos os itens desta comanda foram cancelados. Ela será encerrada sem cobrança e ficará no histórico com total zero. Os cancelamentos continuam registrados.',
+              [
+                { text: 'Cancelar', style: 'cancel' },
+                { text: 'Encerrar', style: 'destructive', onPress: handleEncerrarSemConsumo },
+              ]
+            )
+          }
+          style={[styles.fecharHeaderBtn, { backgroundColor: '#6b7280' }]}
+          disabled={encerrando}
+        >
+          <Text style={styles.fecharHeaderBtnText}>{encerrando ? '...' : 'Encerrar'}</Text>
+        </Pressable>
+      ) : canFechar ? (
+        <Pressable
+          onPress={() => { console.log('[ComandaDetail] Fechar header button pressed', { comandaId: id }); router.push({ pathname: '/comanda/fechar-conta', params: { id } }); }}
+          style={styles.fecharHeaderBtn}
+        >
           <Text style={styles.fecharHeaderBtnText}>Fechar</Text>
         </Pressable>
       ) : (
@@ -586,10 +633,32 @@ export default function ComandaDetailScreen() {
             <Text style={mgStyles.footerTotalValue}>{totalDisplay}</Text>
           </View>
 
-          {canFechar ? (
+          {semConsumo ? (
+            <View style={{ paddingHorizontal: 0, marginBottom: 8 }}>
+              <Pressable
+                onPress={() =>
+                  Alert.alert(
+                    'Encerrar sem consumo',
+                    'Todos os itens desta comanda foram cancelados. Ela será encerrada sem cobrança e ficará no histórico com total zero. Os cancelamentos continuam registrados.',
+                    [
+                      { text: 'Cancelar', style: 'cancel' },
+                      { text: 'Encerrar', style: 'destructive', onPress: handleEncerrarSemConsumo },
+                    ]
+                  )
+                }
+                disabled={encerrando}
+                style={{ backgroundColor: '#6b7280', borderRadius: 12, padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: encerrando ? 0.6 : 1 }}
+              >
+                <Ionicons name="close-circle-outline" size={20} color="white" />
+                <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>
+                  {encerrando ? 'Encerrando...' : 'Encerrar sem consumo'}
+                </Text>
+              </Pressable>
+            </View>
+          ) : canFechar ? (
             <>
               <View style={{ paddingHorizontal: 0, marginBottom: 8 }}>
-                <Pressable onPress={() => router.push({ pathname: "/comanda/fechar-conta", params: { id } })} style={{ backgroundColor: "#E8521A", borderRadius: 12, padding: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                <Pressable onPress={() => { console.log('[ComandaDetail] Fechar conta footer button pressed', { comandaId: id }); router.push({ pathname: "/comanda/fechar-conta", params: { id } }); }} style={{ backgroundColor: "#E8521A", borderRadius: 12, padding: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 }}>
                   <Ionicons name="receipt-outline" size={20} color="white" />
                   <Text style={{ color: "white", fontSize: 16, fontWeight: "600" }}>Fechar conta</Text>
                 </Pressable>

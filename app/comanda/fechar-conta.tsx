@@ -124,6 +124,51 @@ export default function FecharContaScreen() {
 
   if (loading) return <View style={{ flex: 1, backgroundColor: COLORS.background, justifyContent: "center", alignItems: "center" }}><ActivityIndicator size="large" color={COLORS.primary} /></View>;
 
+  if (!loading && subtotal === 0 && pedidos.length > 0) {
+    return (
+      <View style={{ flex: 1, backgroundColor: COLORS.background }}>
+        <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 16, paddingBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <Pressable onPress={() => { console.log('[FecharConta] back pressed (sem consumo)'); router.back(); }}><Ionicons name="arrow-back" size={24} color={COLORS.text} /></Pressable>
+          <Text style={{ fontSize: 20, fontWeight: '700', color: COLORS.text }}>Fechar conta</Text>
+        </View>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32, gap: 20 }}>
+          <Ionicons name="close-circle-outline" size={64} color={COLORS.textTertiary} />
+          <Text style={{ fontSize: 18, fontWeight: '700', color: COLORS.text, textAlign: 'center' }}>
+            Todos os itens foram cancelados
+          </Text>
+          <Text style={{ fontSize: 15, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 22 }}>
+            Todos os itens desta comanda foram cancelados. Ela será encerrada sem cobrança e ficará no histórico com total zero. Os cancelamentos continuam registrados.
+          </Text>
+          <Pressable
+            onPress={async () => {
+              console.log('[FecharConta] Encerrar sem consumo pressed', { comandaId: id });
+              setSaving(true);
+              try {
+                console.log('[FecharConta] POST /api/comandas/' + id + '/fechar (sem consumo)');
+                await apiPost('/api/comandas/' + id + '/fechar', { gorjeta: 0 });
+                Alert.alert('Comanda encerrada', 'A comanda foi encerrada sem cobrança.', [
+                  { text: 'OK', onPress: () => router.dismissAll() },
+                ]);
+              } catch (err: any) {
+                Alert.alert('Erro', err?.message || 'Não foi possível encerrar a comanda. Tente novamente.');
+              } finally {
+                setSaving(false);
+              }
+            }}
+            disabled={saving}
+            style={{ backgroundColor: COLORS.primary, borderRadius: 12, padding: 16, alignItems: 'center', width: '100%', opacity: saving ? 0.6 : 1 }}
+          >
+            {saving ? (
+              <ActivityIndicator color="white" />
+            ) : (
+              <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>Encerrar sem consumo</Text>
+            )}
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.background }}>
       <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 16, paddingBottom: 8, flexDirection: "row", alignItems: "center", gap: 12 }}>
