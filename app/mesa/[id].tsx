@@ -11,6 +11,7 @@ import { Mesa } from "@/types";
 import { apiGet } from "@/utils/api";
 import { getMesaStatusLabel, getMesaStatusColor, isAdmin } from "@/utils/helpers";
 import { Users } from "lucide-react-native";
+import useModoComanda from "@/hooks/useModoComanda";
 
 
 interface Pedido {
@@ -29,6 +30,15 @@ interface ComandaInfo {
   total: number;
   status: string;
   pedidos: Pedido[];
+}
+
+interface ComandaListItem {
+  id: string;
+  rotulo: string | null;
+  garcom_nome: string;
+  total: number;
+  item_count: number;
+  created_at: string;
 }
 
 function formatDateTime(iso: string): string {
@@ -67,6 +77,8 @@ export default function MesaDetailScreen() {
   const role = user?.role;
   const canAdmin = isAdmin(role);
 
+  const { modo } = useModoComanda();
+
   const [mesa, setMesa] = useState<Mesa | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -74,6 +86,9 @@ export default function MesaDetailScreen() {
 
   const [comanda, setComanda] = useState<ComandaInfo | null>(null);
   const [comandaLoading, setComandaLoading] = useState(false);
+
+  const [comandaList, setComandaList] = useState<ComandaListItem[]>([]);
+  const [comandaListLoading, setComandaListLoading] = useState(false);
 
   const fetchComanda = useCallback(async (mesaId: string) => {
     console.log("[Mesa] GET /api/mesas/" + mesaId + "/comanda");
@@ -97,6 +112,30 @@ export default function MesaDetailScreen() {
     }
   }, []);
 
+  const fetchComandasIndividual = useCallback(async () => {
+    console.log("[Mesa] GET /api/mesas/" + id + "/comandas (modo individual)");
+    setComandaListLoading(true);
+    try {
+      const data = await apiGet<any>(`/api/mesas/${id}/comandas`);
+      const raw: any[] = Array.isArray(data) ? data : (data?.comandas ?? []);
+      const list: ComandaListItem[] = raw.map((c: any) => ({
+        id: String(c.id),
+        rotulo: c.rotulo ?? null,
+        garcom_nome: c.garcom_nome ?? c.garcom?.name ?? "",
+        total: parseFloat(String(c.total)) || 0,
+        item_count: c.item_count ?? c.items_count ?? c.pedidos_count ?? 0,
+        created_at: c.created_at ?? c.aberta_em ?? "",
+      }));
+      console.log("[Mesa] Comandas individuais carregadas:", list.length);
+      setComandaList(list);
+    } catch (e: any) {
+      console.error("[Mesa] Erro ao buscar comandas individuais:", e);
+      setComandaList([]);
+    } finally {
+      setComandaListLoading(false);
+    }
+  }, [id]);
+
   const fetchMesa = useCallback(async () => {
     console.log("[Mesa] GET /api/mesas/" + id);
     try {
@@ -104,7 +143,9 @@ export default function MesaDetailScreen() {
       const m: Mesa = res.mesa || res;
       setMesa(m);
       setError("");
-      if ((m.status as string) === "ocupada") {
+      if (modo === "individual") {
+        fetchComandasIndividual();
+      } else if ((m.status as string) === "ocupada") {
         fetchComanda(String(id));
       } else {
         setComanda(null);
@@ -116,7 +157,7 @@ export default function MesaDetailScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [id, fetchComanda]);
+  }, [id, modo, fetchComanda, fetchComandasIndividual]);
 
   useEffect(() => { fetchMesa(); }, [fetchMesa]);
 
@@ -232,169 +273,254 @@ export default function MesaDetailScreen() {
             </View>
           </View>
 
-          {/* Comanda section — only when ocupada */}
-          {isOcupada ? (
-            comandaLoading ? (
-              <View style={{ alignItems: "center", paddingVertical: 24 }}>
-                <ActivityIndicator size="small" color={COLORS.primary} />
-                <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 13, color: COLORS.textSecondary, marginTop: 8 }}>
-                  Carregando comanda...
-                </Text>
-              </View>
-            ) : comanda ? (
-              <>
-                {/* Comanda header card */}
+          {/* ── Individual mode: list of open comandas ── */}
+          {modo === "individual" ? (
+            <>
+              {comandaListLoading ? (
+                <View style={{ alignItems: "center", paddingVertical: 24 }}>
+                  <ActivityIndicator size="small" color={COLORS.primary} />
+                  <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 13, color: COLORS.textSecondary, marginTop: 8 }}>
+                    Carregando comandas...
+                  </Text>
+                </View>
+              ) : comandaList.length > 0 ? (
                 <View>
                   <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 16, color: COLORS.text, marginBottom: 10 }}>
-                    Comanda Ativa
+                    Comandas abertas
                   </Text>
-                  <View style={{
-                    backgroundColor: COLORS.surface,
-                    borderRadius: 16,
-                    padding: 16,
-                    borderWidth: 1,
-                    borderColor: COLORS.border,
-                    gap: 10,
-                    shadowColor: "#000",
-                    shadowOffset: { width: 0, height: 1 },
-                    shadowOpacity: 0.06,
-                    shadowRadius: 4,
-                    elevation: 2,
-                  }}>
-                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                      <View style={{ gap: 8, flex: 1 }}>
-                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                          <Text style={{ fontSize: 15 }}>🧾</Text>
-                          <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 13, color: COLORS.textSecondary }}>
-                            Aberta em:
-                          </Text>
-                          <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 13, color: COLORS.text }}>
-                            {abertoEm}
-                          </Text>
-                        </View>
-                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                          <Text style={{ fontSize: 15 }}>👤</Text>
-                          <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 13, color: COLORS.textSecondary }}>
-                            Garçom:
-                          </Text>
-                          <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 13, color: COLORS.text }}>
-                            {comanda.garcom_nome}
-                          </Text>
-                        </View>
-                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                          <Text style={{ fontSize: 15 }}>💰</Text>
-                          <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 13, color: COLORS.textSecondary }}>
-                            Total:
-                          </Text>
-                          <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 14, color: COLORS.primary }}>
-                            R$ {totalFormatted}
-                          </Text>
-                        </View>
-                      </View>
-                      <View style={{ backgroundColor: "rgba(34,197,94,0.12)", borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5, marginLeft: 12 }}>
-                        <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 12, color: "#22C55E" }}>Aberta</Text>
-                      </View>
-                    </View>
+                  <View style={{ gap: 10 }}>
+                    {comandaList.map((item) => {
+                      const itemTotal = `R$ ${item.total.toFixed(2).replace(".", ",")}`;
+                      const rotuloLabel = item.rotulo ?? "Sem nome";
+                      const rotuloColor = item.rotulo ? COLORS.text : COLORS.textTertiary;
+                      const itemCountLabel = `${item.item_count} ${item.item_count === 1 ? "item" : "itens"}`;
+                      return (
+                        <AnimatedPressable
+                          key={item.id}
+                          onPress={() => {
+                            console.log("[Mesa] Comanda individual pressionada:", item.id, "rotulo:", item.rotulo, "mesa_numero:", mesaNumero, "mesa_id:", mesa?.id);
+                            router.push({
+                              pathname: `/comanda/${item.id}`,
+                              params: { mesa_numero: String(mesa?.numero ?? ""), mesa_id: String(id) },
+                            });
+                          }}
+                          style={{
+                            backgroundColor: COLORS.surface,
+                            borderRadius: 14,
+                            padding: 14,
+                            borderWidth: 1,
+                            borderColor: COLORS.border,
+                            gap: 6,
+                            shadowColor: "#000",
+                            shadowOffset: { width: 0, height: 1 },
+                            shadowOpacity: 0.05,
+                            shadowRadius: 3,
+                            elevation: 1,
+                          }}
+                        >
+                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                            <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 15, color: rotuloColor, flex: 1, marginRight: 8 }}>
+                              {rotuloLabel}
+                            </Text>
+                            <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 15, color: COLORS.primary }}>
+                              {itemTotal}
+                            </Text>
+                          </View>
+                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                            <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 13, color: COLORS.textSecondary }}>
+                              {item.garcom_nome}
+                            </Text>
+                            <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 12, color: COLORS.textSecondary }}>
+                              {itemCountLabel}
+                            </Text>
+                          </View>
+                        </AnimatedPressable>
+                      );
+                    })}
                   </View>
                 </View>
+              ) : null}
 
-                {/* Pedidos list */}
-                <View>
-                  <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 16, color: COLORS.text, marginBottom: 10 }}>
-                    Pedidos ({pedidosCount})
-                  </Text>
-                  {pedidosCount === 0 ? (
-                    <View style={{
-                      backgroundColor: COLORS.surface,
-                      borderRadius: 16,
-                      padding: 20,
-                      borderWidth: 1,
-                      borderColor: COLORS.border,
-                      alignItems: "center",
-                    }}>
-                      <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 14, color: COLORS.textSecondary }}>
-                        Nenhum pedido ainda
+              {/* Nova comanda button — always visible for garcom/admin in individual mode */}
+              {(role === "garcom" || canAdmin) ? (
+                <AnimatedPressable
+                  onPress={() => {
+                    console.log("[Mesa] Nova Comanda (individual) pressionado — mesa:", mesaNumero, "id:", mesa?.id);
+                    handleOpenComanda();
+                  }}
+                  style={{ backgroundColor: COLORS.primary, borderRadius: 14, height: 52, alignItems: "center", justifyContent: "center" }}
+                >
+                  <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 16, color: "#fff" }}>Nova comanda</Text>
+                </AnimatedPressable>
+              ) : null}
+            </>
+          ) : (
+            <>
+              {/* ── Mesa mode: existing comanda section ── */}
+              {isOcupada ? (
+                comandaLoading ? (
+                  <View style={{ alignItems: "center", paddingVertical: 24 }}>
+                    <ActivityIndicator size="small" color={COLORS.primary} />
+                    <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 13, color: COLORS.textSecondary, marginTop: 8 }}>
+                      Carregando comanda...
+                    </Text>
+                  </View>
+                ) : comanda ? (
+                  <>
+                    {/* Comanda header card */}
+                    <View>
+                      <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 16, color: COLORS.text, marginBottom: 10 }}>
+                        Comanda Ativa
                       </Text>
-                    </View>
-                  ) : (
-                    <View style={{ gap: 10 }}>
-                      {comanda.pedidos.filter((p) => p.status !== "cancelado").map((pedido) => {
-                        const statusCfg = getPedidoStatusConfig(pedido.status);
-                        const precoFormatted = formatPrice(pedido.preco_unitario);
-                        const qtdPreco = `${pedido.quantidade}x R$ ${precoFormatted}`;
-                        const hasObs = pedido.observacao && pedido.observacao.trim().length > 0;
-                        return (
-                          <View
-                            key={pedido.id}
-                            style={{
-                              backgroundColor: COLORS.surface,
-                              borderRadius: 14,
-                              padding: 14,
-                              borderWidth: 1,
-                              borderColor: COLORS.border,
-                              gap: 6,
-                              shadowColor: "#000",
-                              shadowOffset: { width: 0, height: 1 },
-                              shadowOpacity: 0.05,
-                              shadowRadius: 3,
-                              elevation: 1,
-                            }}
-                          >
-                            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
-                              <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 14, color: COLORS.text, flex: 1, marginRight: 8 }}>
-                                {pedido.prato_nome}
+                      <View style={{
+                        backgroundColor: COLORS.surface,
+                        borderRadius: 16,
+                        padding: 16,
+                        borderWidth: 1,
+                        borderColor: COLORS.border,
+                        gap: 10,
+                        shadowColor: "#000",
+                        shadowOffset: { width: 0, height: 1 },
+                        shadowOpacity: 0.06,
+                        shadowRadius: 4,
+                        elevation: 2,
+                      }}>
+                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                          <View style={{ gap: 8, flex: 1 }}>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                              <Text style={{ fontSize: 15 }}>🧾</Text>
+                              <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 13, color: COLORS.textSecondary }}>
+                                Aberta em:
                               </Text>
-                              <View style={{ backgroundColor: statusCfg.bg, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 }}>
-                                <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 11, color: statusCfg.color }}>
-                                  {statusCfg.label}
-                                </Text>
-                              </View>
+                              <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 13, color: COLORS.text }}>
+                                {abertoEm}
+                              </Text>
                             </View>
-                            <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 13, color: COLORS.textSecondary }}>
-                              {qtdPreco}
-                            </Text>
-                            {hasObs ? (
-                              <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 12, color: COLORS.textTertiary, fontStyle: "italic" }}>
-                                {pedido.observacao}
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                              <Text style={{ fontSize: 15 }}>👤</Text>
+                              <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 13, color: COLORS.textSecondary }}>
+                                Garçom:
                               </Text>
-                            ) : null}
+                              <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 13, color: COLORS.text }}>
+                                {comanda.garcom_nome}
+                              </Text>
+                            </View>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                              <Text style={{ fontSize: 15 }}>💰</Text>
+                              <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 13, color: COLORS.textSecondary }}>
+                                Total:
+                              </Text>
+                              <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 14, color: COLORS.primary }}>
+                                R$ {totalFormatted}
+                              </Text>
+                            </View>
                           </View>
-                        );
-                      })}
+                          <View style={{ backgroundColor: "rgba(34,197,94,0.12)", borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5, marginLeft: 12 }}>
+                            <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 12, color: "#22C55E" }}>Aberta</Text>
+                          </View>
+                        </View>
+                      </View>
                     </View>
-                  )}
-                </View>
-              </>
-            ) : null
-          ) : null}
 
-          {/* Action buttons */}
-          {comandaId ? (
-            <AnimatedPressable
-              onPress={() => { console.log("[Mesa] Ver comanda pressionado:", comandaId, "mesa_numero:", mesaNumero, "mesa_id:", mesa?.id); router.push({ pathname: `/comanda/${comandaId}`, params: { mesa_numero: String(mesa?.numero ?? ''), mesa_id: String(mesa?.id ?? '') } }); }}
-              style={{ backgroundColor: COLORS.primaryMuted, borderRadius: 14, height: 52, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: COLORS.primary + "30" }}
-            >
-              <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 16, color: COLORS.primary }}>Ver comanda ativa</Text>
-            </AnimatedPressable>
-          ) : null}
+                    {/* Pedidos list */}
+                    <View>
+                      <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 16, color: COLORS.text, marginBottom: 10 }}>
+                        Pedidos ({pedidosCount})
+                      </Text>
+                      {pedidosCount === 0 ? (
+                        <View style={{
+                          backgroundColor: COLORS.surface,
+                          borderRadius: 16,
+                          padding: 20,
+                          borderWidth: 1,
+                          borderColor: COLORS.border,
+                          alignItems: "center",
+                        }}>
+                          <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 14, color: COLORS.textSecondary }}>
+                            Nenhum pedido ainda
+                          </Text>
+                        </View>
+                      ) : (
+                        <View style={{ gap: 10 }}>
+                          {comanda.pedidos.filter((p) => p.status !== "cancelado").map((pedido) => {
+                            const statusCfg = getPedidoStatusConfig(pedido.status);
+                            const precoFormatted = formatPrice(pedido.preco_unitario);
+                            const qtdPreco = `${pedido.quantidade}x R$ ${precoFormatted}`;
+                            const hasObs = pedido.observacao && pedido.observacao.trim().length > 0;
+                            return (
+                              <View
+                                key={pedido.id}
+                                style={{
+                                  backgroundColor: COLORS.surface,
+                                  borderRadius: 14,
+                                  padding: 14,
+                                  borderWidth: 1,
+                                  borderColor: COLORS.border,
+                                  gap: 6,
+                                  shadowColor: "#000",
+                                  shadowOffset: { width: 0, height: 1 },
+                                  shadowOpacity: 0.05,
+                                  shadowRadius: 3,
+                                  elevation: 1,
+                                }}
+                              >
+                                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+                                  <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 14, color: COLORS.text, flex: 1, marginRight: 8 }}>
+                                    {pedido.prato_nome}
+                                  </Text>
+                                  <View style={{ backgroundColor: statusCfg.bg, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 }}>
+                                    <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 11, color: statusCfg.color }}>
+                                      {statusCfg.label}
+                                    </Text>
+                                  </View>
+                                </View>
+                                <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 13, color: COLORS.textSecondary }}>
+                                  {qtdPreco}
+                                </Text>
+                                {hasObs ? (
+                                  <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 12, color: COLORS.textTertiary, fontStyle: "italic" }}>
+                                    {pedido.observacao}
+                                  </Text>
+                                ) : null}
+                              </View>
+                            );
+                          })}
+                        </View>
+                      )}
+                    </View>
+                  </>
+                ) : null
+              ) : null}
 
-          {(mesaStatus === "livre" || (mesaStatus as string) === "disponivel") && (role === "garcom" || canAdmin) ? (
-            <AnimatedPressable
-              onPress={() => { console.log("[Mesa] Abrir Comanda pressionado"); handleOpenComanda(); }}
-              style={{ backgroundColor: COLORS.primary, borderRadius: 14, height: 52, alignItems: "center", justifyContent: "center" }}
-            >
-              <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 16, color: "#fff" }}>Abrir Comanda</Text>
-            </AnimatedPressable>
-          ) : null}
+              {/* Action buttons — mesa mode */}
+              {comandaId ? (
+                <AnimatedPressable
+                  onPress={() => { console.log("[Mesa] Ver comanda pressionado:", comandaId, "mesa_numero:", mesaNumero, "mesa_id:", mesa?.id); router.push({ pathname: `/comanda/${comandaId}`, params: { mesa_numero: String(mesa?.numero ?? ''), mesa_id: String(mesa?.id ?? '') } }); }}
+                  style={{ backgroundColor: COLORS.primaryMuted, borderRadius: 14, height: 52, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: COLORS.primary + "30" }}
+                >
+                  <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 16, color: COLORS.primary }}>Ver comanda ativa</Text>
+                </AnimatedPressable>
+              ) : null}
 
-          {mesaStatus === "ocupada" && comandaId ? (
-            <AnimatedPressable
-              onPress={() => { console.log("[Mesa] Fazer pedido pressionado, comanda:", comandaId); router.push({ pathname: "/pedido/novo", params: { comanda_id: comandaId, mesa_id: id } }); }}
-              style={{ backgroundColor: COLORS.surface, borderRadius: 14, height: 52, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: COLORS.border }}
-            >
-              <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 16, color: COLORS.text }}>Fazer pedido</Text>
-            </AnimatedPressable>
-          ) : null}
+              {(mesaStatus === "livre" || (mesaStatus as string) === "disponivel") && (role === "garcom" || canAdmin) ? (
+                <AnimatedPressable
+                  onPress={() => { console.log("[Mesa] Abrir Comanda pressionado"); handleOpenComanda(); }}
+                  style={{ backgroundColor: COLORS.primary, borderRadius: 14, height: 52, alignItems: "center", justifyContent: "center" }}
+                >
+                  <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 16, color: "#fff" }}>Abrir Comanda</Text>
+                </AnimatedPressable>
+              ) : null}
+
+              {mesaStatus === "ocupada" && comandaId ? (
+                <AnimatedPressable
+                  onPress={() => { console.log("[Mesa] Fazer pedido pressionado, comanda:", comandaId); router.push({ pathname: "/pedido/novo", params: { comanda_id: comandaId, mesa_id: id } }); }}
+                  style={{ backgroundColor: COLORS.surface, borderRadius: 14, height: 52, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: COLORS.border }}
+                >
+                  <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 16, color: COLORS.text }}>Fazer pedido</Text>
+                </AnimatedPressable>
+              ) : null}
+            </>
+          )}
         </ScrollView>
       )}
     </SafeAreaView>

@@ -17,6 +17,7 @@ import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useColors } from "@/hooks/useColors";
+import useModoComanda from "@/hooks/useModoComanda";
 import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { SkeletonLine } from "@/components/SkeletonLoader";
 import { apiGet, apiPost } from "@/utils/api";
@@ -439,6 +440,8 @@ export default function NovaComandaScreen() {
     mesa_numero: string;
   }>();
 
+  const { modo } = useModoComanda();
+
   const [pratos, setPratos] = useState<ApiPrato[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -449,6 +452,8 @@ export default function NovaComandaScreen() {
   const successOpacity = useRef(new Animated.Value(0)).current;
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("Todos");
+  const [rotulo, setRotulo] = useState("");
+  const [rotuloError, setRotuloError] = useState("");
 
   const mesaNumeroDisplay = mesa_numero ? String(mesa_numero) : "?";
   const titleText = `Comanda — Mesa ${mesaNumeroDisplay}`;
@@ -560,11 +565,22 @@ export default function NovaComandaScreen() {
       return;
     }
 
+    if (modo === "individual" && rotulo.trim() === "") {
+      console.log("[Comanda] Validação falhou: nome da comanda obrigatório no modo individual");
+      setRotuloError("O nome da comanda é obrigatório.");
+      return;
+    }
+    setRotuloError("");
+
     console.log(
       "[Comanda] Salvar e Enviar Pedido — mesa_id:",
       mesa_id,
       "mesa_numero:",
       mesaNumeroDisplay,
+      "modo:",
+      modo,
+      "rotulo:",
+      rotulo.trim() || "(sem rótulo)",
       "itens:",
       cart.length,
       "total:",
@@ -580,8 +596,13 @@ export default function NovaComandaScreen() {
         observacao: c.observacao || null,
       }));
 
-      console.log("[Comanda] POST /api/comandas — body:", JSON.stringify({ mesa_id, itens }));
-      await apiPost<any>("/api/comandas", { mesa_id, itens });
+      const body: Record<string, any> = { mesa_id, itens };
+      if (rotulo.trim()) {
+        body.rotulo = rotulo.trim();
+      }
+
+      console.log("[Comanda] POST /api/comandas — body:", JSON.stringify(body));
+      await apiPost<any>("/api/comandas", body);
 
       console.log("[Comanda] Comanda criada com sucesso para mesa:", mesaNumeroDisplay);
       setCart([]);
@@ -597,7 +618,12 @@ export default function NovaComandaScreen() {
       }, 2500);
     } catch (e: any) {
       const msg = e instanceof Error ? e.message : String(e);
-      console.error("[Comanda] Erro ao criar comanda:", msg);
+      const status = (e as any)?.status ?? (e as any)?.statusCode;
+      console.error("[Comanda] Erro ao criar comanda — status:", status, "msg:", msg);
+      if (status === 400 || status === 409) {
+        setRotuloError(msg || "Erro ao criar comanda.");
+        return;
+      }
       Alert.alert("Erro ao criar comanda", msg || "Não foi possível enviar o pedido.");
     } finally {
       setSubmitting(false);
@@ -747,6 +773,64 @@ export default function NovaComandaScreen() {
           </View>
         )}
       </View>
+
+      {/* ── Nome da comanda (individual mode only) ── */}
+      {modo === "individual" ? (
+        <View
+          style={{
+            backgroundColor: COLORS.surface,
+            borderBottomWidth: 1,
+            borderBottomColor: COLORS.border,
+            paddingHorizontal: 16,
+            paddingVertical: 10,
+          }}
+        >
+          <Text
+            style={{
+              fontFamily: "Outfit_600SemiBold",
+              fontSize: 13,
+              color: COLORS.textSecondary,
+              marginBottom: 6,
+            }}
+          >
+            Nome da comanda
+          </Text>
+          <TextInput
+            value={rotulo}
+            onChangeText={(t) => {
+              console.log("[Comanda] Nome da comanda alterado:", t);
+              setRotulo(t);
+              if (rotuloError) setRotuloError("");
+            }}
+            placeholder="Ex: Maria"
+            placeholderTextColor={COLORS.textTertiary}
+            maxLength={40}
+            style={{
+              backgroundColor: COLORS.surfaceSecondary,
+              borderWidth: 1,
+              borderColor: rotuloError ? COLORS.danger : COLORS.border,
+              borderRadius: 12,
+              paddingHorizontal: 12,
+              paddingVertical: 10,
+              fontFamily: "Outfit_400Regular",
+              fontSize: 14,
+              color: COLORS.text,
+            }}
+          />
+          {rotuloError ? (
+            <Text
+              style={{
+                fontFamily: "Outfit_400Regular",
+                fontSize: 12,
+                color: COLORS.danger,
+                marginTop: 4,
+              }}
+            >
+              {rotuloError}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
 
       {/* ── Tabs ── */}
       <View
@@ -1272,22 +1356,26 @@ export default function NovaComandaScreen() {
               "[Comanda] Salvar e Enviar Pedido pressionado — itens:",
               cart.length,
               "total:",
-              subtotalDisplay
+              subtotalDisplay,
+              "modo:",
+              modo,
+              "rotulo:",
+              rotulo.trim() || "(vazio)"
             );
             handleSubmit();
           }}
-          disabled={submitting || cartIsEmpty}
+          disabled={submitting || cartIsEmpty || (modo === "individual" && rotulo.trim() === "")}
           style={{
-            backgroundColor: cartIsEmpty ? COLORS.surfaceSecondary : COLORS.primary,
+            backgroundColor: (cartIsEmpty || (modo === "individual" && rotulo.trim() === "")) ? COLORS.surfaceSecondary : COLORS.primary,
             borderRadius: 14,
             height: 56,
             alignItems: "center",
             justifyContent: "center",
             shadowColor: COLORS.primary,
             shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: cartIsEmpty ? 0 : 0.3,
+            shadowOpacity: (cartIsEmpty || (modo === "individual" && rotulo.trim() === "")) ? 0 : 0.3,
             shadowRadius: 10,
-            elevation: cartIsEmpty ? 0 : 4,
+            elevation: (cartIsEmpty || (modo === "individual" && rotulo.trim() === "")) ? 0 : 4,
             flexDirection: "row",
             gap: 8,
           }}
@@ -1301,11 +1389,13 @@ export default function NovaComandaScreen() {
                 style={{
                   fontFamily: "Outfit_700Bold",
                   fontSize: 16,
-                  color: cartIsEmpty ? COLORS.textTertiary : "#fff",
+                  color: (cartIsEmpty || (modo === "individual" && rotulo.trim() === "")) ? COLORS.textTertiary : "#fff",
                 }}
               >
                 {cartIsEmpty
                   ? "Adicione itens ao pedido"
+                  : (modo === "individual" && rotulo.trim() === "")
+                  ? "Informe o nome da comanda"
                   : "Salvar e Enviar Pedido"}
               </Text>
             </>
