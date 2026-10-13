@@ -69,6 +69,7 @@ export const restaurante = pgTable("restaurante", {
   telefone: text("telefone"),
   email: text("email"),
   ativo: boolean("ativo").default(true).notNull(),
+  // Como o restaurante controla o consumo: "mesa" (uma comanda por mesa) ou "individual" (várias comandas por mesa, cada uma com nome)
   modoComanda: modoComandaEnum("modo_comanda").default("mesa").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -131,7 +132,6 @@ export const pratos = pgTable("pratos", {
 export const comandas = pgTable("comandas", {
   id: uuid("id").primaryKey().defaultRandom(),
   mesaId: uuid("mesa_id").references(() => mesas.id, { onDelete: "restrict" }),
-  rotulo: text("rotulo"),
   tipo: tipoComandaEnum("tipo").default("mesa").notNull(),
   mesaNumero: integer("mesa_numero"),
   garcomId: text("garcom_id"),
@@ -237,7 +237,6 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
 export const comandasHistorico = pgTable("comandas_historico", {
   id: uuid("id").primaryKey(),
   mesaId: uuid("mesa_id"),
-  rotulo: text("rotulo"),
   mesaNumero: integer("mesa_numero"),
   garcomId: text("garcom_id"),
   status: text("status").notNull(),
