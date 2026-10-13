@@ -54,6 +54,7 @@ type Comanda = {
   mesa_id: string;
   mesa_numero: number;
   mesa_capacidade?: number;
+  rotulo?: string | null;
   status: string;
   total: number | string;
 };
@@ -351,7 +352,10 @@ export default function ComandaDetailScreen() {
   console.log("[ComandaDetail] total calculado:", totalDisplay, "— pedidos:", pedidosEnviados.length);
 
   const mesaNum = mesaNumero ?? '?';
-  const headerTitle = `Comanda — Mesa ${mesaNum}`;
+  const nomeComanda = typeof comanda?.rotulo === 'string' ? comanda.rotulo.trim() : '';
+  const headerTitle = nomeComanda
+    ? `Comanda — Mesa ${mesaNum} · ${nomeComanda}`
+    : `Comanda — Mesa ${mesaNum}`;
 
   const canFechar = comanda?.status === 'aberta' && pedidosEnviados.length > 0;
 
