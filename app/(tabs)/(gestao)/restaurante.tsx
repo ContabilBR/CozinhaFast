@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import useModoComanda from '@/hooks/useModoComanda';
 import { useAuth } from '@/contexts/AuthContext';
+import { isAdmin } from '@/utils/helpers';
 import { apiGet, apiPut, apiDelete } from '@/utils/api';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 
@@ -49,7 +50,8 @@ export default function RestauranteScreen() {
 
   // Modo de comandas (mesa | individual): só o administrador altera
   const { user } = useAuth();
-  const isAdministrador = user?.role === 'administrador';
+  // Administrador, admin ou gerente (mesma regra do backend para esta troca)
+  const isAdministrador = isAdmin(user?.role);
   const { modo, loading: modoLoading, recarregar: recarregarModo } = useModoComanda();
   const [modoPendente, setModoPendente] = useState<'mesa' | 'individual' | null>(null);
   const [trocandoModo, setTrocandoModo] = useState(false);
