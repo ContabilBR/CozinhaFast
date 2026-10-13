@@ -17,6 +17,7 @@ import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useColors } from "@/hooks/useColors";
+import useModoComanda from "@/hooks/useModoComanda";
 import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { SkeletonLine } from "@/components/SkeletonLoader";
 import { apiGet, apiPost } from "@/utils/api";
@@ -450,6 +451,12 @@ export default function NovaComandaScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("Todos");
 
+  // Modo do restaurante: no modo "individual" cada comanda da mesa precisa de um nome
+  const { modo, loading: modoLoading } = useModoComanda();
+  const individual = modo === "individual";
+  const [rotulo, setRotulo] = useState("");
+  const TAMANHO_MAXIMO_NOME = 40;
+
   const mesaNumeroDisplay = mesa_numero ? String(mesa_numero) : "?";
   const titleText = `Comanda — Mesa ${mesaNumeroDisplay}`;
 
@@ -559,6 +566,11 @@ export default function NovaComandaScreen() {
       Alert.alert("Erro", "Mesa não identificada. Volte e selecione uma mesa.");
       return;
     }
+    const nomeComanda = rotulo.trim();
+    if (individual && nomeComanda.length === 0) {
+      Alert.alert("Nome da comanda", "Informe o nome da comanda (por exemplo, o nome do cliente).");
+      return;
+    }
 
     console.log(
       "[Comanda] Salvar e Enviar Pedido — mesa_id:",
@@ -580,8 +592,10 @@ export default function NovaComandaScreen() {
         observacao: c.observacao || null,
       }));
 
-      console.log("[Comanda] POST /api/comandas — body:", JSON.stringify({ mesa_id, itens }));
-      await apiPost<any>("/api/comandas", { mesa_id, itens });
+      // O nome só é enviado no modo individual; no modo mesa o servidor o ignoraria
+      const corpo: any = individual ? { mesa_id, itens, rotulo: nomeComanda } : { mesa_id, itens };
+      console.log("[Comanda] POST /api/comandas — body:", JSON.stringify(corpo));
+      await apiPost<any>("/api/comandas", corpo);
 
       console.log("[Comanda] Comanda criada com sucesso para mesa:", mesaNumeroDisplay);
       setCart([]);
@@ -747,6 +761,50 @@ export default function NovaComandaScreen() {
           </View>
         )}
       </View>
+
+      {/* ── Nome da comanda (somente no modo individual) ── */}
+      {individual ? (
+        <View
+          style={{
+            backgroundColor: COLORS.surface,
+            borderBottomWidth: 1,
+            borderBottomColor: COLORS.border,
+            paddingHorizontal: 16,
+            paddingVertical: 10,
+            gap: 6,
+          }}
+        >
+          <Text
+            style={{
+              fontFamily: "Outfit_600SemiBold",
+              fontSize: 13,
+              color: COLORS.textSecondary,
+            }}
+          >
+            Nome da comanda *
+          </Text>
+          <TextInput
+            value={rotulo}
+            onChangeText={setRotulo}
+            placeholder="Ex.: Maria"
+            placeholderTextColor={COLORS.textTertiary}
+            maxLength={TAMANHO_MAXIMO_NOME}
+            autoCapitalize="words"
+            returnKeyType="done"
+            style={{
+              backgroundColor: COLORS.surfaceSecondary,
+              borderWidth: 1,
+              borderColor: COLORS.border,
+              borderRadius: 10,
+              paddingHorizontal: 12,
+              paddingVertical: 9,
+              fontFamily: "Outfit_400Regular",
+              fontSize: 15,
+              color: COLORS.text,
+            }}
+          />
+        </View>
+      ) : null}
 
       {/* ── Tabs ── */}
       <View
@@ -1276,7 +1334,7 @@ export default function NovaComandaScreen() {
             );
             handleSubmit();
           }}
-          disabled={submitting || cartIsEmpty}
+          disabled={submitting || cartIsEmpty || modoLoading}
           style={{
             backgroundColor: cartIsEmpty ? COLORS.surfaceSecondary : COLORS.primary,
             borderRadius: 14,
