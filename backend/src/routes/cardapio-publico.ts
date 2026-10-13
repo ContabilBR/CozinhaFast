@@ -196,8 +196,15 @@ init()
           return await reply.code(400).send({ error: "restaurante_id, mesa_numero e itens são obrigatórios" });
         }
 
-        const [rest] = await db.select({ id: schema.restaurante.id }).from(schema.restaurante).where(eq(schema.restaurante.id, restaurante_id));
+        const [rest] = await db.select({ id: schema.restaurante.id, modoComanda: schema.restaurante.modoComanda }).from(schema.restaurante).where(eq(schema.restaurante.id, restaurante_id));
         if (!rest) return await reply.code(404).send({ error: "Restaurante não encontrado" });
+
+        // No modo "individual" a mesa tem várias comandas, cada uma com o nome de uma pessoa. O pedido
+        // por QR Code não sabe a qual delas pertence (e deixar o cliente escolher pelo nome permitiria
+        // lançar itens na conta de outra pessoa). Até existir um fluxo próprio, o pedido é feito pelo garçom.
+        if (rest.modoComanda === "individual") {
+          return await reply.code(409).send({ error: "Este restaurante atende por comanda individual. Chame o garçom para fazer o seu pedido." });
+        }
 
         const [mesa] = await db.select().from(schema.mesas).where(and(eq(schema.mesas.numero, mesa_numero), eq(schema.mesas.restauranteId, restaurante_id)));
         if (!mesa) return await reply.code(404).send({ error: "Mesa não encontrada" });
