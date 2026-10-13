@@ -5,6 +5,7 @@ import type { App } from "../index.js";
 import { requireAuth as customRequireAuth, requireTenant, requireRole } from "../utils/auth.js";
 import { realtimeHub } from "../realtime/hub.js";
 import { cancelarPedido, MOTIVOS_CANCELAMENTO, ROLES_ATENDIMENTO } from "../services/cancelamento-pedido.js";
+import { liberarMesaSeVazia } from "../services/liberar-mesa.js";
 
 interface CreatePedidoBody {
   comanda_id?: string;
@@ -1043,6 +1044,7 @@ export function registerOrderItemRoutes(app: App) {
               createdAt: schema.comandas.createdAt,
               closedAt: schema.comandas.closedAt,
               mesaNumero: schema.comandas.mesaNumero,
+              rotulo: schema.comandas.rotulo,
             })
             .from(schema.comandas)
             .where(eq(schema.comandas.id, pedido.comandaId));
@@ -1050,39 +1052,41 @@ export function registerOrderItemRoutes(app: App) {
           if (comandaInfo.length) {
             const comanda = comandaInfo[0];
 
-            await app.db.insert(schema.comandasHistorico).values({
-              id: comanda.id,
-              mesaId: comanda.mesaId,
-              mesaNumero: comanda.mesaNumero,
-              garcomId: comanda.garcomId,
-              status: comanda.status,
-              total: comanda.total as any,
-              createdAt: comanda.createdAt,
-              closedAt: comanda.closedAt,
-              archivedAt: new Date(),
-              restauranteId,
+            // Arquiva, apaga a comanda e libera a mesa na mesma transação; a mesa só é liberada
+            // se não restar outra comanda aberta nela (regra única em services/liberar-mesa.ts)
+            await (app.db as any).transaction(async (tx: any) => {
+              await tx.insert(schema.comandasHistorico).values({
+                id: comanda.id,
+                mesaId: comanda.mesaId,
+                mesaNumero: comanda.mesaNumero,
+                rotulo: comanda.rotulo ?? null,
+                garcomId: comanda.garcomId,
+                status: comanda.status,
+                total: comanda.total as any,
+                createdAt: comanda.createdAt,
+                closedAt: comanda.closedAt,
+                archivedAt: new Date(),
+                restauranteId,
+              });
+
+              await tx.insert(schema.pedidosHistorico).values({
+                id: pedido.id,
+                comandaId: pedido.comandaId,
+                pratoId: pedido.pratoId,
+                pratoNome,
+                quantidade: pedido.quantidade,
+                precoUnitario: pedido.precoUnitario as any,
+                observacao: pedido.observacao,
+                status: pedido.status,
+                createdAt: pedido.createdAt,
+                archivedAt: new Date(),
+                restauranteId,
+              });
+
+              await tx.delete(schema.comandas).where(eq(schema.comandas.id, pedido.comandaId));
+
+              await liberarMesaSeVazia(tx, comanda.mesaId, restauranteId);
             });
-
-            await app.db.insert(schema.pedidosHistorico).values({
-              id: pedido.id,
-              comandaId: pedido.comandaId,
-              pratoId: pedido.pratoId,
-              pratoNome,
-              quantidade: pedido.quantidade,
-              precoUnitario: pedido.precoUnitario as any,
-              observacao: pedido.observacao,
-              status: pedido.status,
-              createdAt: pedido.createdAt,
-              archivedAt: new Date(),
-              restauranteId,
-            });
-
-            await app.db.delete(schema.comandas).where(eq(schema.comandas.id, pedido.comandaId));
-
-            await app.db
-              .update(schema.mesas)
-              .set({ status: "disponivel" })
-              .where(eq(schema.mesas.id, comanda.mesaId));
 
             app.logger.info(
               { pedidoId: request.params.id, comandaId: pedido.comandaId },
