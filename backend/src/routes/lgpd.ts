@@ -1,8 +1,10 @@
-import { eq } from "drizzle-orm";
+import { eq, and, ne } from "drizzle-orm";
 import type { FastifyRequest, FastifyReply } from "fastify";
 import type { App } from "../index.js";
-import { requireAuth as customRequireAuth, requireTenant, requireRole } from "../utils/auth.js";
+import { requireAuth as customRequireAuth, requireTenant } from "../utils/auth.js";
 import * as schema from "../db/schema/schema.js";
+// A tabela de autenticação (user/session) não é reexportada por schema.js
+import { user as authUserTable, session as authSessionTable } from "../db/schema/auth-schema.js";
 
 export function registerLgpdRoutes(app: App) {
   const db = app.db as any;
@@ -60,12 +62,11 @@ export function registerLgpdRoutes(app: App) {
             error: { type: "string" },
           },
         },
-        403: {
-          description: "Role not allowed to self-delete (garcom/cozinheiro)",
+        409: {
+          description: "Conflict — garçom still has open comandas",
           type: "object",
           properties: {
             error: { type: "string" },
-            message: { type: "string" },
           },
         },
         404: {
@@ -95,26 +96,69 @@ export function registerLgpdRoutes(app: App) {
     try {
       const authUser = await customRequireAuth(app, request, reply);
       if (!authUser) return;
-      // Exclusão de conta é self-service apenas para gerente/administrador.
-      // Contas de garçom/cozinheiro são criadas e geridas pelo gerente, então
-      // a exclusão delas deve passar por quem administra a equipe, não pelo
-      // próprio garçom/cozinheiro.
-      if (!(await requireRole(authUser, ["administrador", "gerente"], reply))) return;
+      // Exclusão de conta: qualquer papel exclui a PRÓPRIA conta (exigência Apple/Google).
+      // A rota só age sobre o usuário autenticado; ninguém exclui a conta de outra pessoa por aqui.
       const restauranteId = requireTenant(authUser);
+      const mensagemSucesso =
+        "Seus dados pessoais foram anonimizados e sua sessão encerrada. Você não conseguirá mais fazer login com esta conta.";
 
       // Try to find usuario in usuarios table, but handle Better Auth users gracefully
       const usuariosResult = await db.select().from(schema.usuarios).where(eq(schema.usuarios.id, authUser.id));
       const [usuario] = usuariosResult;
 
+      // Garçom com comanda de mesa aberta sob o nome dele não pode excluir a conta
+      // (a comanda ficaria com um garçom anonimizado). Delivery não conta.
+      const papel = String(usuario?.role ?? authUser.role ?? "").toLowerCase();
+      if (papel === "garcom") {
+        const comandasAbertas = await db
+          .select({ id: schema.comandas.id })
+          .from(schema.comandas)
+          .where(
+            and(
+              eq(schema.comandas.garcomId, authUser.id),
+              eq(schema.comandas.restauranteId, restauranteId),
+              eq(schema.comandas.status, "aberta"),
+              ne(schema.comandas.tipo, "delivery")
+            )
+          )
+          .limit(1);
+        if (comandasAbertas.length > 0) {
+          return await reply.code(409).send({
+            error: "Você tem comandas abertas. Feche ou transfira todas antes de excluir sua conta.",
+          });
+        }
+      }
+
       if (!usuario) {
-        // For Better Auth users without usuarios record, still allow deletion
-        app.logger.info({ userId: authUser.id, restauranteId }, "Better Auth user requesting LGPD deletion");
-        return await reply.code(200).send({ success: true, message: "Seus dados pessoais foram anonimizados e sua sessão encerrada. Você não conseguirá mais fazer login com esta conta." });
+        // Usuário só da autenticação (sem registro em usuarios): anonimiza de verdade, sem apagar linhas.
+        app.logger.info({ userId: authUser.id, restauranteId }, "Better Auth user requesting LGPD deletion (no usuarios record)");
+        await db.transaction(async (tx: any) => {
+          await tx
+            .update(authUserTable)
+            .set({ name: "Usuário removido", email: "removido_" + Date.now() + "_" + authUser.id + "@excluido.lgpd" })
+            .where(eq(authUserTable.id, authUser.id));
+          await tx.update(schema.profiles).set({ name: "Usuário removido" }).where(eq(schema.profiles.userId, authUser.id));
+          await tx.delete(schema.usuariosSession).where(eq(schema.usuariosSession.userId, authUser.id.toString()));
+          await tx.delete(authSessionTable).where(eq(authSessionTable.userId, authUser.id.toString()));
+        });
+        app.logger.info({ userId: authUser.id, restauranteId }, "Better Auth user anonymized via LGPD");
+        return await reply.code(200).send({ success: true, message: mensagemSucesso });
       }
 
       if (usuario.role === "administrador") {
-        const usuarios = await db.select({ id: schema.usuarios.id }).from(schema.usuarios).where(eq(schema.usuarios.restauranteId, restauranteId));
-        const outrosAdmins = usuarios.filter((u: any) => u.id !== authUser.id);
+        // Conta só OUTROS administradores do restaurante que estejam ativos e não tenham sido
+        // anonimizados (uma conta já excluída continua com o papel, mas não administra ninguém).
+        const usuarios = await db
+          .select({ id: schema.usuarios.id, role: schema.usuarios.role, ativo: schema.usuarios.ativo, email: schema.usuarios.email })
+          .from(schema.usuarios)
+          .where(eq(schema.usuarios.restauranteId, restauranteId));
+        const outrosAdmins = usuarios.filter(
+          (u: any) =>
+            u.id !== authUser.id &&
+            String(u.role ?? "").toLowerCase() === "administrador" &&
+            u.ativo !== false &&
+            !String(u.email ?? "").endsWith("@excluido.lgpd")
+        );
 
         if (outrosAdmins.length === 0) {
           return await reply.code(400).send({
@@ -123,15 +167,17 @@ export function registerLgpdRoutes(app: App) {
         }
       }
 
-      await db.update(schema.usuarios).set({ nome: "Usuário removido", email: "removido_" + Date.now() + "@excluido.lgpd", senhaHash: "REMOVED" }).where(eq(schema.usuarios.id, authUser.id));
-
-      await db.delete(schema.usuariosSession).where(eq(schema.usuariosSession.userId, authUser.id.toString()));
+      await db.transaction(async (tx: any) => {
+        await tx.update(schema.usuarios).set({ nome: "Usuário removido", email: "removido_" + Date.now() + "@excluido.lgpd", senhaHash: "REMOVED" }).where(eq(schema.usuarios.id, authUser.id));
+        await tx.delete(schema.usuariosSession).where(eq(schema.usuariosSession.userId, authUser.id.toString()));
+        await tx.delete(authSessionTable).where(eq(authSessionTable.userId, authUser.id.toString()));
+      });
 
       app.logger.info({ userId: authUser.id, restauranteId }, "Dados pessoais anonimizados via LGPD");
 
-      return await reply.code(200).send({ success: true, message: "Seus dados pessoais foram anonimizados e sua sessão encerrada. Você não conseguirá mais fazer login com esta conta." });
+      return await reply.code(200).send({ success: true, message: mensagemSucesso });
     } catch (err) {
-      app.logger.error({ error: (err as any).message }, "Erro ao excluir dados LGPD");
+      app.logger.error({ err: (err as any).message }, "Erro ao excluir dados LGPD");
       return await reply.code(500).send({ error: "Erro interno" });
     }
   });
