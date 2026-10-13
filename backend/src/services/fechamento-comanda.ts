@@ -67,7 +67,7 @@ export type ResultadoFechamento =
   | {
       tipo: "fechada";
       mesaNumero: number | null;
-      rotulo?: string | null;
+      rotulo: string | null;
       subtotal: number;
       gorjeta: number;
       totalFinal: number;
@@ -100,7 +100,6 @@ export async function fecharComanda(
         .select({
           id: schema.comandas.id,
           mesaId: schema.comandas.mesaId,
-          rotulo: schema.comandas.rotulo,
           garcomId: schema.comandas.garcomId,
           status: schema.comandas.status,
           tipo: schema.comandas.tipo,
@@ -208,7 +207,6 @@ export async function fecharComanda(
       await tx.insert(schema.comandasHistorico).values({
         id: comanda.id,
         mesaId: comanda.mesaId,
-        rotulo: comanda.rotulo ?? null,
         mesaNumero,
         rotulo: comanda.rotulo ?? null,
         garcomId: comanda.garcomId,
@@ -290,9 +288,20 @@ export async function fecharComanda(
       await tx.delete(schema.pedidos).where(eq(schema.pedidos.comandaId, comandaId));
       await tx.delete(schema.comandas).where(eq(schema.comandas.id, comandaId));
 
-      // Depois de arquivar, libera a mesa se não tiver outras comandas abertas
-      await liberarMesaSeVazia(tx, mesaId, restauranteId);
-      app.logger.info({ mesaId }, "Mesa release check completed");
+      // Depois de arquivar, libera a mesa só se não restar outra comanda aberta nela
+      // (regra única em services/liberar-mesa.ts; com uma comanda por mesa libera como sempre)
+      if (mesaId) {
+        try {
+          const liberada = await liberarMesaSeVazia(tx, mesaId, restauranteId);
+          app.logger.info(
+            { mesaId, liberada },
+            liberada ? "Mesa released to disponivel" : "Mesa kept occupied: other open comandas"
+          );
+        } catch (err) {
+          app.logger.error({ mesaId, error: (err as any).message }, "Failed to release mesa");
+          throw err;
+        }
+      }
 
       return {
         tipo: "fechada",

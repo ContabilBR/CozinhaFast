@@ -1038,7 +1038,6 @@ export function registerOrderItemRoutes(app: App) {
             .select({
               id: schema.comandas.id,
               mesaId: schema.comandas.mesaId,
-              rotulo: schema.comandas.rotulo,
               garcomId: schema.comandas.garcomId,
               status: schema.comandas.status,
               total: schema.comandas.total,
@@ -1053,13 +1052,14 @@ export function registerOrderItemRoutes(app: App) {
           if (comandaInfo.length) {
             const comanda = comandaInfo[0];
 
-            // Archive and release within transaction
+            // Arquiva, apaga a comanda e libera a mesa na mesma transação; a mesa só é liberada
+            // se não restar outra comanda aberta nela (regra única em services/liberar-mesa.ts)
             await (app.db as any).transaction(async (tx: any) => {
               await tx.insert(schema.comandasHistorico).values({
                 id: comanda.id,
                 mesaId: comanda.mesaId,
-                rotulo: comanda.rotulo ?? null,
                 mesaNumero: comanda.mesaNumero,
+                rotulo: comanda.rotulo ?? null,
                 garcomId: comanda.garcomId,
                 status: comanda.status,
                 total: comanda.total as any,
@@ -1085,7 +1085,6 @@ export function registerOrderItemRoutes(app: App) {
 
               await tx.delete(schema.comandas).where(eq(schema.comandas.id, pedido.comandaId));
 
-              // Release mesa if no other open comandas
               await liberarMesaSeVazia(tx, comanda.mesaId, restauranteId);
             });
 
