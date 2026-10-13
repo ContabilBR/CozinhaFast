@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { View, Text, ScrollView, RefreshControl, Pressable, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
+import useModoComanda from "@/hooks/useModoComanda";
 import { useAuth } from "@/contexts/AuthContext";
 import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { CardSkeleton } from "@/components/SkeletonLoader";
@@ -29,6 +30,15 @@ interface ComandaInfo {
   total: number;
   status: string;
   pedidos: Pedido[];
+}
+
+// Comanda aberta da mesa, como devolvida por GET /api/mesas/:id/comandas (modo individual)
+interface ComandaResumo {
+  id: string;
+  rotulo: string | null;
+  garcom_nome: string;
+  total: number;
+  item_count: number;
 }
 
 function formatDateTime(iso: string): string {
@@ -74,6 +84,38 @@ export default function MesaDetailScreen() {
 
   const [comanda, setComanda] = useState<ComandaInfo | null>(null);
   const [comandaLoading, setComandaLoading] = useState(false);
+
+  // Modo individual: várias comandas abertas na mesma mesa, cada uma com nome
+  const { modo } = useModoComanda();
+  const individual = modo === "individual";
+  const [comandas, setComandas] = useState<ComandaResumo[]>([]);
+  const [comandasLoading, setComandasLoading] = useState(false);
+  const [comandasError, setComandasError] = useState("");
+
+  const fetchComandas = useCallback(async () => {
+    if (!id) return;
+    console.log("[Mesa] GET /api/mesas/" + id + "/comandas");
+    setComandasLoading(true);
+    setComandasError("");
+    try {
+      const data = await apiGet<any>(`/api/mesas/${id}/comandas`);
+      const lista: ComandaResumo[] = Array.isArray(data?.comandas) ? data.comandas : [];
+      console.log("[Mesa] Comandas abertas:", lista.length);
+      setComandas(lista);
+    } catch (e: any) {
+      console.error("[Mesa] Erro ao buscar comandas da mesa:", e);
+      setComandasError("Não foi possível carregar as comandas da mesa.");
+    } finally {
+      setComandasLoading(false);
+    }
+  }, [id]);
+
+  // Busca ao abrir a tela e sempre que ela volta ao foco (ex.: depois de criar ou fechar uma comanda)
+  useFocusEffect(
+    useCallback(() => {
+      if (individual) fetchComandas();
+    }, [individual, fetchComandas])
+  );
 
   const fetchComanda = useCallback(async (mesaId: string) => {
     console.log("[Mesa] GET /api/mesas/" + mesaId + "/comanda");
@@ -124,6 +166,7 @@ export default function MesaDetailScreen() {
     console.log("[Mesa] Refresh manual");
     setRefreshing(true);
     fetchMesa();
+    if (individual) fetchComandas();
   };
 
   const handleOpenComanda = () => {
@@ -142,7 +185,8 @@ export default function MesaDetailScreen() {
   const mesaCapacidade = mesa?.capacidade;
   const mesaStatus = mesa?.status ?? "livre";
   // comanda_id may live on the mesa object directly OR come from the fetched comanda
-  const comandaId = (mesa as any)?.comanda_id ?? comanda?.id ?? null;
+  // No modo individual a mesa pode ter várias comandas: não existe "a" comanda da mesa
+  const comandaId = individual ? null : ((mesa as any)?.comanda_id ?? comanda?.id ?? null);
   const garcomName = (mesa as any)?.garcom?.name;
 
   const isOcupada = (mesaStatus as string) === "ocupada";
@@ -232,8 +276,76 @@ export default function MesaDetailScreen() {
             </View>
           </View>
 
-          {/* Comanda section — only when ocupada */}
-          {isOcupada ? (
+          {/* Modo individual: lista de comandas abertas da mesa */}
+          {individual ? (
+            <View>
+              <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 16, color: COLORS.text, marginBottom: 10 }}>
+                Comandas abertas ({comandas.length})
+              </Text>
+              {comandasLoading && comandas.length === 0 ? (
+                <View style={{ alignItems: "center", paddingVertical: 24 }}>
+                  <ActivityIndicator size="small" color={COLORS.primary} />
+                </View>
+              ) : comandasError ? (
+                <View style={{ backgroundColor: COLORS.surface, borderRadius: 16, padding: 20, borderWidth: 1, borderColor: COLORS.border, alignItems: "center", gap: 10 }}>
+                  <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 14, color: COLORS.textSecondary, textAlign: "center" }}>
+                    {comandasError}
+                  </Text>
+                  <AnimatedPressable
+                    onPress={fetchComandas}
+                    style={{ backgroundColor: COLORS.primary, borderRadius: 12, paddingHorizontal: 20, paddingVertical: 10 }}
+                  >
+                    <Text style={{ fontFamily: "Outfit_600SemiBold", fontSize: 14, color: "#fff" }}>Tentar novamente</Text>
+                  </AnimatedPressable>
+                </View>
+              ) : comandas.length === 0 ? (
+                <View style={{ backgroundColor: COLORS.surface, borderRadius: 16, padding: 20, borderWidth: 1, borderColor: COLORS.border, alignItems: "center" }}>
+                  <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 14, color: COLORS.textSecondary }}>
+                    Nenhuma comanda aberta nesta mesa
+                  </Text>
+                </View>
+              ) : (
+                <View style={{ gap: 10 }}>
+                  {comandas.map((c) => {
+                    const nome = c.rotulo && c.rotulo.trim().length > 0 ? c.rotulo.trim() : "Sem nome";
+                    const itens = `${c.item_count} ${c.item_count === 1 ? "item" : "itens"}`;
+                    return (
+                      <AnimatedPressable
+                        key={c.id}
+                        onPress={() => {
+                          console.log("[Mesa] Comanda pressionada:", c.id, "nome:", nome);
+                          router.push({ pathname: `/comanda/${c.id}`, params: { mesa_numero: String(mesa?.numero ?? ""), mesa_id: String(mesa?.id ?? "") } });
+                        }}
+                        style={{
+                          backgroundColor: COLORS.surface,
+                          borderRadius: 14,
+                          padding: 14,
+                          borderWidth: 1,
+                          borderColor: COLORS.border,
+                          gap: 4,
+                        }}
+                      >
+                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                          <Text numberOfLines={1} style={{ fontFamily: "Outfit_700Bold", fontSize: 15, color: COLORS.text, flex: 1, marginRight: 8 }}>
+                            {nome}
+                          </Text>
+                          <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 14, color: COLORS.primary }}>
+                            R$ {formatPrice(c.total)}
+                          </Text>
+                        </View>
+                        <Text style={{ fontFamily: "Outfit_400Regular", fontSize: 12, color: COLORS.textSecondary }}>
+                          {c.garcom_nome} · {itens}
+                        </Text>
+                      </AnimatedPressable>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+          ) : null}
+
+          {/* Comanda section — only when ocupada (modo mesa) */}
+          {isOcupada && !individual ? (
             comandaLoading ? (
               <View style={{ alignItems: "center", paddingVertical: 24 }}>
                 <ActivityIndicator size="small" color={COLORS.primary} />
@@ -378,12 +490,12 @@ export default function MesaDetailScreen() {
             </AnimatedPressable>
           ) : null}
 
-          {(mesaStatus === "livre" || (mesaStatus as string) === "disponivel") && (role === "garcom" || canAdmin) ? (
+          {((mesaStatus === "livre" || (mesaStatus as string) === "disponivel") || (individual && isOcupada)) && (role === "garcom" || canAdmin) ? (
             <AnimatedPressable
               onPress={() => { console.log("[Mesa] Abrir Comanda pressionado"); handleOpenComanda(); }}
               style={{ backgroundColor: COLORS.primary, borderRadius: 14, height: 52, alignItems: "center", justifyContent: "center" }}
             >
-              <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 16, color: "#fff" }}>Abrir Comanda</Text>
+              <Text style={{ fontFamily: "Outfit_700Bold", fontSize: 16, color: "#fff" }}>{individual ? "Nova comanda" : "Abrir Comanda"}</Text>
             </AnimatedPressable>
           ) : null}
 
