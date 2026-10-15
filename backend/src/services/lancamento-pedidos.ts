@@ -7,7 +7,8 @@
  * Regras:
  * - A comanda tem que ser do restaurante de quem chama (comanda de outro restaurante = não encontrada).
  * - Só comanda ABERTA recebe item; comanda de delivery tem tela e fluxo próprios.
- * - Cozinheiro não lança item. Garçom lança só na própria comanda. Gerente e administrador, em qualquer uma.
+ * - Cozinheiro não lança item. Garçom, gerente e administrador lançam em qualquer comanda aberta do
+ *   restaurante (o cliente pode pedir a qualquer garçom; o garçom dono da comanda não muda).
  * - Cada prato tem que ser do restaurante e estar disponível; o preço vem SEMPRE do cadastro do prato.
  * - Quantidade: inteiro de 1 a 99. Observação: até 500 caracteres. No máximo 50 itens por lançamento.
  * - Tudo ou nada: os itens e o novo total entram na mesma transação, com a comanda travada
@@ -94,7 +95,6 @@ export async function lancarItens(
         id: schema.comandas.id,
         status: schema.comandas.status,
         tipo: schema.comandas.tipo,
-        garcomId: schema.comandas.garcomId,
         gorjeta: schema.comandas.gorjeta,
       })
       .from(schema.comandas)
@@ -106,9 +106,9 @@ export async function lancarItens(
     if (comanda.tipo === "delivery") return { resultado: { tipo: "comanda_delivery" } as ResultadoLancamento };
     if (comanda.status !== "aberta") return { resultado: { tipo: "comanda_nao_aberta" } as ResultadoLancamento };
 
-    // 2) Papel: garçom só na própria comanda; gerente/administrador em qualquer uma; demais papéis não lançam
+    // 2) Papel: garçom, gerente e administrador lançam em qualquer comanda aberta do restaurante; demais papéis não
     const papel = (usuario.role ?? "").toLowerCase();
-    const podeLancar = ehGestor(papel) || (papel === "garcom" && comanda.garcomId === usuario.id);
+    const podeLancar = ehGestor(papel) || papel === "garcom";
     if (!podeLancar) return { resultado: { tipo: "sem_permissao" } as ResultadoLancamento };
 
     // 3) Pratos: do restaurante e disponíveis; o preço vem do cadastro
